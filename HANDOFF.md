@@ -53,5 +53,6 @@ driver + `NullGrid`, render loop + quadrant reconciler, page system with auto-di
 + `docs/PAGE_PROTOCOL.md`, pages (base / screensaver / isometric / toggle), two-color
 web UI, runtime hotplug (connect-sync + clickable indicator). Fixed two serialosc
 gotchas (see `CLAUDE.md`). Verified live on monome 128 (id `m1000279`). 20 tests green.
-**Next:** wire the settings panel. **No git repo yet** (consider `git init` for cleaner
-cross-agent diffs).
+Set up the cross-agent handoff (this file + `AGENTS.md`/`GEMINI.md`) and **initialized
+git** (`main`), pushed to **github.com/ianduclos/gridmapper** (private). Push at the end
+of each session. **Next:** wire the settings panel.
