@@ -73,10 +73,13 @@ vocab + isometric). Files: `src/pages/isometric.ts`, `test/isometric.test.ts`,
   out: `/grid/out/focus/page <a-h>`. Web keeps a numeric `focusedSlot` for local array
   access only; the wire is letters. (Daemon needed no changes — already letters.)
 - **Shifts (OSC input, receive-only):** two shift buttons outside the pages, in via
-  `/grid/in/shift <1|2> <1|0>`, debounced (~20ms, same-state edges dropped). **No
-  output** — shift only alters internal behavior. Surfaced as `ctx.modifiers.shift1/
-  shift2`; "both held" is the page's call (third shift). Shared `setShift()` in sim +
-  daemon — a future **local** source calls the same path for identical behavior.
+  `/grid/in/shift <1|2> <1|0>`. **No output** — shift only alters internal behavior.
+  Debounce = **leading-edge lockout** (`core/shiftInput.ts`, unit-tested): first edge
+  instant, then ~20ms ignore-all to swallow alternating chatter. (A same-state filter
+  is NOT a debounce — that was the first, broken try.) Surfaced as `ctx.modifiers.
+  shift1/shift2` (live getters over one `ShiftInput`); "both held" is the page's call.
+  Shared in sim + daemon — a future **local** source calls `shift.set()` for identical
+  behavior.
 
 ### 2026-06-06 — Gemini
 Scanned the codebase to orient and grasp the project state. Created a persistent context artifact to keep notes on the architecture and boundaries. The Page Protocol and separation of concerns are extremely clean. 

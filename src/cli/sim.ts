@@ -16,6 +16,7 @@ import { createOsc } from "../io/osc.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
+import { ShiftInput } from "../core/shiftInput.js"
 import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, isPageType, pageSettings } from "../pages/registry.js"
 import { type PageContext, type Slot, type Modifiers, SLOT_INDICES, slotFromLabel, slotLabel } from "../core/types.js"
 
@@ -75,23 +76,15 @@ const rec = new LedReconciler(grid)
 let needsFullPaint = false
 
 // App-defined shift buttons (outside any page). Driven over OSC for now; a local
-// source can call setShift() later for identical behavior. Debounced twister-style:
-// a same-state edge inside the window is dropped (state changes always pass through).
-const SHIFT_DEBOUNCE_MS = 20
-const modifiers: Modifiers = { held, shift1: false, shift2: false }
-const shiftLastEdge: Record<1 | 2, number> = { 1: 0, 2: 0 }
-
-function setShift(which: number, down: boolean) {
-	if (which !== 1 && which !== 2) return
-	const w = which as 1 | 2
-	const cur = w === 1 ? modifiers.shift1 : modifiers.shift2
-	const now = Date.now()
-	if (down === cur && now - shiftLastEdge[w] < SHIFT_DEBOUNCE_MS) return // debounce duplicate
-	shiftLastEdge[w] = now
-	if (down === cur) return // no change
-	// Receive-only: shift just alters internal behavior; nothing is emitted.
-	if (w === 1) modifiers.shift1 = down
-	else modifiers.shift2 = down
+// source calls shift.set() later for identical behavior. Receive-only: shift just
+// alters internal behavior, nothing is emitted. Debounce = leading-edge lockout
+// (see ShiftInput). modifiers exposes live values via getters so it stays the one
+// source of truth that pages read through ctx.modifiers.
+const shift = new ShiftInput(20)
+const modifiers: Modifiers = {
+	held,
+	get shift1() { return shift.shift1 },
+	get shift2() { return shift.shift2 },
 }
 
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
@@ -204,7 +197,7 @@ function routeControl(path: string, args: any[]) {
 	}
 	// /grid/in/shift <which:1|2> <state:1|0> — external shift buttons (debounced).
 	if (path === "/grid/in/shift") {
-		setShift(Number(args[0]), !!Number(args[1]))
+		shift.set(Number(args[0]), !!Number(args[1]))
 		return
 	}
 	// /grid/in/focus/page <a..h> — one slot dialect everywhere (web + Max + daemon).
