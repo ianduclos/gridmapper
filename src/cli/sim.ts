@@ -12,11 +12,12 @@ import { resolve as resolvePath } from "node:path"
 import { connectGrid, listDevices, NullGrid, type GridDriver } from "../io/serialoscDriver.js"
 import { MirrorGrid } from "../io/mirrorGrid.js"
 import { createGridServer } from "../io/gridServer.js"
+import { createOsc } from "../io/osc.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
-import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, isPageType } from "../pages/registry.js"
-import { type PageContext, type Slot, SLOT_INDICES } from "../core/types.js"
+import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, isPageType, pageSettings } from "../pages/registry.js"
+import { type PageContext, type Slot, SLOT_INDICES, slotFromLabel, slotLabel } from "../core/types.js"
 
 const PORT = Number(process.env.GRID_UI_PORT ?? 57191) // 57190 is twistermapper's UI
 const UI_INDEX = resolvePath(process.cwd(), "web/index.html")
@@ -30,6 +31,9 @@ const isConnected = () => grid.id !== "null-grid"
 // --- 8 page slots, all Base by default ---
 const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
 
+// Static settings specs per page type (for the web panel to render controls).
+const SPECS_MAP = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageSettings(n)]))
+
 // --- Web server ---
 const held = new Set<number>()
 let broadcastLeds: (levels: Uint8Array) => void = () => {}
@@ -41,13 +45,30 @@ const server = createGridServer({
 		send("/grid/out/device", [grid.id, w, h])
 		send("/grid/out/size", [w, h])
 		send("/grid/out/pagetypes", PAGE_TYPES)
+		send("/grid/out/pagespecs", [JSON.stringify(SPECS_MAP)])
 		send("/grid/out/focus/slot", [pm.focusedSlot])
 		send("/grid/out/slots", slotPages)
+		// Per-slot current settings, so a late-joining panel reflects live state.
+		for (const slot of SLOT_INDICES) {
+			const s = pm.serialize(slot)
+			if (s) send(`/grid/out/page/${slotLabel(slot)}/settings`, [JSON.stringify(s)])
+		}
 		send("/grid/out/leds", [w, h, ...Array.from(grid.snapshot())])
 	},
 })
 broadcastLeds = (levels) => server.broadcast("/grid/out/leds", [w, h, ...Array.from(levels)])
 const broadcastDevice = () => server.broadcast("/grid/out/device", [grid.id, w, h])
+
+// --- OSC to/from Max (5713x block; clear of twistermapper) ---
+// emitOut mirrors twistermapper: every app-out message goes to Max AND the web UI, so
+// notes/settings reach the patch while the visualizer monitors them live.
+const osc = createOsc()
+const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	osc.send(path, ...args)
+	server.broadcast(path, args)
+}
+osc.send("/grid/out/hello")
+osc.onMessage((path, args) => routeControl(path, args))
 
 // --- App stack ---
 const rec = new LedReconciler(grid)
@@ -56,7 +77,7 @@ let needsFullPaint = false
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 	size: grid.size,
 	modifiers: { held },
-	osc: { send: (path, ...a) => server.broadcast(path, a) }, // Max bridge comes later
+	osc: { send: emitOut },
 }
 
 const pm = new PageManager(baseCtx, (_frame, reason) => {
@@ -170,6 +191,16 @@ function routeControl(path: string, args: any[]) {
 		}
 		return
 	}
+	// /grid/in/focus/page <a..h> — letter dialect, from Max.
+	if (path === "/grid/in/focus/page") {
+		const slot = typeof args[0] === "string" ? slotFromLabel(args[0]) : undefined
+		if (slot !== undefined) {
+			pm.focus(slot)
+			needsFullPaint = true
+			server.broadcast("/grid/out/focus/slot", [slot])
+		}
+		return
+	}
 	const m = path.match(/^\/grid\/in\/slot\/(\d)\/page$/)
 	if (m) {
 		const slot = Number(m[1]) as Slot
@@ -183,6 +214,23 @@ function routeControl(path: string, args: any[]) {
 		}
 		return
 	}
+	// /grid/in/page/<slot>/<rest> → page.onOsc. Slot = digit (web panel) or letter (Max).
+	// Carries settings, e.g. /grid/in/page/a/setting/npo 7 or /grid/in/page/0/setting/npo 7.
+	const pageMatch = path.match(/^\/grid\/in\/page\/([0-9a-hA-H])\/(.+)$/)
+	if (pageMatch) {
+		const slot = resolveSlot(pageMatch[1])
+		if (slot !== undefined) pm.routeOscToPage(slot, `/${pageMatch[2]}`, args)
+		return
+	}
+}
+
+// Resolve a slot segment that may be a digit (web: 0..7) or a letter (Max: a..h).
+function resolveSlot(seg: string): Slot | undefined {
+	if (/^\d$/.test(seg)) {
+		const n = Number(seg)
+		return n >= 0 && n < SLOT_INDICES.length ? (n as Slot) : undefined
+	}
+	return slotFromLabel(seg)
 }
 
 console.log(`[sim] http://localhost:${PORT} — 8 slots (a–h), default Base.`)
@@ -193,6 +241,7 @@ process.on("SIGINT", () => {
 	try { grid.ledLevelAll(0) } catch {}
 	setTimeout(() => {
 		try { grid.close() } catch {}
+		try { osc.close() } catch {}
 		server.close()
 		process.exit(0)
 	}, 60)

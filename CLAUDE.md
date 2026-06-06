@@ -82,6 +82,13 @@ twister's `/twister/...` vocabulary:
 - `/grid/out/hello` on transport ready.
 - `/grid/out/focus/page <a..h>`; `/grid/out/page/<slot>/type <name>`.
 - Page value broadcasts, e.g. `/grid/out/page/<slot>/...`.
+- **Per-page settings (implemented).** A page declares `SettingSpec[]` (one `SPECS`
+  const = source of truth). Out: `/grid/out/page/<slot>/settings <json>` (echoed on
+  init/focus/change) and, sim→web on connect, `/grid/out/pagespecs <json>`
+  (pageName→specs). In: `/grid/in/page/<slot>/setting/<key> <value>` (slot = `a..h`
+  from Max or `0..7` from the web panel); the page's `onOsc` also tolerates the terse
+  `/<key> <value>` and value-in-path `/<key>/<value>`, plus `/settings/get`. The page
+  clamps via its specs, stores, and re-echoes. `serialize()` returns the same values.
 - `/grid/in/focus/page <a..h>`; `/grid/in/slot/<a..h>/page <PageName>`;
   preset save/load/list/delete; `/grid/in/settings/...`.
 - The **handshake**: on connect the daemon emits a state snapshot (focus, each
@@ -131,8 +138,10 @@ src/
   pages/screensaver.ts   ScreensaverPage — full-grid animations; press = next screensaver
                          (0: per-cell triangle 0.5→1.0 Hz; 1: slow Perlin field)
   util/perlin.ts         dependency-free 3D Perlin noise (used by the Perlin screensaver)
-  pages/isometric.ts     IsometricPage — isomorphic keyboard (left 13×8), fourths tuning,
-                         note OSC out: /grid/out/page/<slot>/note <midi> <vel>
+  pages/isometric.ts     IsometricPage — isomorphic keyboard (left 13×8) as a pure
+                         integer STEP FIELD: emits /grid/out/page/<slot>/note <step> <1|0>
+                         (Max owns step→pitch). Live settings npo + vertical, two-way over
+                         OSC (worked example for the settings contract).
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])

@@ -84,6 +84,15 @@
 		.settings .title { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .45; margin-bottom: 12px; }
 		.settings .ctx { font-size: 13px; letter-spacing: .5px; margin-bottom: 10px; }
 		.settings .note { font-size: 12px; letter-spacing: .3px; opacity: .45; }
+		.settings .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; }
+		.settings .field label { font-size: 12px; letter-spacing: .3px; opacity: .7; }
+		.settings input[type="number"] {
+			font: inherit; font-size: 12px; width: 64px; text-align: right;
+			color: var(--ink); background: transparent;
+			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px;
+		}
+		.settings input[type="checkbox"] { accent-color: var(--ink); width: 16px; height: 16px; }
+		.settings select.select { padding: 4px 22px 4px 8px; }
 	</style>
 </head>
 <body>
@@ -106,6 +115,7 @@
 		<aside class="settings">
 			<div class="title">page settings</div>
 			<div class="ctx" id="settingsCtx">—</div>
+			<div id="settingsFields"></div>
 			<div class="note" id="settingsNote"></div>
 		</aside>
 	</main>
@@ -119,6 +129,7 @@
 		const slotGroup = document.getElementById("slotGroup");
 		const pageSelect = document.getElementById("pageSelect");
 		const settingsCtx = document.getElementById("settingsCtx");
+		const settingsFields = document.getElementById("settingsFields");
 		const settingsNote = document.getElementById("settingsNote");
 		let cells = [];
 
@@ -127,6 +138,8 @@
 		let pageTypes = [];            // populated from the server (auto-discovered)
 		let focusedSlot = 0;
 		let slotPages = SLOT_LABELS.map(() => "base");
+		let specsByPage = {};                          // pageName -> SettingSpec[]
+		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
 
 		// The page dropdown is built from whatever the daemon reports — drop a new
 		// page file in src/pages/ and it appears here automatically.
@@ -154,10 +167,41 @@
 			renderSettings();
 		}
 
+		// Build the right-hand panel from the focused slot's page specs + current values.
 		function renderSettings() {
 			const page = slotPages[focusedSlot];
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
-			settingsNote.textContent = `no settings for ${page} yet`;
+			const specs = specsByPage[page] || [];
+			settingsFields.innerHTML = "";
+			if (!specs.length) { settingsNote.textContent = `no settings for ${page} yet`; return; }
+			settingsNote.textContent = "";
+			const values = settingsBySlot[focusedSlot] || {};
+			const setVal = (key, v) => send(`/grid/in/page/${focusedSlot}/setting/${key}`, [v]);
+			specs.forEach((spec) => {
+				const row = document.createElement("div"); row.className = "field";
+				const lab = document.createElement("label"); lab.textContent = spec.label || spec.key;
+				const cur = values[spec.key] !== undefined ? values[spec.key] : spec.default;
+				let input;
+				if (spec.type === "toggle") {
+					input = document.createElement("input"); input.type = "checkbox"; input.checked = !!cur;
+					input.onchange = () => setVal(spec.key, input.checked ? 1 : 0);
+				} else if (spec.type === "enum") {
+					input = document.createElement("select"); input.className = "select";
+					(spec.options || []).forEach((o) => {
+						const op = document.createElement("option"); op.value = o; op.textContent = o; input.appendChild(op);
+					});
+					input.value = String(cur);
+					input.onchange = () => setVal(spec.key, input.value);
+				} else {
+					input = document.createElement("input"); input.type = "number";
+					if (spec.min !== undefined) input.min = spec.min;
+					if (spec.max !== undefined) input.max = spec.max;
+					if (spec.step !== undefined) input.step = spec.step;
+					input.value = cur;
+					input.onchange = () => { const v = Number(input.value); if (Number.isFinite(v)) setVal(spec.key, v); };
+				}
+				row.appendChild(lab); row.appendChild(input); settingsFields.appendChild(row);
+			});
 		}
 
 		function setDevice(label) { deviceLabelEl.textContent = label; deviceEl.classList.add("on"); }
@@ -216,12 +260,23 @@
 						break;
 					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
 					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
+					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
 					case "/grid/out/focus/slot": focusedSlot = m.args[0]; renderToolbar(); break;
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
 					case "/grid/out/leds": {
 						const [w, h, ...levels] = m.args;
 						if (w !== W || h !== H || cells.length !== w * h) buildGrid(w, h);
 						paint(levels);
+						break;
+					}
+					default: {
+						// /grid/out/page/<slot>/settings <json> — slot is a letter (a..h) or digit.
+						const sm = m.path.match(/^\/grid\/out\/page\/([0-9a-h])\/settings$/);
+						if (sm) {
+							const idx = /^\d$/.test(sm[1]) ? +sm[1] : SLOT_LABELS.indexOf(sm[1]);
+							let vals = {}; try { vals = JSON.parse(m.args[0]); } catch {}
+							if (idx >= 0) { settingsBySlot[idx] = vals; if (idx === focusedSlot) renderSettings(); }
+						}
 						break;
 					}
 				}

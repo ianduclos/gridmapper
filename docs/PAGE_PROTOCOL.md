@@ -164,11 +164,10 @@ in the dropdown.
 
 ---
 
-## 8. Settings (declare-now, wire-later)
+## 8. Settings (wired — declare, receive, echo)
 
-You may declare page settings today. The right-hand settings panel that renders and
-feeds them is being built; declaring now keeps your page forward-compatible and
-self-describing. `SettingSpec` (`src/core/pageModule.ts`):
+Declare page settings with `SettingSpec` (`src/core/pageModule.ts`). They render as
+real controls in the right-hand panel **and** round-trip over OSC to Max:
 
 ```ts
 settings: [
@@ -178,9 +177,21 @@ settings: [
 ]
 ```
 
-Until the panel lands, values are **not** delivered to your page — use your own
-constants/defaults for now and read settings once the wiring exists. Don't block on
-this; declaring is optional.
+The contract (see `src/pages/isometric.ts` for the worked example):
+
+1. **Receive** changes in `onOsc(path, args, ctx)`. The host routes the panel/Max to
+   you as `/setting/<key> <value>` (also tolerate the terse `/<key> <value>` and
+   value-in-path `/<key>/<value>`). Clamp against your own `SettingSpec` and store.
+   `/settings/get` should re-emit (see below).
+2. **Echo** current values out so the panel and Max stay in sync:
+   `ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, JSON.stringify({...}))`.
+   Emit on `init`/`onFocus` and after every change.
+3. **Persist** via `serialize()` returning the same `{ key: value }` object (presets +
+   the host's connect-snapshot read this).
+
+Keep one `SPECS` const as the single source of truth — reference it from both the
+class (for clamping) and the `page.settings` descriptor. Settings are still optional:
+a page with none simply omits `settings`, `onOsc`, and `serialize`.
 
 ---
 

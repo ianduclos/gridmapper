@@ -37,16 +37,41 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 - **Works:** serialosc connect + runtime hotplug; render loop (58fps) + quadrant
   reconciler; 8 page slots with **auto-discovered** pages (`base`, `screensaver`,
   `isometric`, `toggle`); two-color web UI (slot chips + page dropdown + clickable
-  connect indicator); physical + web key input, mirrored both ways. 20 unit tests green.
-- **Next / open:** wire the right-hand **page-settings panel** (declared `settings` →
-  controls → page); make `isometric` root/tuning configurable; Max OSC handshake
-  (deferred by user); single-instance guard; give the daemon the sim's hotplug.
+  connect indicator); physical + web key input, mirrored both ways. **Page-settings
+  panel is live** (declared `SettingSpec[]` → controls → page, two-way over OSC). The
+  **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web; inbound `routeControl`).
+  `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints).
+  21 unit tests green.
+- **Next / open:** Max OSC **handshake** (systemConfig + presetStore: state snapshot on
+  connect, per-patch interface config — the big twister-port still pending); single-
+  instance guard; give the daemon the sim's hotplug + OSC bridge parity.
 - **Parked:** web-UI button "bounce" — `transform: translateY(.5px)` on `.cell:active`
   in `web/index.html` (remove system-wide, UI layer, not pages).
 
 ---
 
 ## Session log (newest first)
+### 2026-06-06 — Claude
+Wired the **page-settings panel** + per-page settings OSC round-trip, and reworked
+`isometric` into a **step field**. (1) `isometric.ts`: emits `/grid/out/page/<slot>/note
+<step> <1|0>` (step ints, Max owns pitch — no MIDI/velocity); live settings `npo` +
+`vertical` via a single `SPECS` const; `onOsc` accepts `/setting/<key>`, terse `/<key>`,
+value-in-path `/<key>/<value>`, `/settings/get`; echoes `/grid/out/page/<slot>/settings`;
+`serialize()`. (2) `sim.ts`: added `createOsc` + `emitOut` (OSC **and** web) and inbound
+`osc.onMessage→routeControl`; routeControl now handles `/grid/in/focus/page <a-h>` and
+`/grid/in/page/<digit|letter>/<rest>`; connect-snapshot sends `/grid/out/pagespecs` +
+per-slot `/settings`. (3) `web/index.html`: panel renders controls from specs+values,
+two-way bound. (4) Docs: `PAGE_PROTOCOL.md §8` (settings now wired), `CLAUDE.md` (OSC
+vocab + isometric). Files: `src/pages/isometric.ts`, `test/isometric.test.ts`,
+`src/cli/sim.ts`, `web/index.html`, `docs/PAGE_PROTOCOL.md`, `CLAUDE.md`.
+- **Verified?** `npx tsc --noEmit` clean; 21 tests green. Round-trip checked live on the
+  sim (`--null`): web digit dialect + Max letter/value-in-path over UDP both apply and
+  echo `/grid/out/page/a/settings` on 57130. Not yet tested on hardware.
+- **Next:** Max handshake (systemConfig/presetStore); daemon hotplug + OSC parity.
+- **Gotcha:** two slot dialects coexist — web uses **digit** (`/grid/in/page/0/...`),
+  Max uses **letter** (`/grid/in/page/a/...`); sim's `resolveSlot` accepts both. Daemon
+  needed **no changes** (already routed inbound page OSC + forwarded page OSC to Max).
+
 ### 2026-06-06 — Gemini
 Scanned the codebase to orient and grasp the project state. Created a persistent context artifact to keep notes on the architecture and boundaries. The Page Protocol and separation of concerns are extremely clean. 
 - **Verified?** N/A (no code changes)
