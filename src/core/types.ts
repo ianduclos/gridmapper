@@ -42,6 +42,14 @@ export const makeFrame = (size: GridSize, fill = 0): LedFrame => {
 export interface Modifiers {
 	/** Cells currently held down, keyed by `ledIndex`. App/page convention. */
 	held: ReadonlySet<number>
+	/**
+	 * Two app-defined shift buttons that live OUTSIDE any page. They may be driven
+	 * externally (OSC `/grid/in/shift <1|2> <s>`) or, later, by a local source — both
+	 * paths converge here so behavior is identical. A page reads these to modify its
+	 * own behavior; "both held" is left to the page to interpret as a third shift.
+	 */
+	shift1: boolean
+	shift2: boolean
 }
 
 export interface PageContext {

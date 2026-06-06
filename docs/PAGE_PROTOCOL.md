@@ -106,6 +106,11 @@ interface KeyEvent { x: number; y: number; s: 0 | 1 } // s: 1 = press, 0 = relea
 - The grid has no dedicated shift/side buttons. If you want a modifier, treat a held
   key as one — currently-held cells are available via `ctx.modifiers.held`
   (a `Set` of `ledIndex` values).
+- Two **external shift buttons** live outside the pages: `ctx.modifiers.shift1` and
+  `ctx.modifiers.shift2` (booleans). Read them to modify behavior; you decide what (if
+  anything) "both held" means. They're driven over OSC today (`/grid/in/shift`) and a
+  local source later — same state either way. A page may also ignore them and roll its
+  own held-key shift; that's fine.
 - Do **not** draw from `onKey`. Mutate state; the next `render()` reflects it.
 
 ---
