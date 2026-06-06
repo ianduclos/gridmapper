@@ -89,12 +89,13 @@ twister's `/twister/...` vocabulary:
   from Max or `0..7` from the web panel); the page's `onOsc` also tolerates the terse
   `/<key> <value>` and value-in-path `/<key>/<value>`, plus `/settings/get`. The page
   clamps via its specs, stores, and re-echoes. `serialize()` returns the same values.
-- **Shifts (implemented).** Two app-defined shift buttons live OUTSIDE the pages. In:
-  `/grid/in/shift <which:1|2> <state:1|0>`; out (echo): `/grid/out/shift <which> <state>`.
-  Debounced twister-style (same-state edge inside ~20ms dropped; state changes always
-  pass). Surfaced to pages as `ctx.modifiers.shift1` / `shift2`; "both held" is the
-  page's call (potential third shift). Wired in both the sim and the daemon via a shared
-  `setShift()`; a future LOCAL source calls the same path for identical behavior.
+- **Shifts (implemented, receive-only).** Two app-defined shift buttons live OUTSIDE the
+  pages. In: `/grid/in/shift <which:1|2> <state:1|0>`. The grid does **not** echo shift —
+  it only alters internal behavior. Debounced twister-style (same-state edge inside ~20ms
+  dropped; state changes always pass). Surfaced to pages as `ctx.modifiers.shift1` /
+  `shift2`; "both held" is the page's call (potential third shift). Wired in both the sim
+  and the daemon via a shared `setShift()`; a future LOCAL source calls it for identical
+  behavior.
 - `/grid/in/focus/page <a..h>`; `/grid/in/slot/<a..h>/page <PageName>`;
   preset save/load/list/delete; `/grid/in/settings/...`.
 - The **handshake**: on connect the daemon emits a state snapshot (focus, each

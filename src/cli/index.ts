@@ -60,9 +60,9 @@ function setShift(which: number, down: boolean) {
 	if (down === cur && now - shiftLastEdge[w] < SHIFT_DEBOUNCE_MS) return // debounce duplicate
 	shiftLastEdge[w] = now
 	if (down === cur) return // no change
+	// Receive-only: shift just alters internal behavior; nothing is emitted.
 	if (w === 1) modifiers.shift1 = down
 	else modifiers.shift2 = down
-	emitOut("/grid/out/shift", w, down ? 1 : 0)
 }
 
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
