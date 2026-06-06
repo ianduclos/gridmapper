@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>gridmapper</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+	<style>
+		:root {
+			/* Two colours only. */
+			--bg: #ece9e1;   /* tasteful off-white */
+			--ink: #15140f;  /* almost black */
+			/* The grid panel + key ramp are derived from these two. */
+			--panel: #0c0b09;        /* black grid body */
+			--key-off: 48, 46, 42;   /* dark grey (LED level 0) */
+			--key-on: 236, 233, 225; /* off-white  (LED level 15) */
+		}
+		* { box-sizing: border-box; }
+		html, body { height: 100%; }
+		body {
+			margin: 0;
+			background: var(--bg);
+			color: var(--ink);
+			font-family: "Roboto Mono", ui-monospace, monospace;
+			font-weight: 400;
+			-webkit-font-smoothing: antialiased;
+			-webkit-user-select: none; user-select: none;
+			display: flex; flex-direction: column;
+		}
+		header {
+			display: flex; align-items: baseline; gap: 14px;
+			padding: 22px 28px 16px;
+		}
+		header .mark { font-size: 14px; font-weight: 500; letter-spacing: .5px; }
+		/* Device indicator: hollow square = no device, filled = connected. */
+		header .device { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: .5px; opacity: .45; cursor: pointer; }
+		header .device:hover { opacity: .8; }
+		header .device.on { opacity: .85; }
+		header .device .dot { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--ink); background: transparent; }
+		header .device.on .dot { background: var(--ink); }
+		/* Grid on the left, page settings reserved on the right. */
+		main { flex: 1; display: flex; flex-direction: row; align-items: flex-start; gap: 28px; padding: 0 28px 40px; }
+		.left { display: flex; flex-direction: column; gap: 16px; }
+		#toolbar { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+		.group { display: flex; gap: 6px; align-items: center; }
+		.group .lbl { font-size: 11px; opacity: .4; letter-spacing: 1px; text-transform: uppercase; margin-right: 4px; }
+		.chip {
+			font: inherit; font-size: 12px; letter-spacing: .5px;
+			color: var(--ink); background: transparent;
+			border: 1px solid var(--ink); border-radius: 3px;
+			padding: 5px 9px; cursor: pointer; opacity: .5;
+			transition: opacity .08s, background .08s;
+		}
+		.chip:hover { opacity: .8; }
+		.chip.on { background: var(--ink); color: var(--bg); opacity: 1; }
+		select.select {
+			font: inherit; font-size: 12px; letter-spacing: .5px;
+			color: var(--ink); background: transparent;
+			border: 1px solid var(--ink); border-radius: 3px;
+			padding: 5px 26px 5px 9px; cursor: pointer;
+		}
+		#grid {
+			display: grid; gap: 6px;
+			padding: 14px; background: var(--panel);
+			border-radius: 8px; /* very slightly rounded */
+		}
+		.cell {
+			width: 46px; height: 46px;
+			border-radius: 3px; /* very slightly rounded */
+			background: rgb(var(--key-off));
+			cursor: pointer;
+			transition: background .06s linear;
+		}
+		.cell:active { transform: translateY(.5px); }
+		.readout { font-size: 12px; letter-spacing: .5px; opacity: .5; min-height: 16px; }
+		/* Right-hand page-settings panel (placeholder for now). */
+		.settings {
+			min-width: 220px; max-width: 280px;
+			border: 1px solid var(--ink); border-radius: 8px;
+			padding: 16px 16px 18px; opacity: .9;
+		}
+		.settings .title { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .45; margin-bottom: 12px; }
+		.settings .ctx { font-size: 13px; letter-spacing: .5px; margin-bottom: 10px; }
+		.settings .note { font-size: 12px; letter-spacing: .3px; opacity: .45; }
+	</style>
+</head>
+<body>
+	<header>
+		<span class="mark">gridmapper</span>
+		<span class="device" id="device"><span class="dot"></span><span id="deviceLabel">no device</span></span>
+	</header>
+	<main>
+		<div class="left">
+			<div id="toolbar">
+				<div class="group" id="slotGroup"></div>
+				<div class="group">
+					<span class="lbl">page</span>
+					<select class="select" id="pageSelect"></select>
+				</div>
+			</div>
+			<div id="grid"></div>
+			<div class="readout" id="readout">&nbsp;</div>
+		</div>
+		<aside class="settings">
+			<div class="title">page settings</div>
+			<div class="ctx" id="settingsCtx">—</div>
+			<div class="note" id="settingsNote"></div>
+		</aside>
+	</main>
+
+	<script>
+		let W = 16, H = 8;
+		const gridEl = document.getElementById("grid");
+		const deviceEl = document.getElementById("device");
+		const deviceLabelEl = document.getElementById("deviceLabel");
+		const readoutEl = document.getElementById("readout");
+		const slotGroup = document.getElementById("slotGroup");
+		const pageSelect = document.getElementById("pageSelect");
+		const settingsCtx = document.getElementById("settingsCtx");
+		const settingsNote = document.getElementById("settingsNote");
+		let cells = [];
+
+		// --- Slot / page selector state ---
+		const SLOT_LABELS = ["a", "b", "c", "d", "e", "f", "g", "h"];
+		let pageTypes = [];            // populated from the server (auto-discovered)
+		let focusedSlot = 0;
+		let slotPages = SLOT_LABELS.map(() => "base");
+
+		// The page dropdown is built from whatever the daemon reports — drop a new
+		// page file in src/pages/ and it appears here automatically.
+		function buildPageOptions() {
+			pageSelect.innerHTML = "";
+			pageTypes.forEach((name) => {
+				const o = document.createElement("option");
+				o.value = name; o.textContent = name;
+				pageSelect.appendChild(o);
+			});
+			pageSelect.value = slotPages[focusedSlot];
+		}
+		pageSelect.onchange = () => send("/grid/in/slot/" + focusedSlot + "/page", [pageSelect.value]);
+
+		function renderToolbar() {
+			slotGroup.innerHTML = '<span class="lbl">slot</span>';
+			SLOT_LABELS.forEach((lab, i) => {
+				const b = document.createElement("button");
+				b.className = "chip" + (i === focusedSlot ? " on" : "");
+				b.textContent = lab;
+				b.onclick = () => send("/grid/in/focus/slot", [i]);
+				slotGroup.appendChild(b);
+			});
+			pageSelect.value = slotPages[focusedSlot];
+			renderSettings();
+		}
+
+		function renderSettings() {
+			const page = slotPages[focusedSlot];
+			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
+			settingsNote.textContent = `no settings for ${page} yet`;
+		}
+
+		function setDevice(label) { deviceLabelEl.textContent = label; deviceEl.classList.add("on"); }
+		function clearDevice() { deviceLabelEl.textContent = "no device"; deviceEl.classList.remove("on"); }
+		// Click the indicator to force a connection attempt.
+		deviceEl.title = "click to connect";
+		deviceEl.onclick = () => {
+			// Always allowed — forces a fresh handshake (useful after a real unplug).
+			deviceLabelEl.textContent = "connecting…";
+			send("/grid/in/connect", []);
+		};
+
+		// LED ramp: level 0..15 → dark grey … off-white (linear per channel).
+		const OFF = [48, 46, 42];
+		const ON = [236, 233, 225];
+		function levelColor(level) {
+			const t = Math.max(0, Math.min(15, level)) / 15;
+			const c = OFF.map((o, i) => Math.round(o + (ON[i] - o) * t));
+			return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+		}
+
+		function buildGrid(w, h) {
+			W = w; H = h;
+			gridEl.style.gridTemplateColumns = `repeat(${w}, 46px)`;
+			gridEl.innerHTML = "";
+			cells = [];
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					const c = document.createElement("div");
+					c.className = "cell";
+					c.dataset.x = x; c.dataset.y = y;
+					gridEl.appendChild(c);
+					cells.push(c);
+				}
+			}
+		}
+
+		function paint(levels) {
+			for (let i = 0; i < cells.length && i < levels.length; i++) {
+				cells[i].style.background = levelColor(levels[i]);
+			}
+		}
+
+		// --- WebSocket: same { path, args } protocol as OSC ---
+		let ws;
+		function connect() {
+			ws = new WebSocket(`ws://${location.host}`);
+			ws.onclose = () => { clearDevice(); setTimeout(connect, 800); };
+			ws.onmessage = (ev) => {
+				let m; try { m = JSON.parse(ev.data); } catch { return; }
+				switch (m.path) {
+					case "/grid/out/device":
+						// "null-grid" = no real hardware → show as disconnected (clickable).
+						if (m.args[0] === "null-grid") clearDevice();
+						else setDevice(`${m.args[0]} · ${m.args[1]}×${m.args[2]}`);
+						break;
+					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
+					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
+					case "/grid/out/focus/slot": focusedSlot = m.args[0]; renderToolbar(); break;
+					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
+					case "/grid/out/leds": {
+						const [w, h, ...levels] = m.args;
+						if (w !== W || h !== H || cells.length !== w * h) buildGrid(w, h);
+						paint(levels);
+						break;
+					}
+				}
+			};
+		}
+
+		function send(path, args) {
+			if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ path, args }));
+		}
+		const sendKey = (x, y, s) => send("/grid/in/key", [x, y, s]);
+
+		// Press/drag interaction: pressing a cell = key down, release = key up.
+		let down = false;
+		const cellFrom = (t) => (t && t.classList && t.classList.contains("cell"))
+			? { x: +t.dataset.x, y: +t.dataset.y } : null;
+		gridEl.addEventListener("pointerdown", (e) => {
+			const c = cellFrom(e.target); if (!c) return;
+			down = true; sendKey(c.x, c.y, 1);
+			readoutEl.textContent = `${String(c.x).padStart(2)} , ${String(c.y).padStart(2)}  down`;
+		});
+		window.addEventListener("pointerup", (e) => {
+			if (!down) return;
+			const c = cellFrom(e.target);
+			if (c) { sendKey(c.x, c.y, 0); readoutEl.textContent = `${String(c.x).padStart(2)} , ${String(c.y).padStart(2)}  up`; }
+			down = false;
+		});
+
+		renderToolbar();
+		buildGrid(W, H);
+		connect();
+	</script>
+</body>
+</html>

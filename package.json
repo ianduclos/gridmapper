@@ -1,0 +1,29 @@
+{
+	"name": "gridmapper",
+	"version": "0.1.0",
+	"description": "Headless Node/TS mapping interface for the monome grid: decoupled key input + varibright LED feedback, 2-way OSC to Max via serialosc.",
+	"type": "module",
+	"main": "dist/cli/index.js",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run",
+		"sim": "tsx src/cli/sim.ts",
+		"grid:list": "tsx src/cli/grid-list.ts",
+		"grid:log": "tsx src/cli/grid-log.ts",
+		"grid:led": "tsx src/cli/grid-led.ts"
+	},
+	"keywords": ["monome", "grid", "serialosc", "osc", "midi", "max"],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"osc": "^2.4.5",
+		"ws": "^8.21.0"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.2",
+		"@types/ws": "^8.18.1",
+		"tsx": "^4.22.4",
+		"typescript": "^6.0.3",
+		"vitest": "^3.2.6"
+	}
+}
