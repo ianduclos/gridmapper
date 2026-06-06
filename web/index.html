@@ -152,7 +152,9 @@
 			});
 			pageSelect.value = slotPages[focusedSlot];
 		}
-		pageSelect.onchange = () => send("/grid/in/slot/" + focusedSlot + "/page", [pageSelect.value]);
+		// Wire protocol uses slot LETTERS (a..h) everywhere — same dialect as Max/daemon.
+		// focusedSlot stays a numeric index for local array access only.
+		pageSelect.onchange = () => send("/grid/in/slot/" + SLOT_LABELS[focusedSlot] + "/page", [pageSelect.value]);
 
 		function renderToolbar() {
 			slotGroup.innerHTML = '<span class="lbl">slot</span>';
@@ -160,7 +162,7 @@
 				const b = document.createElement("button");
 				b.className = "chip" + (i === focusedSlot ? " on" : "");
 				b.textContent = lab;
-				b.onclick = () => send("/grid/in/focus/slot", [i]);
+				b.onclick = () => send("/grid/in/focus/page", [lab]);
 				slotGroup.appendChild(b);
 			});
 			pageSelect.value = slotPages[focusedSlot];
@@ -176,7 +178,7 @@
 			if (!specs.length) { settingsNote.textContent = `no settings for ${page} yet`; return; }
 			settingsNote.textContent = "";
 			const values = settingsBySlot[focusedSlot] || {};
-			const setVal = (key, v) => send(`/grid/in/page/${focusedSlot}/setting/${key}`, [v]);
+			const setVal = (key, v) => send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/setting/${key}`, [v]);
 			specs.forEach((spec) => {
 				const row = document.createElement("div"); row.className = "field";
 				const lab = document.createElement("label"); lab.textContent = spec.label || spec.key;
@@ -261,7 +263,7 @@
 					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
 					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
 					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
-					case "/grid/out/focus/slot": focusedSlot = m.args[0]; renderToolbar(); break;
+					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); break; }
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
 					case "/grid/out/leds": {
 						const [w, h, ...levels] = m.args;
@@ -270,10 +272,10 @@
 						break;
 					}
 					default: {
-						// /grid/out/page/<slot>/settings <json> — slot is a letter (a..h) or digit.
-						const sm = m.path.match(/^\/grid\/out\/page\/([0-9a-h])\/settings$/);
+						// /grid/out/page/<slot>/settings <json> — slot is a letter (a..h).
+						const sm = m.path.match(/^\/grid\/out\/page\/([a-h])\/settings$/);
 						if (sm) {
-							const idx = /^\d$/.test(sm[1]) ? +sm[1] : SLOT_LABELS.indexOf(sm[1]);
+							const idx = SLOT_LABELS.indexOf(sm[1]);
 							let vals = {}; try { vals = JSON.parse(m.args[0]); } catch {}
 							if (idx >= 0) { settingsBySlot[idx] = vals; if (idx === focusedSlot) renderSettings(); }
 						}

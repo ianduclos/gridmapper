@@ -68,9 +68,14 @@ vocab + isometric). Files: `src/pages/isometric.ts`, `test/isometric.test.ts`,
   sim (`--null`): web digit dialect + Max letter/value-in-path over UDP both apply and
   echo `/grid/out/page/a/settings` on 57130. Not yet tested on hardware.
 - **Next:** Max handshake (systemConfig/presetStore); daemon hotplug + OSC parity.
-- **Gotcha:** two slot dialects coexist — web uses **digit** (`/grid/in/page/0/...`),
-  Max uses **letter** (`/grid/in/page/a/...`); sim's `resolveSlot` accepts both. Daemon
-  needed **no changes** (already routed inbound page OSC + forwarded page OSC to Max).
+- **Dialect:** unified on slot **letters** (`a..h`) everywhere — web, Max, daemon. Sim
+  in: `/grid/in/focus/page <a-h>`, `/grid/in/slot/<a-h>/page`, `/grid/in/page/<a-h>/<rest>`;
+  out: `/grid/out/focus/page <a-h>`. Web keeps a numeric `focusedSlot` for local array
+  access only; the wire is letters. (Daemon needed no changes — already letters.)
+- **Design heads-up (not built):** two **shifts living outside the pages** — a page may
+  provide its own shift, or take shift from outside when its prototype lacks one (or has
+  only one); both shifts together can act as a third shift, page-dependent. Input wiring
+  comes later; mention only so the page/modifier model is designed with it in mind.
 
 ### 2026-06-06 — Gemini
 Scanned the codebase to orient and grasp the project state. Created a persistent context artifact to keep notes on the architecture and boundaries. The Page Protocol and separation of concerns are extremely clean. 

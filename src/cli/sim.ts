@@ -46,7 +46,7 @@ const server = createGridServer({
 		send("/grid/out/size", [w, h])
 		send("/grid/out/pagetypes", PAGE_TYPES)
 		send("/grid/out/pagespecs", [JSON.stringify(SPECS_MAP)])
-		send("/grid/out/focus/slot", [pm.focusedSlot])
+		send("/grid/out/focus/page", [slotLabel(pm.focusedSlot)])
 		send("/grid/out/slots", slotPages)
 		// Per-slot current settings, so a late-joining panel reflects live state.
 		for (const slot of SLOT_INDICES) {
@@ -182,31 +182,22 @@ function routeControl(path: string, args: any[]) {
 		void tryConnect().then(() => broadcastDevice())
 		return
 	}
-	if (path === "/grid/in/focus/slot") {
-		const n = Number(args[0])
-		if (Number.isInteger(n) && n >= 0 && n < SLOT_INDICES.length) {
-			pm.focus(n as Slot)
-			needsFullPaint = true
-			server.broadcast("/grid/out/focus/slot", [n])
-		}
-		return
-	}
-	// /grid/in/focus/page <a..h> — letter dialect, from Max.
+	// /grid/in/focus/page <a..h> — one slot dialect everywhere (web + Max + daemon).
 	if (path === "/grid/in/focus/page") {
 		const slot = typeof args[0] === "string" ? slotFromLabel(args[0]) : undefined
 		if (slot !== undefined) {
 			pm.focus(slot)
 			needsFullPaint = true
-			server.broadcast("/grid/out/focus/slot", [slot])
+			server.broadcast("/grid/out/focus/page", [slotLabel(slot)])
 		}
 		return
 	}
-	const m = path.match(/^\/grid\/in\/slot\/(\d)\/page$/)
+	const m = path.match(/^\/grid\/in\/slot\/([a-hA-H])\/page$/)
 	if (m) {
-		const slot = Number(m[1]) as Slot
+		const slot = slotFromLabel(m[1])
 		const name = args[0]
 		const factory = isPageType(name) ? pageFactory(name) : undefined
-		if (slot < SLOT_INDICES.length && factory) {
+		if (slot !== undefined && factory) {
 			slotPages[slot] = name
 			pm.load(slot, factory)
 			if (slot === pm.focusedSlot) needsFullPaint = true
@@ -214,23 +205,13 @@ function routeControl(path: string, args: any[]) {
 		}
 		return
 	}
-	// /grid/in/page/<slot>/<rest> → page.onOsc. Slot = digit (web panel) or letter (Max).
-	// Carries settings, e.g. /grid/in/page/a/setting/npo 7 or /grid/in/page/0/setting/npo 7.
-	const pageMatch = path.match(/^\/grid\/in\/page\/([0-9a-hA-H])\/(.+)$/)
+	// /grid/in/page/<a..h>/<rest> → page.onOsc. e.g. /grid/in/page/a/setting/npo 7.
+	const pageMatch = path.match(/^\/grid\/in\/page\/([a-hA-H])\/(.+)$/)
 	if (pageMatch) {
-		const slot = resolveSlot(pageMatch[1])
+		const slot = slotFromLabel(pageMatch[1])
 		if (slot !== undefined) pm.routeOscToPage(slot, `/${pageMatch[2]}`, args)
 		return
 	}
-}
-
-// Resolve a slot segment that may be a digit (web: 0..7) or a letter (Max: a..h).
-function resolveSlot(seg: string): Slot | undefined {
-	if (/^\d$/.test(seg)) {
-		const n = Number(seg)
-		return n >= 0 && n < SLOT_INDICES.length ? (n as Slot) : undefined
-	}
-	return slotFromLabel(seg)
 }
 
 console.log(`[sim] http://localhost:${PORT} — 8 slots (a–h), default Base.`)
