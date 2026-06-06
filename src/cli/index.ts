@@ -50,7 +50,7 @@ let needsFullPaint = false
 // shift.set() later for identical behavior. Receive-only: shift just alters internal
 // behavior, nothing is emitted. Debounce = leading-edge lockout (see ShiftInput).
 // modifiers exposes live values via getters so it stays the one source of truth.
-const shift = new ShiftInput(20)
+const shift = new ShiftInput(10)
 const modifiers: Modifiers = {
 	held,
 	get shift1() { return shift.shift1 },

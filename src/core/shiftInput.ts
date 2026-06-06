@@ -23,7 +23,7 @@ export class ShiftInput {
 	private last: Record<1 | 2, number> = { 1: 0, 2: 0 }
 
 	constructor(
-		private readonly debounceMs = 20,
+		private readonly debounceMs = 10,
 		private readonly now: () => number = Date.now
 	) {}
 

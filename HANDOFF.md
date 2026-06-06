@@ -75,7 +75,7 @@ vocab + isometric). Files: `src/pages/isometric.ts`, `test/isometric.test.ts`,
 - **Shifts (OSC input, receive-only):** two shift buttons outside the pages, in via
   `/grid/in/shift <1|2> <1|0>`. **No output** — shift only alters internal behavior.
   Debounce = **leading-edge lockout** (`core/shiftInput.ts`, unit-tested): first edge
-  instant, then ~20ms ignore-all to swallow alternating chatter. (A same-state filter
+  instant, then ~10ms ignore-all to swallow alternating chatter. (A same-state filter
   is NOT a debounce — that was the first, broken try.) Surfaced as `ctx.modifiers.
   shift1/shift2` (live getters over one `ShiftInput`); "both held" is the page's call.
   Shared in sim + daemon — a future **local** source calls `shift.set()` for identical

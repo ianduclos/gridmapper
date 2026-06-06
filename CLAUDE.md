@@ -92,7 +92,7 @@ twister's `/twister/...` vocabulary:
 - **Shifts (implemented, receive-only).** Two app-defined shift buttons live OUTSIDE the
   pages. In: `/grid/in/shift <which:1|2> <state:1|0>`. The grid does **not** echo shift —
   it only alters internal behavior. Debounce = **leading-edge lockout** (`core/shiftInput.ts`,
-  `ShiftInput`): first edge takes effect instantly, then ANY edge is ignored for ~20ms,
+  `ShiftInput`): first edge takes effect instantly, then ANY edge is ignored for ~10ms,
   swallowing alternating contact chatter without adding press latency. (NB: a same-state
   filter does NOT debounce — chatter is alternating, so it slips through; that was the
   first, broken attempt.) Surfaced to pages as `ctx.modifiers.shift1` / `shift2` (live
