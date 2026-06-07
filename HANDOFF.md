@@ -47,6 +47,10 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   matching the twister protocol; when we do, **prioritize Max → daemon** (state snapshot
   on request, not on connect). Then daemon slot-control parity (`/grid/in/slot/<a-h>/page`,
   state emit). Plus: single-instance guard.
+- **Background agent:** launchd `com.ianduclos.gridmapper` runs the **sim** always-on
+  (OSC↔Max + hotplug + web UI on 57191, served, not auto-opened). Template + manage cmds
+  in `deploy/`. Holds 57131 + the grid → `launchctl bootout gui/$(id -u)/com.ianduclos.gridmapper`
+  before a manual `npm run sim`; `kickstart -k …` to pick up edits (runs `tsx` on source).
 - **Parked:** web-UI button "bounce" — `transform: translateY(.5px)` on `.cell:active`
   in `web/index.html` (remove system-wide, UI layer, not pages).
 

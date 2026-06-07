@@ -181,6 +181,11 @@ web/index.html           16×8 visualizer (click = key, renders LED frames)
 - `npm run grid:led` — plug in a grid: run an LED sweep.
 - `npm run build` / `npm test` — tsc / vitest.
 
+**Background agent (always-on):** a launchd LaunchAgent `com.ianduclos.gridmapper` runs
+the **sim** in the background (OSC ↔ Max + hotplug + web UI on 57191, served but never
+auto-opened). Template + management commands in `deploy/`. It holds OSC 57131 and the
+grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's agent.)
+
 ## Environment
 
 - Node + TypeScript, NodeNext ESM (note the `.js` import extensions in source).
