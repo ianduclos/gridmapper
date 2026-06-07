@@ -7,6 +7,7 @@
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http"
 import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { WebSocketServer, WebSocket } from "ws"
 
 export interface GridServer {
@@ -27,6 +28,17 @@ export function createGridServer(opts: GridServerOptions): GridServer {
 	const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
 		if (req.method !== "GET") {
 			res.writeHead(405).end("Method Not Allowed")
+			return
+		}
+		// favicon.png lives next to the static index; serve it as an image.
+		if (req.url === "/favicon.png" || req.url === "/favicon.ico") {
+			try {
+				const png = readFileSync(join(dirname(staticFile), "favicon.png"))
+				res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400" })
+				res.end(png)
+			} catch {
+				res.writeHead(404).end("no favicon")
+			}
 			return
 		}
 		try {
