@@ -41,10 +41,9 @@ const BASE_STEP = 0 // bottom-left cell = step 0
 
 const LVL_NORMAL = 2
 const LVL_ROOT = 8
-const LVL_SUSTAIN = 6
 const LVL_HELD = 13
-const LVL_SHIFT_OFF = 4
-const LVL_SHIFT_ON = 13
+const LVL_SUSTAIN = LVL_HELD // sustained notes look the same as a press
+const LVL_SHIFT = 1 // control keys are faint markers
 
 // Single source of truth: drives both runtime clamping and the page descriptor.
 const SPECS: SettingSpec[] = [
@@ -154,11 +153,11 @@ export class IsometricPage implements Page {
 				f[i] = lvl
 			}
 		}
-		// Control keys on the right edge (only when a dead zone exists).
+		// Control keys on the right edge (only when a dead zone exists): faint markers.
 		if (this.hasControls()) {
 			const w = this.size.width, h = this.size.height
-			f[ledIndex(this.size, w - 1, h - 1)] = ctx.modifiers.shift1 ? LVL_SHIFT_ON : LVL_SHIFT_OFF
-			f[ledIndex(this.size, w - 1, h - 2)] = sustain ? LVL_SHIFT_ON : LVL_SHIFT_OFF
+			f[ledIndex(this.size, w - 1, h - 1)] = LVL_SHIFT
+			f[ledIndex(this.size, w - 1, h - 2)] = LVL_SHIFT
 		}
 		return f
 	}
