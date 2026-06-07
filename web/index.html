@@ -291,20 +291,56 @@
 		}
 		const sendKey = (x, y, s) => send("/grid/in/key", [x, y, s]);
 
-		// Press/drag interaction: pressing a cell = key down, release = key up.
-		let down = false;
+		// Pointer interaction. A cell is "held" while the pointer is on it; moving onto
+		// another cell releases the previous one after a tiny delay (a short tail so each
+		// note rings) — so click-dragging across the grid plays it like an instrument.
+		// A plain click is a brief tap; holding without moving stays held until release
+		// (so you can hold the sustain key, etc).
+		const RELEASE_DELAY = 90; // ms tail before key-up
+		let dragging = false;
+		let activeIdx = -1;
+		const downSet = new Set();        // idx currently sent down (awaiting up)
+		const pendingUp = new Map();      // idx -> scheduled key-up timeout
+		const idxOf = (x, y) => y * W + x;
 		const cellFrom = (t) => (t && t.classList && t.classList.contains("cell"))
 			? { x: +t.dataset.x, y: +t.dataset.y } : null;
+
+		function pressCell(c) {
+			const idx = idxOf(c.x, c.y);
+			if (idx === activeIdx) return;
+			const t = pendingUp.get(idx);            // re-entered before its tail expired
+			if (t) { clearTimeout(t); pendingUp.delete(idx); } // still down — keep it
+			if (!downSet.has(idx)) { sendKey(c.x, c.y, 1); downSet.add(idx); }
+			activeIdx = idx;
+			readoutEl.textContent = `${String(c.x).padStart(2)} , ${String(c.y).padStart(2)}  down`;
+		}
+		function releaseCell(idx, delay) {
+			if (idx < 0 || !downSet.has(idx) || pendingUp.has(idx)) return;
+			const x = idx % W, y = Math.floor(idx / W);
+			pendingUp.set(idx, setTimeout(() => {
+				sendKey(x, y, 0); downSet.delete(idx); pendingUp.delete(idx);
+			}, delay));
+		}
+
 		gridEl.addEventListener("pointerdown", (e) => {
 			const c = cellFrom(e.target); if (!c) return;
-			down = true; sendKey(c.x, c.y, 1);
-			readoutEl.textContent = `${String(c.x).padStart(2)} , ${String(c.y).padStart(2)}  down`;
+			dragging = true;
+			pressCell(c);
 		});
-		window.addEventListener("pointerup", (e) => {
-			if (!down) return;
-			const c = cellFrom(e.target);
-			if (c) { sendKey(c.x, c.y, 0); readoutEl.textContent = `${String(c.x).padStart(2)} , ${String(c.y).padStart(2)}  up`; }
-			down = false;
+		window.addEventListener("pointermove", (e) => {
+			if (!dragging) return;
+			const c = cellFrom(e.target); if (!c) return;
+			if (idxOf(c.x, c.y) === activeIdx) return;
+			const prev = activeIdx;
+			activeIdx = -1;
+			releaseCell(prev, RELEASE_DELAY);
+			pressCell(c);
+		});
+		window.addEventListener("pointerup", () => {
+			if (!dragging) return;
+			dragging = false;
+			releaseCell(activeIdx, RELEASE_DELAY);
+			activeIdx = -1;
 		});
 
 		renderToolbar();
