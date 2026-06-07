@@ -2,25 +2,26 @@
  * ------------------------------------------------------------------------------
  * Summary : Isomorphic keyboard on the left 13×8 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
- * Input   : press a key → /grid/out/page/<slot>/note <step> 1; release → … <step> 0.
- *           That cell lights to 13 while held.
- * Display : normal keys = brightness 2, octave-root keys = 8, currently-held = 13.
- *           Columns 13–15 (off the keyboard) stay dark.
+ * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> 1; release → 0.
+ *           Right-edge control keys (test): bottom-right = shift 1, the cell above
+ *           it = shift 2 (sustain pedal). Both route through ctx.setShift, so a
+ *           local shift behaves exactly like one sent over OSC.
+ * Display : keys = brightness 2, octave-root keys = 8, held = 13, sustained = 6.
+ *           Control keys: dim when off, bright when on. Columns 13–14 stay dark.
  * Settings: npo (notes per octave) · vertical (steps per row). Live, two-way over OSC.
- * Rules   : columns 0..12 are the keyboard; x≥13 ignored. Sends note-offs on blur so
- *           a page switch never leaves a hung note in Max.
+ * Rules   : keyboard = columns 0..(keysW-1); right-edge controls only exist when
+ *           there's a dead zone. Releases everything (held + sustained) on blur so a
+ *           page switch never strands a note in Max.
  * ------------------------------------------------------------------------------
- * Step field: moving one column right = +1 step; moving one row UP (toward the top,
- * smaller y) = +`vertical` steps. The bottom-left cell is step 0. We send only the
- * step integer + an on/off flag — no pitch, no velocity. Max maps step→pitch using
- * the synth's tuning, and `npo` is shared so both ends agree on octave size.
+ * Step field: one column right = +1 step; one row UP = +`vertical` steps. Bottom-left
+ * is step 0. We send only the step integer + an on/off flag — no pitch, no velocity.
+ * `npo` does NOT change the step we emit; it sets the octave size for root highlighting
+ * and is shared with Max (in: /grid/in/page/<slot>/setting/npo <n>; out: /settings).
  *
- * `npo` (notes per octave) does NOT change the step we emit. It only sets the octave
- * size used to highlight "root" keys (step ≡ 0 mod npo) and is exchanged with Max so
- * the grid's display reflects the synth in use. Max can push it in:
- *   /grid/in/page/<slot>/setting/npo <n>   (also tolerated: /grid/in/page/<slot>/npo/<n>)
- * and we echo current settings out:
- *   /grid/out/page/<slot>/settings {"npo":…,"vertical":…}
+ * Sustain (shift 2): while held, a keyboard release does NOT send a note-off — the
+ * note is parked in `sustained`. When sustain falls, every parked note is released.
+ * Re-pressing a sustained note re-arms it as held. Sustain reads ctx.modifiers.shift2,
+ * so it works whether the pedal is the local control key OR an external OSC shift.
  */
 
 import {
@@ -40,7 +41,10 @@ const BASE_STEP = 0 // bottom-left cell = step 0
 
 const LVL_NORMAL = 2
 const LVL_ROOT = 8
+const LVL_SUSTAIN = 6
 const LVL_HELD = 13
+const LVL_SHIFT_OFF = 4
+const LVL_SHIFT_ON = 13
 
 // Single source of truth: drives both runtime clamping and the page descriptor.
 const SPECS: SettingSpec[] = [
@@ -62,6 +66,8 @@ export class IsometricPage implements Page {
 	private size: GridSize = { width: 16, height: 8 }
 	private keysW = KEYS_W
 	private held = new Set<number>() // ledIndex of currently-held keyboard cells
+	private sustained = new Set<number>() // released-but-held by the sustain pedal
+	private prevSustain = false
 
 	// Live settings (defaults from SPECS).
 	private npo = SPEC_BY_KEY.get("npo")!.default as number
@@ -71,6 +77,8 @@ export class IsometricPage implements Page {
 		this.size = ctx.size
 		this.keysW = Math.min(KEYS_W, this.size.width)
 		this.held.clear()
+		this.sustained.clear()
+		this.prevSustain = false
 		this.announce(ctx)
 	}
 
@@ -79,30 +87,37 @@ export class IsometricPage implements Page {
 	}
 
 	onBlur(ctx: PageContext) {
-		// Release everything held so a page switch doesn't strand a note on in Max.
-		for (const i of this.held) {
-			const x = i % this.size.width
-			const y = Math.floor(i / this.size.width)
-			ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, this.step(x, y), 0)
-		}
+		// Release everything (held + sustained) so a page switch can't strand a note.
+		for (const i of this.held) this.sendNote(ctx, i, false)
+		for (const i of this.sustained) this.sendNote(ctx, i, false)
 		this.held.clear()
+		this.sustained.clear()
+		this.prevSustain = false
+		// Drop our shifts so they don't linger after we leave the page.
+		ctx.setShift(1, false)
+		ctx.setShift(2, false)
 	}
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
+		// Right-edge control keys → local shifts (route through the shared ShiftInput).
+		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
+		if (this.isShift2(ev.x, ev.y)) { ctx.setShift(2, !!ev.s); return }
+
 		if (ev.x < 0 || ev.x >= this.keysW || ev.y < 0 || ev.y >= this.size.height) return
 		const i = ledIndex(this.size, ev.x, ev.y)
-		const step = this.step(ev.x, ev.y)
 		if (ev.s) {
+			this.sustained.delete(i) // re-pressing a sustained note re-arms it as held
 			this.held.add(i)
-			ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, step, 1)
+			this.sendNote(ctx, i, true)
 		} else {
 			this.held.delete(i)
-			ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, step, 0)
+			if (ctx.modifiers.shift2) this.sustained.add(i) // sustain: defer the note-off
+			else this.sendNote(ctx, i, false)
 		}
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
-	//   /setting/<key> <value> · /<key> <value> · /<key>/<value> · /settings/get
+	//   /setting/<key> <v> · /<key> <v> · /<key>/<v> · /settings/get
 	onOsc(path: string, args: any[], ctx: PageContext) {
 		const parts = path.split("/").filter(Boolean)
 		let i = 0
@@ -120,15 +135,30 @@ export class IsometricPage implements Page {
 		this.emitSettings(ctx)
 	}
 
-	render(): LedFrame {
+	render(ctx: PageContext): LedFrame {
+		// Sustain pedal (shift 2): on its falling edge, release everything sustained.
+		const sustain = ctx.modifiers.shift2
+		if (this.prevSustain && !sustain) {
+			for (const i of this.sustained) this.sendNote(ctx, i, false)
+			this.sustained.clear()
+		}
+		this.prevSustain = sustain
+
 		const f = makeFrame(this.size)
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = 0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
 				let lvl = isRootStep(this.step(x, y), this.npo) ? LVL_ROOT : LVL_NORMAL
+				if (this.sustained.has(i)) lvl = LVL_SUSTAIN
 				if (this.held.has(i)) lvl = LVL_HELD
 				f[i] = lvl
 			}
+		}
+		// Control keys on the right edge (only when a dead zone exists).
+		if (this.hasControls()) {
+			const w = this.size.width, h = this.size.height
+			f[ledIndex(this.size, w - 1, h - 1)] = ctx.modifiers.shift1 ? LVL_SHIFT_ON : LVL_SHIFT_OFF
+			f[ledIndex(this.size, w - 1, h - 2)] = sustain ? LVL_SHIFT_ON : LVL_SHIFT_OFF
 		}
 		return f
 	}
@@ -141,6 +171,24 @@ export class IsometricPage implements Page {
 
 	private step(x: number, y: number): number {
 		return stepAt(x, y, this.size.height, this.vertical)
+	}
+
+	private sendNote(ctx: PageContext, i: number, on: boolean) {
+		const x = i % this.size.width
+		const y = Math.floor(i / this.size.width)
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, this.step(x, y), on ? 1 : 0)
+	}
+
+	// Control keys live on the right edge, but only when there's a dead zone right of
+	// the keyboard (so we never steal a playing cell on a narrow grid).
+	private hasControls(): boolean {
+		return this.size.width - 1 >= this.keysW
+	}
+	private isShift1(x: number, y: number): boolean {
+		return this.hasControls() && x === this.size.width - 1 && y === this.size.height - 1
+	}
+	private isShift2(x: number, y: number): boolean {
+		return this.hasControls() && x === this.size.width - 1 && y === this.size.height - 2
 	}
 
 	/** Clamp+store one setting; returns true if it was a known key. */

@@ -151,7 +151,8 @@ src/
   pages/isometric.ts     IsometricPage — isomorphic keyboard (left 13×8) as a pure
                          integer STEP FIELD: emits /grid/out/page/<slot>/note <step> <1|0>
                          (Max owns step→pitch). Live settings npo + vertical, two-way over
-                         OSC (worked example for the settings contract).
+                         OSC. Right-edge control keys are LOCAL shifts via ctx.setShift
+                         (bottom-right = shift 1; above it = shift 2 = sustain pedal).
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])

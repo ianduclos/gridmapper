@@ -78,8 +78,10 @@ vocab + isometric). Files: `src/pages/isometric.ts`, `test/isometric.test.ts`,
   instant, then ~10ms ignore-all to swallow alternating chatter. (A same-state filter
   is NOT a debounce — that was the first, broken try.) Surfaced as `ctx.modifiers.
   shift1/shift2` (live getters over one `ShiftInput`); "both held" is the page's call.
-  Shared in sim + daemon — a future **local** source calls `shift.set()` for identical
-  behavior.
+  Shared in sim + daemon. **Local sources** call `ctx.setShift(which, down)` (routes
+  through the same ShiftInput) — `isometric` uses its right-edge control keys as local
+  shifts: bottom-right = shift 1, the cell above = shift 2 = **sustain pedal** (held
+  keyboard releases are deferred until the pedal falls). Verified live via WS note events.
 
 ### 2026-06-06 — Gemini
 Scanned the codebase to orient and grasp the project state. Created a persistent context artifact to keep notes on the architecture and boundaries. The Page Protocol and separation of concerns are extremely clean. 

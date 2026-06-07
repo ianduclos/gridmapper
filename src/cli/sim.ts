@@ -91,6 +91,7 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 	size: grid.size,
 	modifiers,
 	osc: { send: emitOut },
+	setShift: (which, down) => shift.set(which, down),
 }
 
 const pm = new PageManager(baseCtx, (_frame, reason) => {

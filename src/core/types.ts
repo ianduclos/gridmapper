@@ -62,6 +62,13 @@ export interface PageContext {
 	slotLabel: SlotLabel
 	/** Request a re-render of this page; if focused, the loop pushes it next frame. */
 	setDirty: () => void
+	/**
+	 * Set an app-defined shift (which = 1 | 2) from a page acting as a LOCAL shift
+	 * source (e.g. a held cell). Routes through the same debounced ShiftInput as
+	 * external OSC, so local + external shifts behave identically and both surface
+	 * via `ctx.modifiers.shift1` / `shift2`.
+	 */
+	setShift: (which: number, down: boolean) => void
 }
 
 export interface Page {
