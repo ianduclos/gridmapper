@@ -7,6 +7,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"test": "vitest run",
+		"dev": "tsx src/cli/index.ts",
 		"sim": "tsx src/cli/sim.ts",
 		"grid:list": "tsx src/cli/grid-list.ts",
 		"grid:log": "tsx src/cli/grid-log.ts",

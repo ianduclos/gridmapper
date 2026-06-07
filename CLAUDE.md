@@ -138,6 +138,9 @@ src/
   io/serialoscDriver.ts  GridDriver: connectGrid() (real) + NullGrid (sim)  [the device seam]
   io/gridServer.ts       HTTP + WS server for the web visualizer
   io/mirrorGrid.ts       GridDriver wrapper: taps LED writes so the web mirrors real HW
+  io/gridConnection.ts   runtime HOTPLUG: stable MirrorGrid facade + swap-on-plug-in;
+                         the serialosc gotchas live here. Used by sim AND daemon.
+  core/shiftInput.ts     two shift buttons, leading-edge lockout debounce (ctx.modifiers)
   render/renderLoop.ts   fixed-rate clock; single output path. FRAME_FPS=58 (just under
                          the grid's 60fps serialosc redraw). Calls focused page.render() each frame.
   render/ledReconciler.ts diff vs last-sent; batch per 8×8 quadrant (map vs set)
@@ -222,11 +225,11 @@ are skipped by the loader. 16 unit tests pass.
   overlay for page focus.
 - `systemConfig` + `presetStore` and the full `/grid/in` ↔ `/grid/out` Max handshake
   (state snapshot on connect, per-patch interface config).
-- Single-instance guard. (Hotplug is done in the **sim**: `MirrorGrid` makes the
-  device swappable at runtime; the watcher polls serialosc **only while disconnected**
-  to catch a plug-in, and pushes the current screen on connect. It never auto-detaches;
-  the indicator click forces a fresh handshake for genuine unplug recovery. The
-  **daemon** still does single connect-or-exit.)
+- Single-instance guard. (**Hotplug now lives in `io/gridConnection.ts` and is used by
+  BOTH the sim and the daemon** — start on a NullGrid, swap in the real grid via
+  `MirrorGrid` when serialosc reports one, poll discovery **only while disconnected**,
+  never auto-detach; `reconnect()` forces a fresh handshake for genuine unplug recovery
+  (sim's indicator click / `/grid/in/connect`). The daemon no longer connects-or-exits.)
 
 > **Two serialosc gotchas — both about not disturbing a live connection (cost ~2h):**
 > 1. Querying discovery (`/serialosc/list`) **while connected breaks that device's key

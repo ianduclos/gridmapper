@@ -9,8 +9,7 @@
 //   npm run sim            (auto-connect to the real grid when present)
 //   npm run sim -- --null  (force the simulated grid; no auto-connect)
 import { resolve as resolvePath } from "node:path"
-import { connectGrid, listDevices, NullGrid, type GridDriver } from "../io/serialoscDriver.js"
-import { MirrorGrid } from "../io/mirrorGrid.js"
+import { GridConnection } from "../io/gridConnection.js"
 import { createGridServer } from "../io/gridServer.js"
 import { createOsc } from "../io/osc.js"
 import { LedReconciler } from "../render/ledReconciler.js"
@@ -24,10 +23,25 @@ const PORT = Number(process.env.GRID_UI_PORT ?? 57191) // 57190 is twistermapper
 const UI_INDEX = resolvePath(process.cwd(), "web/index.html")
 const forceNull = process.argv.includes("--null")
 
-// Start on a NullGrid; the watcher / connect button swaps in real hardware later.
-const grid = new MirrorGrid(new NullGrid({ width: 16, height: 8 }), (levels) => broadcastLeds(levels))
+const held = new Set<number>()
+
+// Runtime hotplug: a STABLE grid facade whose inner device swaps live (NullGrid → real
+// grid on plug-in). All the serialosc gotchas live in io/gridConnection.ts.
+const conn = new GridConnection({
+	size: { width: 16, height: 8 },
+	forceNull,
+	onLeds: (levels) => broadcastLeds(levels),
+	onKey: (e) => {
+		const i = e.y * w + e.x
+		if (e.s) held.add(i)
+		else held.delete(i)
+		pm.onKey(e)
+	},
+	onRepaint: () => { needsFullPaint = true },
+	onDeviceChange: () => broadcastDevice(),
+})
+const grid = conn.grid
 const { width: w, height: h } = grid.size
-const isConnected = () => grid.id !== "null-grid"
 
 // --- 8 page slots, all Base by default ---
 const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
@@ -36,7 +50,6 @@ const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
 const SPECS_MAP = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageSettings(n)]))
 
 // --- Web server ---
-const held = new Set<number>()
 let broadcastLeds: (levels: Uint8Array) => void = () => {}
 const server = createGridServer({
 	port: PORT,
@@ -115,68 +128,9 @@ pm.focus(0 as Slot)
 needsFullPaint = true
 renderLoop.start()
 
-// Physical keys (from whichever device is attached) → focused page.
-grid.onKey((e) => {
-	const i = e.y * w + e.x
-	if (e.s) held.add(i)
-	else held.delete(i)
-	pm.onKey(e)
-})
-
-// --- Connection management (hot-swap the device under the running pipeline) ---
-// Two hard-won rules about serialosc, both about NOT disturbing a live connection:
-//  1. Do NOT poll discovery (/serialosc/list) while connected — it breaks the device's
-//     key routing to us (presses silently stop). Poll only while disconnected.
-//  2. Do NOT tear down on a cable glitch. serialosc pushes /sys/disconnect then
-//     /sys/connect around a USB hiccup but KEEPS the same device server + routing, so
-//     keys resume on their own. Reconnecting mid-glitch is what loses key routing.
-// So: auto-connect on plug-in (poll while disconnected), never auto-detach, and let
-// the indicator click force a fresh handshake for genuine unplug recovery.
-let connecting = false
-
-async function tryConnect(): Promise<void> {
-	if (forceNull || connecting || isConnected()) return
-	connecting = true
-	try {
-		const driver = await connectGrid({ timeoutMs: 1500 })
-		const previous = grid.current()
-		grid.attach(driver)
-		if (previous.id !== "null-grid") try { previous.close() } catch {}
-		needsFullPaint = true // push the current screen to the freshly connected device
-		broadcastDevice()
-		console.log(`[sim] grid connected: ${driver.id} → syncing current screen`)
-	} catch {
-		// no device / handshake failed — stay on NullGrid
-	} finally {
-		connecting = false
-	}
-}
-
-function detach() {
-	if (!isConnected()) return
-	const previous = grid.current()
-	grid.attach(new NullGrid({ width: w, height: h }))
-	try { previous.close() } catch {}
-	needsFullPaint = true
-	broadcastDevice()
-}
-
-// Hotplug watcher: only runs while DISCONNECTED, to catch a plug-in. Once connected
-// it idles — we never auto-detach, so the live connection is left untouched.
-async function pollDevices() {
-	if (forceNull || connecting || isConnected()) return
-	let devices
-	try {
-		devices = await listDevices({ timeoutMs: 400 })
-	} catch {
-		return
-	}
-	if (devices.length) void tryConnect()
-}
-if (!forceNull) {
-	void tryConnect() // try immediately on boot
-	setInterval(() => void pollDevices(), 2000)
-}
+// Keys are wired through GridConnection.onKey (survives device swaps). Start the
+// hotplug watcher: auto-connect on plug-in, never auto-detach (see gridConnection.ts).
+conn.start()
 
 // --- Control + key routing (web → app) ---
 function routeControl(path: string, args: any[]) {
@@ -189,11 +143,8 @@ function routeControl(path: string, args: any[]) {
 		return
 	}
 	if (path === "/grid/in/connect") {
-		// Indicator click → force a FRESH handshake (manual recovery after a real
-		// unplug). Drop any current connection first, then reconnect. Reports the
-		// result either way so the UI can stop showing "connecting…".
-		if (isConnected()) detach()
-		void tryConnect().then(() => broadcastDevice())
+		// Indicator click → force a FRESH handshake (manual recovery after a real unplug).
+		void conn.reconnect()
 		return
 	}
 	// /grid/in/shift <which:1|2> <state:1|0> — external shift buttons (debounced).
@@ -240,7 +191,7 @@ process.on("SIGINT", () => {
 	renderLoop.stop()
 	try { grid.ledLevelAll(0) } catch {}
 	setTimeout(() => {
-		try { grid.close() } catch {}
+		try { conn.close() } catch {}
 		try { osc.close() } catch {}
 		server.close()
 		process.exit(0)

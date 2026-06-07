@@ -40,17 +40,40 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   connect indicator); physical + web key input, mirrored both ways. **Page-settings
   panel is live** (declared `SettingSpec[]` → controls → page, two-way over OSC). The
   **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web; inbound `routeControl`).
-  `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints).
-  21 unit tests green.
-- **Next / open:** Max OSC **handshake** (systemConfig + presetStore: state snapshot on
-  connect, per-patch interface config — the big twister-port still pending); single-
-  instance guard; give the daemon the sim's hotplug + OSC bridge parity.
+  `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints) with
+  local shift keys + a sustain pedal. **Runtime hotplug now lives in `io/gridConnection.ts`
+  and is shared by the sim AND the daemon** (daemon no longer connects-or-exits). 28 tests green.
+- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — do it calmly,
+  matching the twister protocol; when we do, **prioritize Max → daemon** (state snapshot
+  on request, not on connect). Then daemon slot-control parity (`/grid/in/slot/<a-h>/page`,
+  state emit). Plus: single-instance guard.
 - **Parked:** web-UI button "bounce" — `transform: translateY(.5px)` on `.cell:active`
   in `web/index.html` (remove system-wide, UI layer, not pages).
 
 ---
 
 ## Session log (newest first)
+### 2026-06-07 — Claude
+Shifts in use + **runtime hotplug shared by sim and daemon**. (1) `isometric`: right-edge
+control keys are LOCAL shifts via new `ctx.setShift` (bottom-right = shift 1; above =
+shift 2 = **sustain pedal** — releases deferred until the pedal falls; verified live via
+WS note events). Visual: sustained notes at press brightness (13), shift markers at 1.
+(2) Earlier this session: shift OSC input + **leading-edge lockout debounce** (10ms,
+`core/shiftInput.ts`, 7 unit tests) — the first same-state-only attempt was a no-op on
+chatter; shift is **receive-only** (no `/grid/out/shift`). (3) **Hotplug extracted** to
+`io/gridConnection.ts` (MirrorGrid swap + watcher + the serialosc gotchas, one place);
+both `sim.ts` and `cli/index.ts` use it — daemon now starts on a NullGrid and hot-connects
+instead of connect-or-exit. Added the missing `dev` npm script. (4) Unified slot dialect
+to letters (a–h) across web + sim. Files: `src/pages/isometric.ts`, `src/core/{types,
+shiftInput}.ts`, `src/io/gridConnection.ts`, `src/cli/{sim,index}.ts`, `web/index.html`,
+`package.json`, docs.
+- **Verified?** `npx tsc --noEmit` clean; 28 tests green. Live: daemon boots on NullGrid
+  then auto-connects to `m1000279`; sim reconnects + sustain + brightnesses confirmed via
+  WS. Hotplug **unplug/replug not yet tested on hardware** (auto-connect-on-plug-in is).
+- **Next:** Max handshake (calmly), Max→daemon first. Then daemon slot-control parity.
+- **Gotcha:** the serialosc rules (don't poll discovery while connected; don't tear down
+  on `/sys/disconnect`) now live ONLY in `io/gridConnection.ts` — change them there.
+
 ### 2026-06-06 — Claude
 Wired the **page-settings panel** + per-page settings OSC round-trip, and reworked
 `isometric` into a **step field**. (1) `isometric.ts`: emits `/grid/out/page/<slot>/note

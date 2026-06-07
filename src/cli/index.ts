@@ -8,7 +8,7 @@
 //   npm run dev            (real hardware)
 //   npm run dev -- --null  (no hardware; NullGrid)
 
-import { connectGrid, NullGrid, type GridDriver } from "../io/serialoscDriver.js"
+import { GridConnection } from "../io/gridConnection.js"
 import { createOsc } from "../io/osc.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
@@ -25,20 +25,32 @@ import {
 } from "../core/types.js"
 
 const useNull = process.argv.includes("--null")
+const held = new Set<number>()
 
-const grid: GridDriver = useNull
-	? new NullGrid({ width: 16, height: 8 })
-	: await connectGrid().catch((err) => {
-			console.error(`[grid] ${err.message}`)
-			console.error("Tip: run with --null to develop without hardware.")
-			process.exit(1)
-		})
+// Runtime hotplug: a STABLE grid facade whose inner device swaps live. Starts on a
+// NullGrid and hot-connects when serialosc reports a grid — no more connect-or-exit, so
+// the daemon can launch before the grid is plugged in and recover from an unplug. All
+// the serialosc gotchas live in io/gridConnection.ts.
+const conn = new GridConnection({
+	size: { width: 16, height: 8 },
+	forceNull: useNull,
+	onKey: (e) => {
+		const i = e.y * w + e.x
+		if (e.s) held.add(i)
+		else held.delete(i)
+		pm.onKey(e)
+	},
+	onRepaint: () => { needsFullPaint = true },
+})
+const grid = conn.grid
+const { width: w } = grid.size
 
-console.log(`[grid] ${useNull ? "NullGrid" : "connected"} ${grid.size.width}×${grid.size.height}`)
+console.log(
+	`[grid] ${useNull ? "NullGrid (forced)" : "starting on NullGrid — hot-connects when a grid appears"} ${grid.size.width}×${grid.size.height}`
+)
 
 // --- OSC to/from Max (5713x block; clear of twistermapper) ---
 const osc = createOsc()
-const held = new Set<number>()
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => osc.send(path, ...args)
 osc.send("/grid/out/hello")
 
@@ -86,19 +98,20 @@ pm.focus(0 as Slot)
 needsFullPaint = true
 renderLoop.start()
 
-// --- Input: grid keys → focused page (and track held for app-defined modifiers) ---
-grid.onKey((e) => {
-	const i = e.y * grid.size.width + e.x
-	if (e.s) held.add(i)
-	else held.delete(i)
-	pm.onKey(e)
-})
+// Keys are wired through GridConnection.onKey (survives device swaps). Start the hotplug
+// watcher: auto-connect on plug-in, never auto-detach (see gridConnection.ts).
+conn.start()
 
 // --- OSC in from Max → routing ---
 osc.onMessage((path, args) => {
 	// /grid/in/shift <which:1|2> <state:1|0> — external shift buttons (debounced).
 	if (path === "/grid/in/shift") {
 		shift.set(Number(args[0]), !!Number(args[1]))
+		return
+	}
+	// /grid/in/connect — force a fresh handshake (manual unplug recovery).
+	if (path === "/grid/in/connect") {
+		void conn.reconnect()
 		return
 	}
 	// /grid/in/focus/page <a..h>
@@ -124,7 +137,7 @@ const shutdown = () => {
 	renderLoop.stop()
 	try { grid.ledLevelAll(0) } catch {}
 	setTimeout(() => {
-		try { grid.close() } catch {}
+		try { conn.close() } catch {}
 		osc.close()
 		process.exit(0)
 	}, 60)
