@@ -68,12 +68,17 @@ chatter; shift is **receive-only** (no `/grid/out/shift`). (3) **Hotplug extract
 `io/gridConnection.ts` (MirrorGrid swap + watcher + the serialosc gotchas, one place);
 both `sim.ts` and `cli/index.ts` use it — daemon now starts on a NullGrid and hot-connects
 instead of connect-or-exit. Added the missing `dev` npm script. (4) Unified slot dialect
-to letters (a–h) across web + sim. Files: `src/pages/isometric.ts`, `src/core/{types,
-shiftInput}.ts`, `src/io/gridConnection.ts`, `src/cli/{sim,index}.ts`, `web/index.html`,
-`package.json`, docs.
+to letters (a–h) across web + sim. (5) Web **favicon** (served by `gridServer` at
+`/favicon.png`). (6) Web **click-drag to play**: held cell follows the pointer with a
+~90ms release tail (strum); plain click = tap; hold still works. (7) **Background launchd
+agent** `com.ianduclos.gridmapper` runs the sim always-on (UI served on 57191, not
+auto-opened); template + cmds in `deploy/`. Files: `src/pages/isometric.ts`, `src/core/
+{types,shiftInput}.ts`, `src/io/{gridConnection,gridServer}.ts`, `src/cli/{sim,index}.ts`,
+`web/{index.html,favicon.png}`, `package.json`, `deploy/`, docs.
 - **Verified?** `npx tsc --noEmit` clean; 28 tests green. Live: daemon boots on NullGrid
   then auto-connects to `m1000279`; sim reconnects + sustain + brightnesses confirmed via
   WS. Hotplug **unplug/replug not yet tested on hardware** (auto-connect-on-plug-in is).
+  Agent verified: serves UI, connects to `m1000279`, KeepAlive respawns after kill.
 - **Next:** Max handshake (calmly), Max→daemon first. Then daemon slot-control parity.
 - **Gotcha:** the serialosc rules (don't poll discovery while connected; don't tear down
   on `/sys/disconnect`) now live ONLY in `io/gridConnection.ts` — change them there.
