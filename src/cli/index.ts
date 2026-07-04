@@ -14,18 +14,27 @@ import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
+import { createOscRouter } from "../core/oscRouter.js"
 import { pageFactory, DEFAULT_PAGE } from "../pages/registry.js"
 import {
 	type PageContext,
 	type Slot,
 	type Modifiers,
+	type KeyEvent,
 	SLOT_INDICES,
-	slotFromLabel,
-	slotLabel,
 } from "../core/types.js"
 
 const useNull = process.argv.includes("--null")
 const held = new Set<number>()
+
+// Shared by the physical grid AND the virtual /grid/in/key OSC path (below) — one
+// held-tracking implementation, not two.
+function handleKey(e: KeyEvent) {
+	const i = e.y * w + e.x
+	if (e.s) held.add(i)
+	else held.delete(i)
+	pm.onKey(e)
+}
 
 // Runtime hotplug: a STABLE grid facade whose inner device swaps live. Starts on a
 // NullGrid and hot-connects when serialosc reports a grid — no more connect-or-exit, so
@@ -34,16 +43,14 @@ const held = new Set<number>()
 const conn = new GridConnection({
 	size: { width: 16, height: 8 },
 	forceNull: useNull,
-	onKey: (e) => {
-		const i = e.y * w + e.x
-		if (e.s) held.add(i)
-		else held.delete(i)
-		pm.onKey(e)
-	},
+	onKey: handleKey,
 	onRepaint: () => { needsFullPaint = true },
 })
 const grid = conn.grid
 const { width: w } = grid.size
+
+// --- 8 page slots, all Base by default (mirrors sim.ts) ---
+const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
 
 console.log(
 	`[grid] ${useNull ? "NullGrid (forced)" : "starting on NullGrid — hot-connects when a grid appears"} ${grid.size.width}×${grid.size.height}`
@@ -102,36 +109,19 @@ renderLoop.start()
 // watcher: auto-connect on plug-in, never auto-detach (see gridConnection.ts).
 conn.start()
 
-// --- OSC in from Max → routing ---
-osc.onMessage((path, args) => {
-	// /grid/in/shift <which:1|2> <state:1|0> — external shift buttons (debounced).
-	if (path === "/grid/in/shift") {
-		shift.set(Number(args[0]), !!Number(args[1]))
-		return
-	}
-	// /grid/in/connect — force a fresh handshake (manual unplug recovery).
-	if (path === "/grid/in/connect") {
-		void conn.reconnect()
-		return
-	}
-	// /grid/in/focus/page <a..h>
-	if (path === "/grid/in/focus/page") {
-		const slot = typeof args[0] === "string" ? slotFromLabel(args[0]) : undefined
-		if (slot !== undefined) {
-			pm.focus(slot)
-			emitOut("/grid/out/focus/page", slotLabel(slot))
-		}
-		return
-	}
-	// /grid/in/page/<a..h>/<rest> → page.onOsc(/<rest>)
-	const m = path.match(/^\/grid\/in\/page\/([a-hA-H])\/(.+)$/)
-	if (m) {
-		const slot = slotFromLabel(m[1])
-		if (slot !== undefined) pm.routeOscToPage(slot, `/${m[2]}`, args)
-	}
-})
+// --- OSC in from Max → routing (same dialect as sim.ts's web + Max routing) ---
+osc.onMessage(
+	createOscRouter({
+		pm,
+		shift,
+		reconnect: () => conn.reconnect(),
+		onKey: handleKey,
+		emit: emitOut,
+		slotPages,
+	})
+)
 
-console.log("[daemon] up. OSC in 57131 / out 57130. Page 'Basic' in slot a — press the grid.")
+console.log("[daemon] up. OSC in 57131 / out 57130. 8 slots (a–h), default Base — press the grid.")
 
 const shutdown = () => {
 	renderLoop.stop()

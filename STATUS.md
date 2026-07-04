@@ -1,12 +1,12 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-06-13
+updated: 2026-07-04
 machine: mac
-summary: Working multi-page monome 128 brain — serialosc hotplug shared by sim and daemon, settings round-trip with Max, launchd agent runs the sim always-on; 28 tests green.
+summary: Working multi-page monome 128 brain — control routing (key/shift/focus/slot-page) now one shared dispatcher used by sim and daemon, closing the daemon's slot/page parity gap; 36 tests green.
 next:
+  - kickstart the launchd agent to pick up the oscRouter change
   - Max OSC handshake (systemConfig + presetStore), Max→daemon first
-  - Daemon slot-control parity (/grid/in/slot/<a-h>/page, state emit)
   - Single-instance guard
 handoff_for: null
 ---

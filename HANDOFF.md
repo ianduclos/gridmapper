@@ -1,3 +1,9 @@
+---
+project: gridmapper
+updated: 2026-07-04
+entries: 0
+---
+
 # gridmapper — Session Handoff
 
 **Read this first.** Single shared source of truth for *where we are* and *what
@@ -39,14 +45,18 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   `isometric`, `toggle`); two-color web UI (slot chips + page dropdown + clickable
   connect indicator); physical + web key input, mirrored both ways. **Page-settings
   panel is live** (declared `SettingSpec[]` → controls → page, two-way over OSC). The
-  **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web; inbound `routeControl`).
+  **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web). **Control routing
+  (key/connect/shift/focus/slot-page/page-osc) is now a single shared dispatcher,
+  `core/oscRouter.ts`, used by both `sim.ts` and the daemon** — this closed the daemon's
+  missing slot/page parity (`/grid/in/slot/<a-h>/page` now works headless too).
   `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints) with
-  local shift keys + a sustain pedal. **Runtime hotplug now lives in `io/gridConnection.ts`
-  and is shared by the sim AND the daemon** (daemon no longer connects-or-exits). 28 tests green.
-- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — do it calmly,
-  matching the twister protocol; when we do, **prioritize Max → daemon** (state snapshot
-  on request, not on connect). Then daemon slot-control parity (`/grid/in/slot/<a-h>/page`,
-  state emit). Plus: single-instance guard.
+  local shift keys + a sustain pedal. **Runtime hotplug lives in `io/gridConnection.ts`
+  and is shared by the sim AND the daemon** (daemon no longer connects-or-exits). 36 tests green.
+- **Next / open:** the launchd agent is still running the pre-oscRouter code —
+  `kickstart -k` to pick up this session's changes. Then: Max OSC **handshake**
+  (`systemConfig` + `presetStore`) — do it calmly, matching the twister protocol;
+  prioritize **Max → daemon** (state snapshot on request, not on connect). Plus:
+  single-instance guard.
 - **Background agent:** launchd `com.ianduclos.gridmapper` runs the **sim** always-on
   (OSC↔Max + hotplug + web UI on 57191, served, not auto-opened). Template + manage cmds
   in `deploy/`. Holds 57131 + the grid → `launchctl bootout gui/$(id -u)/com.ianduclos.gridmapper`
@@ -57,6 +67,24 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-07-04 — Claude
+Extracted the duplicated `/grid/in/...` control-routing handler (previously hand-copied
+between `sim.ts` and `cli/index.ts`) into one shared `core/oscRouter.ts`. This fixed a
+real drift bug: the daemon had silently lost `/grid/in/slot/<a-h>/page` handling — Max
+could focus a slot on the headless daemon but never assign a page into one. Also fixed a
+stale log line ("Page 'Basic' in slot a") and removed two now-redundant `needsFullPaint =
+true` lines in `sim.ts` (PageManager's `onFrame(..., "focus")` already covers both the
+focus and slot-load paths). Files: `src/core/oscRouter.ts` (new), `test/oscRouter.test.ts`
+(new, 8 tests), `src/cli/{sim,index}.ts`, `CLAUDE.md`.
+- **Verified?** `npm run build` clean; `npm test` 36/36 green. Did NOT run `npm run sim`
+  or the daemon directly — the launchd agent holds port 57131 + the grid.
+- **Next:** the launchd agent needs a `kickstart -k` to pick up this change (see Current
+  state above) before Max can rely on daemon slot/page parity. Then the Max handshake.
+- **Also brainstormed** (not started): StepSeq page, scale-mask setting for isometric, a
+  system overlay layer above the focused page for a Main-style focus switcher, decay-trail
+  frame effect, key-event recorder for page tests, `/serialosc/notify` to replace the
+  discovery poll. Chord-latch-on-shift-1 idea parked — shifts are mostly page-specific.
+
 ### 2026-06-07 — Claude
 Shifts in use + **runtime hotplug shared by sim and daemon**. (1) `isometric`: right-edge
 control keys are LOCAL shifts via new `ctx.setShift` (bottom-right = shift 1; above =

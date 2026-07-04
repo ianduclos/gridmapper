@@ -141,6 +141,8 @@ src/
   io/gridConnection.ts   runtime HOTPLUG: stable MirrorGrid facade + swap-on-plug-in;
                          the serialosc gotchas live here. Used by sim AND daemon.
   core/shiftInput.ts     two shift buttons, leading-edge lockout debounce (ctx.modifiers)
+  core/oscRouter.ts      the ONE control-routing dialect (key/connect/shift/focus/slot/
+                         page-osc), shared by sim.ts (web + Max) and index.ts (daemon)
   render/renderLoop.ts   fixed-rate clock; single output path. FRAME_FPS=58 (just under
                          the grid's 60fps serialosc redraw). Calls focused page.render() each frame.
   render/ledReconciler.ts diff vs last-sent; batch per 8×8 quadrant (map vs set)
@@ -215,7 +217,13 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
 diffing, routing, and timing. **Per-frame render model:** the loop calls the focused
 page's `render()` every frame, so pages animate by reading a clock — no timers, no
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
-are skipped by the loader. 16 unit tests pass.
+are skipped by the loader. 36 unit tests pass.
+
+**Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
+dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
+used by both `cli/sim.ts` (web + Max) and `cli/index.ts` (the daemon), so the daemon no
+longer lacks slot/page assignment the way it used to when the two entry points
+duplicated this logic by hand.
 
 **Known polish (parked):** web-UI button "bounce" = `transform: translateY(.5px)` on
 `.cell:active` in `web/index.html` — to be removed system-wide (UI layer, not pages).
