@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-07-04
+updated: 2026-07-07
 entries: 0
 ---
 
@@ -8,16 +8,20 @@ entries: 0
 
 **Read this first.** Single shared source of truth for *where we are* and *what
 changed*, across sessions and across agents — **Claude Code** (main environment) and
-**Gemini / Antigravity** (occasional). It lives in the repo so it travels with the
-code (unlike any agent's private memory).
+**Codex** (backup bench; Gemini/Antigravity appears in older entries). It lives in
+the repo so it travels with the code (unlike any agent's private memory).
 
 ## Who does what
 - **Claude Code** — primary environment; structural & architectural work (driver,
-  render loop, reconciler, page system, connection/hotplug, OSC).
-- **Antigravity (Gemini)** — occasional, smaller/contained tasks: UI tweaks, authoring
-  a new page (follow `docs/PAGE_PROTOCOL.md`), contained bug fixes, copy/content. If a
-  task turns structural, **don't force it** — note it in the Session log and leave it
-  for Claude.
+  render loop, reconciler, page system, connection/hotplug, OSC) and ecosystem
+  publishing (`STATUS.md`, the cross-project change feed, pushes).
+- **Codex** — backup bench, two modes: (1) **heavy mechanical work under a written
+  brief** from Claude (a Session-log "next" item, a `###` entry above, or a spec file)
+  — refactor sweeps, test buildout, iterate-until-green loops; (2) **overflow** when
+  Claude is at usage limits. Structural changes need a brief that says so; if a task
+  outgrows its brief, note it in the Session log and stop rather than improvise. More
+  authority (STATUS.md, push, agent restarts) only when Ian explicitly grants it.
+- **Ian** — decides direction, plays the grid, grants exceptions.
 - Deep reference: `CLAUDE.md` (architecture, file map, **invariants & gotchas**);
   `docs/PAGE_PROTOCOL.md` (how to author a page).
 
@@ -67,6 +71,14 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-07-07 — Claude
+Updated the agent roster: **Codex** replaces Gemini/Antigravity as the named backup
+agent (heavy briefs + overflow lanes — see *Who does what*). Rewrote `AGENTS.md`
+accordingly; `GEMINI.md` left in place. No code changes.
+- **Verified?** N/A (docs only).
+- **Next:** unchanged — `kickstart -k` the launchd agent, then the Max handshake
+  (see Current state).
+
 ### 2026-07-04 — Claude
 Extracted the duplicated `/grid/in/...` control-routing handler (previously hand-copied
 between `sim.ts` and `cli/index.ts`) into one shared `core/oscRouter.ts`. This fixed a
