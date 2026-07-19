@@ -12,6 +12,7 @@ import { resolve as resolvePath } from "node:path"
 import { GridConnection } from "../io/gridConnection.js"
 import { createGridServer } from "../io/gridServer.js"
 import { createOsc } from "../io/osc.js"
+import { loadSettings } from "../core/settings.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
@@ -84,7 +85,9 @@ const broadcastDevice = () => server.broadcast("/grid/out/device", [grid.id, w, 
 // --- OSC to/from Max (5713x block; clear of twistermapper) ---
 // emitOut mirrors twistermapper: every app-out message goes to Max AND the web UI, so
 // notes/settings reach the patch while the visualizer monitors them live.
-const osc = createOsc()
+// Ports come from configs/settings.json → osc (read once at boot; see core/settings.ts).
+const settings = loadSettings()
+const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc.outPort })
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
 	osc.send(path, ...args)
 	server.broadcast(path, args)
@@ -150,7 +153,7 @@ renderLoop.start()
 // hotplug watcher: auto-connect on plug-in, never auto-detach (see gridConnection.ts).
 conn.start()
 
-console.log(`[sim] http://localhost:${PORT} — 8 slots (a–h), default Base.`)
+console.log(`[sim] http://localhost:${PORT} — OSC in ${settings.osc.inPort} / out ${settings.osc.outPort} — 8 slots (a–h), default Base.`)
 console.log(forceNull ? "[sim] --null: simulated grid only." : "[sim] auto-connecting to the real grid when present…")
 
 process.on("SIGINT", () => {

@@ -10,6 +10,7 @@
 
 import { GridConnection } from "../io/gridConnection.js"
 import { createOsc } from "../io/osc.js"
+import { loadSettings } from "../core/settings.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
@@ -57,7 +58,9 @@ console.log(
 )
 
 // --- OSC to/from Max (5713x block; clear of twistermapper) ---
-const osc = createOsc()
+// Ports come from configs/settings.json → osc (read once at boot; see core/settings.ts).
+const settings = loadSettings()
+const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc.outPort })
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => osc.send(path, ...args)
 osc.send("/grid/out/hello")
 
@@ -121,7 +124,7 @@ osc.onMessage(
 	})
 )
 
-console.log("[daemon] up. OSC in 57131 / out 57130. 8 slots (a–h), default Base — press the grid.")
+console.log(`[daemon] up. OSC in ${settings.osc.inPort} / out ${settings.osc.outPort}. 8 slots (a–h), default Base — press the grid.`)
 
 const shutdown = () => {
 	renderLoop.stop()

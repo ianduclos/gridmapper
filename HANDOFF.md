@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-07-07
+updated: 2026-07-19
 entries: 0
 ---
 
@@ -46,7 +46,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   `npm run dev` = headless daemon. `npm test` · `npx tsc --noEmit` · `npm run grid:list`.
 - **Works:** serialosc connect + runtime hotplug; render loop (58fps) + quadrant
   reconciler; 8 page slots with **auto-discovered** pages (`base`, `screensaver`,
-  `isometric`, `toggle`); two-color web UI (slot chips + page dropdown + clickable
+  `isometric`, `toggle`, `blank`); two-color web UI (slot chips + page dropdown + clickable
   connect indicator); physical + web key input, mirrored both ways. **Page-settings
   panel is live** (declared `SettingSpec[]` → controls → page, two-way over OSC). The
   **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web). **Control routing
@@ -56,11 +56,9 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints) with
   local shift keys + a sustain pedal. **Runtime hotplug lives in `io/gridConnection.ts`
   and is shared by the sim AND the daemon** (daemon no longer connects-or-exits). 36 tests green.
-- **Next / open:** the launchd agent is still running the pre-oscRouter code —
-  `kickstart -k` to pick up this session's changes. Then: Max OSC **handshake**
-  (`systemConfig` + `presetStore`) — do it calmly, matching the twister protocol;
-  prioritize **Max → daemon** (state snapshot on request, not on connect). Plus:
-  single-instance guard.
+- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — do it
+  calmly, matching the twister protocol; prioritize **Max → daemon** (state snapshot
+  on request, not on connect). Plus: single-instance guard.
 - **Background agent:** launchd `com.ianduclos.gridmapper` runs the **sim** always-on
   (OSC↔Max + hotplug + web UI on 57191, served, not auto-opened). Template + manage cmds
   in `deploy/`. Holds 57131 + the grid → `launchctl bootout gui/$(id -u)/com.ianduclos.gridmapper`
@@ -71,6 +69,23 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-07-19 — Claude
+Two small additions, mirroring the pair twistermapper just shipped (see its
+2026-07-19 CHANGES.md entry). (1) `pages/blank.ts`: inert `BlankPage` (name
+`blank`) — no-op key/OSC, always all-zero frame, no settings — copied from
+`_template.ts` per the doc contract; self-registers via `pages/registry.ts`.
+(2) OSC ports moved out of hardcoded `createOsc()` defaults into
+`configs/settings.json` → `osc.inPort`/`outPort` (default 57131/57130,
+unchanged), loaded once at boot by new `core/settings.ts::loadSettings()` and
+passed through from both `cli/index.ts` and `cli/sim.ts`. Not live-hot-swappable
+by design (UDP socket binds once). Files: `src/pages/blank.ts` (new),
+`src/core/settings.ts` (new), `configs/settings.json` (new), `src/cli/{index,sim}.ts`.
+- **Verified?** `npx tsc --noEmit` clean; `npm test` 36/36 green. Live: `launchctl
+  kickstart -k` the background agent onto this code — log shows `OSC in 57131 /
+  out 57130` (read from the new config) and a successful grid reconnect
+  (`m1000279`); `blank` confirmed present in `PAGE_TYPES` alongside the other four.
+- **Next:** unchanged — Max OSC handshake (see Current state).
+
 ### 2026-07-07 — Claude
 Updated the agent roster: **Codex** replaces Gemini/Antigravity as the named backup
 agent (heavy briefs + overflow lanes — see *Who does what*). Rewrote `AGENTS.md`
