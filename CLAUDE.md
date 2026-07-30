@@ -159,6 +159,13 @@ src/
                          OSC. Right-edge control keys are LOCAL shifts via ctx.setShift
                          (bottom-right = shift 1; above it = shift 2 = sustain pedal).
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
+  pages/meadowphysics.ts MeadowphysicsPage — faithful port of tehn's iii `grid/mp.lua`:
+                         8 cascading counters, rules (inc/dec/min/max/random/pole/stop),
+                         trig/tog/reset target matrices, 3 modes (main / hold col 0 =
+                         config / +col 1 = rules). Emits /grid/out/page/<slot>/note
+                         <row 0..7> <1|0>; Max owns row→pitch. Clock: internal (rate Hz,
+                         driven off the render loop, so it runs only while focused) or
+                         external (a /grid/in/page/<slot>/tick per step).
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])
   cli/grid-list.ts       discovery probe                          (npm run grid:list)
@@ -206,7 +213,8 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
 - Pages: `BasePage` (momentary, default in all 8 slots), `ScreensaverPage` (full-grid
   animations; press any key → next). Screensavers: (0) per-cell **triangle** 0→15→0,
   0.5 Hz at cell 0 ramping to 1.0 Hz at the last cell; (1) slow evolving **Perlin**
-  field. `BasicGridPage` (toggle ↔ OSC) remains as an alternate. 11 unit tests pass.
+  field. `BasicGridPage` (toggle ↔ OSC) remains as an alternate. `MeadowphysicsPage`
+  (the mp.lua port — see the layout above; 29 unit tests, not yet hardware-verified).
 - Web UI: slot chips (a–h) + page **dropdown** (populated from auto-discovered page
   types); a right-hand **page-settings panel** is reserved (placeholder).
 
@@ -217,7 +225,7 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
 diffing, routing, and timing. **Per-frame render model:** the loop calls the focused
 page's `render()` every frame, so pages animate by reading a clock — no timers, no
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
-are skipped by the loader. 36 unit tests pass.
+are skipped by the loader. 65 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
