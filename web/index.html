@@ -66,6 +66,9 @@
 			display: grid; gap: 6px;
 			padding: 14px; background: var(--panel);
 			border-radius: 8px; /* very slightly rounded */
+			/* Size to the cells, never to the column. Without this the black panel
+			   stretches to whatever the widest sibling below it happens to be. */
+			width: max-content;
 		}
 		.cell {
 			width: 46px; height: 46px;
@@ -98,14 +101,16 @@
 		.settings .sub { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .35; margin: 16px 0 6px; }
 		.settings .sub:first-child { margin-top: 0; }
 		aside.col { display: flex; flex-direction: column; gap: 16px; }
-		/* Page settings sit under the grid, where there's room to spread out. */
-		.settings.wide { max-width: none; width: 100%; }
-		.settings.wide #settingsFields { display: flex; flex-wrap: wrap; gap: 4px 28px; }
-		.settings.wide .field { margin: 6px 0; }
+		/* Page settings live under the grid and are pinned to the grid's own width (set in
+		   buildGrid), so a page with many settings wraps onto more rows instead of pushing
+		   the column — and the grid panel above it. */
+		.settings.wide { max-width: none; align-self: flex-start; }
+		.settings.wide #settingsFields { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+		.settings.wide .field { margin: 6px 0; flex: 0 0 auto; }
+		.settings.wide select.select { max-width: 132px; }
 		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
 			color: var(--ink); background: transparent;
 			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px; }
-		#clockRate { cursor: ns-resize; touch-action: none; }
 		/* Transport: a pulse dot that blinks on each clock tick (when echo is on). */
 		#transport .pulse {
 			width: 9px; height: 9px; border-radius: 50%;
@@ -115,7 +120,8 @@
 		#transport .pulse.beat { background: var(--ink); opacity: 1; }
 		#clockRate { font: inherit; font-size: 12px; width: 58px; text-align: right;
 			color: var(--ink); background: transparent;
-			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px; }
+			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px;
+			cursor: ns-resize; touch-action: none; }
 	</style>
 </head>
 <body>
@@ -134,7 +140,7 @@
 				<div class="group" id="transport">
 					<span class="lbl">clock</span>
 					<button class="chip" id="clockRun">run</button>
-					<input id="clockRate" type="number" min="0.1" max="200" step="1" title="master rate (Hz) — drag to change" />
+					<input id="clockRate" type="number" min="0.1" max="200" step="1" title="master tick rate, ticks per second — drag to change" />
 					<span class="pulse" id="clockPulse" title="tick (needs echo)"></span>
 					<button class="chip" id="clockStep" title="one manual tick into the lane on the right">step</button>
 					<input id="clockStepLane" type="number" min="0" max="3" step="1" value="0" title="lane to step" />
@@ -153,7 +159,7 @@
 			<div class="settings">
 				<div class="title">app settings</div>
 				<div class="sub">clock</div>
-				<div class="field"><label for="setClockRate">rate (Hz)</label><input id="setClockRate" type="number" min="0.1" max="200" step="1" /></div>
+				<div class="field"><label for="setClockRate">ticks / sec</label><input id="setClockRate" type="number" min="0.1" max="200" step="1" /></div>
 				<div class="field"><label for="setClockEcho">tick echo</label><input id="setClockEcho" type="checkbox" /></div>
 				<!-- Four lanes. A page picks one, and the lane decides internal vs external —
 				     that's how "internal or external clock per page" works without a second clock. -->
@@ -413,6 +419,11 @@
 					cells.push(c);
 				}
 			}
+			// Measure rather than hardcode, so a differently-sized grid still lines up.
+			requestAnimationFrame(() => {
+				const panel = document.querySelector(".settings.wide");
+				if (panel) panel.style.width = `${gridEl.offsetWidth}px`;
+			});
 		}
 
 		function paint(levels) {
