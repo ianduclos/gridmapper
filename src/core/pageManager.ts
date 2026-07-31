@@ -16,6 +16,7 @@ import {
 	SLOT_INDICES,
 	slotLabel,
 } from "./types.js"
+import type { ClockState } from "./clock.js"
 
 export class PageManager {
 	private pages: (Page | null)[] = Array.from(SLOT_INDICES, () => null)
@@ -45,7 +46,7 @@ export class PageManager {
 	}
 
 	load(slot: Slot, factory: () => Page) {
-		this.pages[slot]?.dispose()
+		this.pages[slot]?.dispose(this.ctxPerSlot[slot])
 		const p = factory()
 		this.pages[slot] = p
 		p.init(this.ctxPerSlot[slot])
@@ -71,6 +72,40 @@ export class PageManager {
 		p.onKey(ev, this.ctxPerSlot[this.focused])
 		this.desired[this.focused] = p.render(this.ctxPerSlot[this.focused]) ?? this.desired[this.focused]
 		this.onFrame?.(this.desired[this.focused], "key")
+	}
+
+	/**
+	 * One app-clock tick, fanned out to EVERY loaded page — not just the focused one, so
+	 * a sequencer keeps running (and keeps emitting OSC) in a slot you aren't looking at.
+	 * Guarded per page: one page throwing must not stall the transport for the others.
+	 */
+	tick(n: number) {
+		for (const slot of SLOT_INDICES) {
+			const p = this.pages[slot]
+			if (!p?.onTick) continue
+			try {
+				p.onTick(n, this.ctxPerSlot[slot])
+			} catch (err) {
+				console.error(`[PageManager] onTick error in slot ${slotLabel(slot)}:`, err)
+			}
+		}
+		const focused = this.pages[this.focused]
+		if (!focused) return
+		this.desired[this.focused] = focused.render(this.ctxPerSlot[this.focused]) ?? this.desired[this.focused]
+		this.onFrame?.(this.desired[this.focused], "tick")
+	}
+
+	/** Transport start/stop/rate/source changed — same fan-out as tick(). */
+	clockChanged(state: Readonly<ClockState>) {
+		for (const slot of SLOT_INDICES) {
+			const p = this.pages[slot]
+			if (!p?.onClock) continue
+			try {
+				p.onClock(state, this.ctxPerSlot[slot])
+			} catch (err) {
+				console.error(`[PageManager] onClock error in slot ${slotLabel(slot)}:`, err)
+			}
+		}
 	}
 
 	routeOscToPage(slot: Slot, path: string, args: any[]) {

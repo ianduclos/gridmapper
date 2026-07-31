@@ -1,7 +1,12 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { createOscRouter } from "../src/core/oscRouter.js"
 import { PageManager } from "../src/core/pageManager.js"
 import { ShiftInput } from "../src/core/shiftInput.js"
+import { AppClock } from "../src/core/clock.js"
+import { SettingsStore, DEFAULT_SETTINGS } from "../src/core/settings.js"
 import { DEFAULT_PAGE } from "../src/pages/registry.js"
 import {
 	type GridSize,
@@ -19,6 +24,7 @@ function makePm() {
 	const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 		size: SIZE,
 		modifiers,
+		clock: { running: false, source: "internal", rate: 20, tick: 0 },
 		osc: { send: () => {} },
 		setShift: () => {},
 	}
@@ -165,6 +171,40 @@ describe("createOscRouter", () => {
 		expect(c.onOscCalls).toEqual([{ path: "/setting/npo", args: [7] }])
 	})
 
+	it("counts every inbound message as activity (wakes a sleeping app)", () => {
+		const idle = { activity: vi.fn(), wake: vi.fn(), sleep: vi.fn() }
+		const router = createOscRouter({
+			pm: makePm(),
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit: () => {},
+			slotPages: [],
+			idle: idle as any,
+		})
+		router("/grid/in/key", [1, 1, 1])
+		router("/grid/in/focus/page", ["a"])
+		router("/grid/in/nonsense", [])
+		expect(idle.activity).toHaveBeenCalledTimes(3)
+	})
+
+	it("routes /grid/in/wake and /grid/in/sleep", () => {
+		const idle = { activity: vi.fn(), wake: vi.fn(), sleep: vi.fn() }
+		const router = createOscRouter({
+			pm: makePm(),
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit: () => {},
+			slotPages: [],
+			idle: idle as any,
+		})
+		router("/grid/in/wake", [])
+		router("/grid/in/sleep", [])
+		expect(idle.wake).toHaveBeenCalledTimes(1)
+		expect(idle.sleep).toHaveBeenCalledTimes(1)
+	})
+
 	it("ignores unknown paths without throwing", () => {
 		const router = createOscRouter({
 			pm: makePm(),
@@ -176,5 +216,97 @@ describe("createOscRouter", () => {
 		})
 		expect(() => router("/grid/in/nonsense", [1, 2, 3])).not.toThrow()
 		expect(() => router("/totally/unrelated", [])).not.toThrow()
+	})
+})
+
+describe("createOscRouter — transport + settings", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
+	function makeRouter() {
+		const ticks: number[] = []
+		const clock = new AppClock({ rate: 10, onTick: (n) => ticks.push(n) })
+		const settings = new SettingsStore(
+			structuredClone(DEFAULT_SETTINGS),
+			undefined,
+			join(mkdtempSync(join(tmpdir(), "gridmapper-router-")), "settings.json")
+		)
+		const emit = vi.fn()
+		const router = createOscRouter({
+			pm: makePm(),
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit,
+			slotPages: [],
+			clock,
+			settings,
+		})
+		return { router, clock, settings, emit, ticks }
+	}
+
+	it("starts and stops the transport", () => {
+		const { router, clock, ticks } = makeRouter()
+		router("/grid/in/clock/run", [1])
+		expect(clock.running).toBe(true)
+		vi.advanceTimersByTime(300)
+		expect(ticks).toEqual([1, 2, 3])
+		router("/grid/in/clock/run", [0])
+		expect(clock.running).toBe(false)
+		vi.advanceTimersByTime(500)
+		expect(ticks).toEqual([1, 2, 3])
+		clock.close()
+	})
+
+	it("steps manually — one tick per /grid/in/clock/tick, no transport needed", () => {
+		const { router, ticks } = makeRouter()
+		router("/grid/in/clock/tick", [])
+		router("/grid/in/clock/tick", [])
+		expect(ticks).toEqual([1, 2])
+	})
+
+	it("resets the counter and re-emits state on demand", () => {
+		const { router, clock, emit } = makeRouter()
+		router("/grid/in/clock/tick", [])
+		router("/grid/in/clock/reset", [])
+		expect(clock.tick).toBe(0)
+		emit.mockClear()
+		router("/grid/in/clock/get", [])
+		expect(emit).toHaveBeenCalledWith("/grid/out/clock", JSON.stringify(clock.state))
+	})
+
+	it("applies a live setting and echoes the whole settings object", () => {
+		const { router, settings, emit } = makeRouter()
+		router("/grid/in/settings/clock/rate", [45])
+		expect(settings.get().clock.rate).toBe(45)
+		expect(emit).toHaveBeenCalledWith("/grid/out/settings", settings.json())
+		router("/grid/in/settings/idle/disconnectedMin", [3])
+		expect(settings.get().idle.disconnectedMin).toBe(3)
+	})
+
+	it("refuses boot-only osc.* settings — no change, no ack", () => {
+		const { router, settings, emit } = makeRouter()
+		router("/grid/in/settings/osc/inPort", [9999])
+		expect(settings.get().osc.inPort).toBe(DEFAULT_SETTINGS.osc.inPort)
+		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("serves /grid/in/settings/get", () => {
+		const { router, settings, emit } = makeRouter()
+		router("/grid/in/settings/get", [])
+		expect(emit).toHaveBeenCalledWith("/grid/out/settings", settings.json())
+	})
+
+	it("tolerates clock/settings paths when no transport is wired (test hosts)", () => {
+		const router = createOscRouter({
+			pm: makePm(),
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit: () => {},
+			slotPages: [],
+		})
+		expect(() => router("/grid/in/clock/run", [1])).not.toThrow()
+		expect(() => router("/grid/in/settings/clock/rate", [30])).not.toThrow()
 	})
 })

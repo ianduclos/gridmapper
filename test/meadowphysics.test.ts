@@ -5,12 +5,14 @@ import {
 	mpRule,
 	mpKey,
 	mpFrame,
+	MeadowphysicsPage,
 	STOPPED,
 	RULE_GLYPHS,
 	type MeadowState,
 	type NoteEdge,
 } from "../src/pages/meadowphysics.js"
-import { ledIndex, type GridSize } from "../src/core/types.js"
+import { ledIndex, type GridSize, type PageContext } from "../src/core/types.js"
+import type { ClockState } from "../src/core/clock.js"
 
 const SIZE: GridSize = { width: 16, height: 8 }
 const at = (f: Uint8Array, x: number, y: number) => f[ledIndex(SIZE, x, y)]
@@ -320,6 +322,159 @@ describe("meadowphysics display", () => {
 	})
 
 	it("levels stay within 0..15 in every mode", () => {
+		const st = createMeadowState(SIZE)
+		for (const mode of [0, 1, 2] as const) {
+			st.mode = mode
+			const f = mpFrame(st, SIZE)
+			expect(f).toHaveLength(SIZE.width * SIZE.height)
+			for (const v of f) {
+				expect(v).toBeGreaterThanOrEqual(0)
+				expect(v).toBeLessThanOrEqual(15)
+			}
+		}
+	})
+})
+
+// --- the page shell: app-clock driven, background-capable -------------------------
+
+function makeCtx() {
+	const sent: Array<{ path: string; args: any[] }> = []
+	const clock: ClockState = { running: true, source: "internal", rate: 20, tick: 0 }
+	const ctx = {
+		size: SIZE,
+		modifiers: { held: new Set<number>(), shift1: false, shift2: false },
+		clock,
+		osc: { send: (path: string, ...args: any[]) => sent.push({ path, args }) },
+		slot: 0,
+		slotLabel: "a",
+		setDirty: () => {},
+		setShift: () => {},
+	} as unknown as PageContext
+	const notes = () => sent.filter((m) => m.path.endsWith("/note"))
+	return { ctx, sent, notes, clock }
+}
+
+/** Ticks a page until it emits its first note, or gives up. */
+function tickUntilNote(page: MeadowphysicsPage, ctx: PageContext, notes: () => unknown[], max = 60) {
+	for (let n = 1; n <= max && notes().length === 0; n++) page.onTick(n, ctx)
+}
+
+describe("MeadowphysicsPage (app clock)", () => {
+	it("advances on app ticks, not on render", () => {
+		const { ctx, notes } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		for (let i = 0; i < 40; i++) page.render()
+		expect(notes()).toHaveLength(0) // rendering must not move the counters
+		tickUntilNote(page, ctx, notes)
+		expect(notes().length).toBeGreaterThan(0)
+	})
+
+	it("keeps running while unfocused — the whole point of the app clock", () => {
+		const { ctx, notes } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		page.onBlur() // slot is no longer visible
+		tickUntilNote(page, ctx, notes)
+		expect(notes().length).toBeGreaterThan(0)
+	})
+
+	it("blur drops UI holds but never the sounding notes", () => {
+		const { ctx, notes } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		page.onKey({ x: 0, y: 2, s: 1 }, ctx) // hold col 0 → CONFIG mode
+		tickUntilNote(page, ctx, notes)
+		const before = notes().length
+		page.onBlur()
+		expect(notes()).toHaveLength(before) // no note-offs fired
+		// ...and we didn't come back stuck in CONFIG: a tap now sets a count again.
+		page.onKey({ x: 5, y: 2, s: 1 }, ctx)
+		expect((page.serialize() as any).patch.count[2]).toBe(5)
+	})
+
+	it("div divides the app clock down", () => {
+		const { ctx } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		page.onOsc("/setting/div", [4], ctx)
+		expect((page.serialize() as any).div).toBe(4)
+		for (let n = 1; n <= 28; n++) page.onTick(n, ctx)
+
+		// 28 ticks at div 4 must land exactly where 7 ticks at div 1 land.
+		const plain = new MeadowphysicsPage()
+		plain.init(makeCtx().ctx)
+		for (let n = 1; n <= 7; n++) plain.onTick(n, ctx)
+		expect((page as any).st.pos).toEqual((plain as any).st.pos)
+		expect((page as any).st.pos[0]).toBeLessThan(8) // and it did move
+	})
+
+	it("clamps div and ignores unknown settings", () => {
+		const { ctx } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		page.onOsc("/setting/div", [999], ctx)
+		expect((page.serialize() as any).div).toBe(16)
+		page.onOsc("/setting/rate", [50], ctx) // gone — the clock is app-level now
+		expect((page.serialize() as any).rate).toBeUndefined()
+	})
+
+	it("releases sounding notes when the transport stops", () => {
+		const { ctx, notes, clock } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		// Latch a note ON with a tog target so it stays sounding.
+		const st = (page as any).st
+		st.trig[0][1] = 0
+		st.tog[0][1] = 1
+		tickUntilNote(page, ctx, notes)
+		expect(st.note[1]).toBe(1)
+		clock.running = false
+		page.onClock({ ...clock }, ctx)
+		expect(notes().some((m: any) => m.args[0] === 1 && m.args[1] === 0)).toBe(true)
+		expect(st.note[1]).toBe(0)
+	})
+
+	it("does not release on an unrelated transport change (rate/source)", () => {
+		const { ctx, notes, clock } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		const st = (page as any).st
+		st.trig[0][1] = 0
+		st.tog[0][1] = 1
+		tickUntilNote(page, ctx, notes)
+		const before = notes().length
+		page.onClock({ ...clock, rate: 40 }, ctx) // still running
+		expect(notes()).toHaveLength(before)
+		expect(st.note[1]).toBe(1)
+	})
+
+	it("releases notes when its slot is unloaded", () => {
+		const { ctx, notes } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		const st = (page as any).st
+		st.trig[0][1] = 0
+		st.tog[0][1] = 1
+		tickUntilNote(page, ctx, notes)
+		const before = notes().length
+		page.dispose(ctx)
+		expect(notes().length).toBeGreaterThan(before)
+		expect(st.note[1]).toBe(0)
+	})
+
+	it("announces its type and settings on init and focus", () => {
+		const { ctx, sent } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		expect(sent[0]).toMatchObject({ path: "/grid/out/page/a/type", args: ["meadowphysics"] })
+		expect(sent[1].path).toBe("/grid/out/page/a/settings")
+		expect(JSON.parse(sent[1].args[0])).toEqual({ div: 1 })
+	})
+})
+
+describe("meadowphysics display (levels)", () => {
+	it("stays within 0..15 in every mode", () => {
 		const st = createMeadowState(SIZE)
 		for (const mode of [0, 1, 2] as const) {
 			st.mode = mode

@@ -2,5 +2,15 @@
 	"osc": {
 		"inPort": 57131,
 		"outPort": 57130
+	},
+	"clock": {
+		"rate": 22.1,
+		"source": "internal",
+		"echo": false
+	},
+	"idle": {
+		"connectedMin": 240,
+		"disconnectedMin": 15,
+		"caffeinate": false
 	}
 }

@@ -51,10 +51,12 @@ interface Page {
   onFocus(ctx: PageContext): void              // page became visible
   onBlur(ctx: PageContext): void               // page hidden
   onKey(ev: KeyEvent, ctx: PageContext): void  // a key went down (s=1) or up (s=0)
-  onOsc?(path: string, args: any[], ctx: PageContext): void  // optional, app OSC in
-  render(ctx: PageContext): LedFrame | undefined             // the current frame
+  onOsc?(path: string, args: any[], ctx: PageContext): void   // optional, app OSC in
+  onTick?(tick: number, ctx: PageContext): void               // optional, app clock
+  onClock?(state: ClockState, ctx: PageContext): void         // optional, transport
+  render(ctx: PageContext): LedFrame | undefined              // the current frame
   serialize?(): unknown                        // optional, structural config for presets
-  dispose(): void                              // slot unloaded — clean up
+  dispose(ctx: PageContext): void              // slot unloaded — clean up
 }
 ```
 
@@ -67,9 +69,11 @@ When each is called:
 | `onBlur`    | When focus leaves this slot. Clear visual state if you want.    |
 | `onKey`     | On every key edge, **only while focused**. Mutate state; don't draw here. |
 | `onOsc`     | When app OSC is routed to this slot (optional).                 |
+| `onTick`    | On every app-clock tick — in **every** slot, focused or not (optional). |
+| `onClock`   | When the transport starts/stops/changes rate or source, every slot (optional). |
 | `render`    | **Every frame** (~58fps) while focused. Return the frame for *now*. |
 | `serialize` | When a preset is captured (optional).                          |
-| `dispose`   | When the slot is unloaded/replaced. Clean up timers (rare).    |
+| `dispose`   | When the slot is unloaded/replaced. Release external state (sounding notes). |
 
 ---
 
@@ -140,6 +144,36 @@ change**, so you never have to "kick" the first frame.
 
 Why 58fps: the grid's serialosc redraw default is 60fps; we run just under it so we
 never out-run the device. You don't set this — `FRAME_FPS` lives in the render loop.
+
+### The app clock (sequencers)
+
+Frames are for *drawing*. If your page needs musical time — a sequencer, an arpeggiator,
+anything that steps — do **not** count frames. Take the app clock:
+
+```ts
+onTick(tick: number, ctx: PageContext) {      // one app-clock tick
+  if (tick % this.div !== 0) return           // your own divider, if you want one
+  this.advance(ctx)                           // mutate state, emit OSC
+}
+onClock(state, ctx) {                          // transport start/stop/rate/source
+  if (this.wasRunning && !state.running) this.allNotesOff(ctx)
+  this.wasRunning = state.running
+}
+```
+
+Three things to know:
+
+- **`onTick` reaches every loaded slot, focused or not.** A sequencer in slot b keeps
+  running while you look at slot a — that's the point. So `onBlur` must **not** stop it or
+  release its notes.
+- **The transport is off by default** and is app-wide, not per-page: `/grid/in/clock/run`,
+  `/grid/in/clock/tick` (external/manual step), `/grid/in/settings/clock/rate`. Read the
+  current state any time via `ctx.clock` (`{ running, source, rate, tick }`) — it's a live
+  view, not a snapshot.
+- **You own your own cleanup.** Release sounding notes in `onClock` (on stop) and in
+  `dispose(ctx)` (slot replaced). Nothing else will do it for you.
+
+See `src/pages/meadowphysics.ts` for the worked example.
 
 ---
 
@@ -242,6 +276,8 @@ So you can stop thinking about it:
 
 - ✅ Keep `render()` cheap — it runs ~58×/sec. Building a 128-cell frame is fine; a
   network call or heavy allocation loop is not.
+- ✅ Step musical time in `onTick`, never in `render()` — `render()` stops when your slot
+  isn't focused, and stops entirely when the app goes idle.
 - ✅ Keep cell values in `0..15` and coordinates in-bounds (`ledIndex` + size checks).
 - ✅ Put visual logic in **pure functions** of `(time/state, size)` → easy to test.
 - ✅ Clean up in `dispose()` (and `onBlur` for visuals).

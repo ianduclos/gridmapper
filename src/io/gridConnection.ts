@@ -42,10 +42,12 @@ export class GridConnection {
 	readonly grid: MirrorGrid
 	private connecting = false
 	private timer: ReturnType<typeof setInterval> | undefined
+	private pollMs: number
 
 	constructor(private readonly opts: GridConnectionOpts) {
 		this.grid = new MirrorGrid(new NullGrid({ ...opts.size }), opts.onLeds ?? (() => {}))
 		this.grid.onKey(opts.onKey)
+		this.pollMs = opts.pollMs ?? 2000
 	}
 
 	get id(): string {
@@ -59,12 +61,29 @@ export class GridConnection {
 	start() {
 		if (this.opts.forceNull) return
 		void this.tryConnect() // try immediately on boot
-		this.timer = setInterval(() => void this.pollDevices(), this.opts.pollMs ?? 2000)
+		this.arm()
 	}
 
 	stop() {
 		if (this.timer) clearInterval(this.timer)
 		this.timer = undefined
+	}
+
+	/**
+	 * Change the discovery-watcher interval. The host backs this right off while the app
+	 * is asleep (2s → 30s): a grid appearing still gets picked up, and plugging one in is
+	 * itself an activity event, so nothing is lost but the idle wakeups.
+	 */
+	setPollMs(ms: number) {
+		const next = Math.max(250, Math.round(ms))
+		if (next === this.pollMs) return
+		this.pollMs = next
+		if (this.timer) this.arm()
+	}
+
+	private arm() {
+		if (this.timer) clearInterval(this.timer)
+		this.timer = setInterval(() => void this.pollDevices(), this.pollMs)
 	}
 
 	/** Attach the real grid if one is reachable. No-op if already connected/forced null. */
@@ -73,6 +92,13 @@ export class GridConnection {
 		this.connecting = true
 		try {
 			const driver = await connectGrid({ timeoutMs: this.opts.connectTimeoutMs ?? 1500 })
+			// Cable glitch: serialosc keeps the same server + key routing (gotcha 2), so we
+			// hold the connection — but the device's LEDs are cleared, and the reconciler
+			// thinks it already sent them. Repaint, don't reconnect.
+			driver.onReconnect?.(() => {
+				console.log(`[grid] ${driver.id} re-connected → repainting current screen`)
+				this.opts.onRepaint?.()
+			})
 			const previous = this.grid.current()
 			this.grid.attach(driver)
 			if (previous.id !== "null-grid") try { previous.close() } catch {}

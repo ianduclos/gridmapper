@@ -28,6 +28,17 @@ export interface GridDriver {
 	onKey(cb: (e: KeyEvent) => void): void
 	/** Subscribe to device disconnect (serialosc /sys/disconnect). Optional. */
 	onDisconnect?(cb: () => void): void
+	/**
+	 * Subscribe to device re-connect (serialosc /sys/connect). Optional.
+	 *
+	 * On a USB/cable glitch serialosc emits /sys/disconnect then /sys/connect but keeps
+	 * the same device server + key routing, so we must NOT tear down (see gridConnection
+	 * gotcha 2). The grid does, however, come back with its LEDs cleared — and the
+	 * reconciler's last-sent cache still believes every cell is already correct, so the
+	 * grid would stay dark until something happened to change. Hosts subscribe here to
+	 * force a full repaint.
+	 */
+	onReconnect?(cb: () => void): void
 	/** Set one cell to intensity 0..15. */
 	ledLevelSet(x: number, y: number, level: number): void
 	/** Set every cell to one intensity 0..15. */
@@ -121,6 +132,7 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 	return new Promise<GridDriver>((resolve, reject) => {
 		const keyCbs: Array<(e: KeyEvent) => void> = []
 		const disconnectCbs: Array<() => void> = []
+		const reconnectCbs: Array<() => void> = []
 		let size: GridSize = { ...DEFAULT_SIZE }
 		let settled = false
 
@@ -172,6 +184,12 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 			}
 			if (addr === "/sys/disconnect") {
 				for (const cb of disconnectCbs) cb()
+				return
+			}
+			// The device came back on the same server (cable glitch). Routing survived,
+			// but its LEDs did not — hosts repaint from here.
+			if (addr === "/sys/connect") {
+				for (const cb of reconnectCbs) cb()
 			}
 		})
 
@@ -187,6 +205,9 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 			},
 			onDisconnect(cb) {
 				disconnectCbs.push(cb)
+			},
+			onReconnect(cb) {
+				reconnectCbs.push(cb)
 			},
 			ledLevelSet(x, y, level) {
 				sendDev(`${prefix}/grid/led/level/set`, [

@@ -100,7 +100,26 @@ twister's `/twister/...` vocabulary:
   shift). Wired in both the sim and the daemon; a future LOCAL source calls `shift.set()`
   for identical behavior.
 - `/grid/in/focus/page <a..h>`; `/grid/in/slot/<a..h>/page <PageName>`;
-  preset save/load/list/delete; `/grid/in/settings/...`.
+  preset save/load/list/delete.
+- **Transport (implemented).** One app clock, **off at boot**, ticking every loaded page
+  (not just the focused one) — see `core/clock.ts`.
+  In: `/grid/in/clock/run <0|1>` · `/grid/in/clock/tick` (one manual step; the external-
+  clock path, works under either source) · `/grid/in/clock/reset` · `/grid/in/clock/get`.
+  Out: `/grid/out/clock <json>` `{running,source,rate,tick}` on every change + on connect;
+  `/grid/out/clock/tick <n>` per tick, only while `clock.echo` is on (default off — it's
+  20 msg/s). Pages see it as `ctx.clock` + `onTick`/`onClock` (docs/PAGE_PROTOCOL.md §6).
+- **Idle / power (implemented).** The render loop **stops entirely** after inactivity —
+  default 4h with a grid attached, 15min without (`core/idleManager.ts`). Activity means
+  INPUT (key · any `/grid/in/*` · web connect · device attach · a running clock's ticks),
+  deliberately not "the frame changed", or a screensaver on an unplugged grid would spin
+  at 58fps forever. Sleeping never blanks the grid (the device holds its own LEDs) and
+  waking forces a full repaint. While asleep the discovery watcher backs off 2s → 30s.
+  In: `/grid/in/wake` · `/grid/in/sleep`. Out: `/grid/out/idle <json>`.
+- **Live settings (implemented).** `/grid/in/settings/<section>/<key> <value>` — clamped,
+  applied to the running clock/idle, and persisted to `configs/settings.json` (debounced,
+  atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`
+  and `idle.*` are live; `osc.*` stays **boot-only** (the UDP socket binds once). The
+  clock's RUN state is deliberately not persisted — it always boots stopped.
 - The **handshake**: on connect the daemon emits a state snapshot (focus, each
   slot's page type, presets, settings); Max sends a SystemConfig to set the
   interface per patch. (This is the twister's `systemConfig`/`presetStore` channel,
@@ -142,7 +161,12 @@ src/
                          the serialosc gotchas live here. Used by sim AND daemon.
   core/shiftInput.ts     two shift buttons, leading-edge lockout debounce (ctx.modifiers)
   core/oscRouter.ts      the ONE control-routing dialect (key/connect/shift/focus/slot/
-                         page-osc), shared by sim.ts (web + Max) and index.ts (daemon)
+                         page-osc/clock/settings/wake), shared by sim.ts and index.ts
+  core/clock.ts          AppClock — the ONE transport. internal (rate Hz, drift-compensated)
+                         or external (one step per OSC message). OFF at boot. Ticks EVERY
+                         loaded page via PageManager.tick → Page.onTick.
+  core/idleManager.ts    stops the render loop after inactivity (0 CPU), wakes on any event
+  core/appRuntime.ts     assembles clock + idle + settings ONCE for both entry points
   render/renderLoop.ts   fixed-rate clock; single output path. FRAME_FPS=58 (just under
                          the grid's 60fps serialosc redraw). Calls focused page.render() each frame.
   render/ledReconciler.ts diff vs last-sent; batch per 8×8 quadrant (map vs set)
@@ -163,9 +187,9 @@ src/
                          8 cascading counters, rules (inc/dec/min/max/random/pole/stop),
                          trig/tog/reset target matrices, 3 modes (main / hold col 0 =
                          config / +col 1 = rules). Emits /grid/out/page/<slot>/note
-                         <row 0..7> <1|0>; Max owns row→pitch. Clock: internal (rate Hz,
-                         driven off the render loop, so it runs only while focused) or
-                         external (a /grid/in/page/<slot>/tick per step).
+                         <row 0..7> <1|0>; Max owns row→pitch. Driven by the APP CLOCK
+                         (onTick), so it runs in every slot, focused or not; `div` divides
+                         the tick down per page.
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])
   cli/grid-list.ts       discovery probe                          (npm run grid:list)
@@ -214,9 +238,12 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
   animations; press any key → next). Screensavers: (0) per-cell **triangle** 0→15→0,
   0.5 Hz at cell 0 ramping to 1.0 Hz at the last cell; (1) slow evolving **Perlin**
   field. `BasicGridPage` (toggle ↔ OSC) remains as an alternate. `MeadowphysicsPage`
-  (the mp.lua port — see the layout above; 29 unit tests, not yet hardware-verified).
+  (the mp.lua port — see the layout above; 39 unit tests, not yet hardware-verified).
 - Web UI: slot chips (a–h) + page **dropdown** (populated from auto-discovered page
-  types); a right-hand **page-settings panel** is reserved (placeholder).
+  types); a **transport strip** (run/stop · step · rate · source · tick pulse); a
+  right-hand **page-settings panel** and an **app-settings panel** (clock, sleep
+  timeouts, caffeinate, live awake/asleep readout, read-only OSC ports). The UI is a
+  pure OSC client — every control is a `/grid/in/...` message Max could send instead.
 
 **Page authoring (`docs/PAGE_PROTOCOL.md`):** a page exports `page: PageModule`
 (name + `create()` + optional `settings`) and is auto-discovered — drop a file in
@@ -225,7 +252,9 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
 diffing, routing, and timing. **Per-frame render model:** the loop calls the focused
 page's `render()` every frame, so pages animate by reading a clock — no timers, no
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
-are skipped by the loader. 65 unit tests pass.
+are skipped by the loader. **Sequencers take musical time from the app clock**
+(`onTick`/`onClock`), never from frames — that's what lets them run in an unfocused slot.
+124 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
@@ -260,6 +289,10 @@ duplicated this logic by hand.
 >    **keeps the same device server + routing — keys resume on their own.** Do NOT tear
 >    down and reconnect on `/sys/disconnect`; reconnecting mid-glitch is what loses key
 >    routing. Hold the connection; only reconnect on explicit user action.
+>    **But the grid clears its own LEDs on that bounce** while the reconciler's last-sent
+>    cache still believes every cell is correct — so it would sit dark until something
+>    happened to change. The driver surfaces `/sys/connect` as `onReconnect`, and
+>    `GridConnection` turns that into a full repaint (never a re-handshake).
 - App-defined modifiers (held-key-as-shift) surfaced through `PageContext.modifiers`.
 
 > Don't prematurely extract a shared core lib with twistermapper — only two data

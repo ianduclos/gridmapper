@@ -17,10 +17,11 @@
  *           CONFIG : markers at 5 when set / 2 when clear, speed bar + speed at 5,
  *                    position ghosted at 2, selected row lit 15 in col 0.
  *           RULE   : destination row + rtype at 2/7, rule glyph at 9 in the right 8×8.
- * Settings: rate (internal clock Hz) · clock (internal | external).
- * Rules   : counters advance ONLY while this page is focused (the render loop is the
- *           only clock we get); every sounding note is released on blur so a page
- *           switch can't strand one in Max. Notes go out as
+ * Settings: div — advance one tick every Nth app-clock tick (1..16).
+ * Rules   : driven by the APP CLOCK (core/clock.ts) via onTick, so it advances in every
+ *           slot, focused or not — eight of these can run at once. Sounding notes are
+ *           released when the transport stops and when the slot is unloaded, never on
+ *           blur (that would kill a background sequencer). Notes go out as
  *           /grid/out/page/<slot>/note <row 0..7> <1|0> — Max owns row→pitch.
  * ------------------------------------------------------------------------------
  * The model (verbatim from mp.lua, translated 1-indexed → 0-indexed):
@@ -41,8 +42,8 @@
  * diffing against the pre-tick note state.
  *
  * Everything above is pure: `mpTick` / `mpKey` / `mpFrame` operate on a plain
- * MeadowState and are unit-tested in test/meadowphysics.test.ts. The class below is
- * a thin shell that owns the clock, OSC, and the page lifecycle.
+ * MeadowState and are unit-tested in test/meadowphysics.test.ts. The class below is a
+ * thin shell over them: it takes ticks from the app clock, emits OSC, and draws.
  */
 
 import {
@@ -55,6 +56,7 @@ import {
 	ledIndex,
 } from "../core/types.js"
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
+import type { ClockState } from "../core/clock.js"
 import { clamp } from "../util/scale.js"
 
 // --- layout (0-indexed columns; mp.lua's 1-indexed columns minus one) ------------
@@ -451,50 +453,57 @@ export function mpFrame(st: MeadowState, size: GridSize): LedFrame {
 // --- the page ------------------------------------------------------------------------------
 
 const SPECS: SettingSpec[] = [
-	{ key: "rate", label: "clock (Hz)", type: "number", min: 1, max: 200, step: 1, default: 20 },
-	{ key: "clock", label: "clock source", type: "enum", options: ["internal", "external"], default: "internal" },
+	{ key: "div", label: "clock ÷", type: "number", min: 1, max: 16, step: 1, default: 1 },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
-
-/** Cap on ticks per frame, so a stalled render can't unleash a burst of catch-up. */
-const MAX_CATCHUP = 8
 
 export class MeadowphysicsPage implements Page {
 	private size: GridSize = { width: 16, height: 8 }
 	private st = createMeadowState(this.size)
-	private rate = SPEC_BY_KEY.get("rate")!.default as number
-	private clockSrc = SPEC_BY_KEY.get("clock")!.default as string
-	private lastMs = Date.now()
-	private acc = 0
+	private div = SPEC_BY_KEY.get("div")!.default as number
+	private wasRunning = false
 
 	init(ctx: PageContext) {
 		this.size = ctx.size
 		this.st = createMeadowState(this.size)
-		this.lastMs = Date.now()
-		this.acc = 0
+		this.wasRunning = ctx.clock.running
 		this.announce(ctx)
 	}
 
 	onFocus(ctx: PageContext) {
-		this.lastMs = Date.now() // don't catch up on the time we spent unfocused
-		this.acc = 0
 		this.announce(ctx)
 	}
 
-	onBlur(ctx: PageContext) {
-		this.allNotesOff(ctx)
-		// Column-0 / row holds can't survive a page switch; drop them so we don't come
-		// back stuck in CONFIG or think a key is still down.
+	onBlur() {
+		// Notes keep sounding — this page runs in the background (see onTick). Only the
+		// transient UI holds are dropped: a column-0 / row hold can't survive a page
+		// switch, so clear them or we'd come back stuck in CONFIG.
 		this.st.held = 0
 		this.st.mode = 0
 		this.st.row.fill(0)
+	}
+
+	/**
+	 * One app-clock tick, delivered whether or not this slot is focused. `div` divides it
+	 * down; the counters themselves then divide again per row (mp's own `speed`).
+	 */
+	onTick(tick: number, ctx: PageContext) {
+		if (tick % this.div !== 0) return
+		this.step(ctx)
+	}
+
+	/** Transport changed. Stopping releases anything still sounding. */
+	onClock(state: Readonly<ClockState>, ctx: PageContext) {
+		if (this.wasRunning && !state.running) this.allNotesOff(ctx)
+		this.wasRunning = state.running
 	}
 
 	onKey(ev: KeyEvent) {
 		mpKey(this.st, ev.x, ev.y, ev.s)
 	}
 
-	// In: /setting/<key> <v> · /<key> <v> · /<key>/<v> · /settings/get · /tick (external clock).
+	// In: /setting/<key> <v> · /<key> <v> · /<key>/<v> · /settings/get.
+	// (The clock is no longer per-page: /grid/in/clock/* drives the whole app.)
 	onOsc(path: string, args: any[], ctx: PageContext) {
 		const parts = path.split("/").filter(Boolean)
 		let i = 0
@@ -505,33 +514,14 @@ export class MeadowphysicsPage implements Page {
 			this.emitSettings(ctx)
 			return
 		}
-		if (key === "tick") {
-			// External clock: one message = one tick, acted on immediately (the LEDs
-			// catch up on the next frame; the notes must not wait for it).
-			if (this.clockSrc === "external") this.step(ctx)
-			return
-		}
 		const raw = args.length ? args[0] : parts[i + 1]
 		if (raw === undefined) return
 		if (!this.applySetting(key, raw)) return
 		this.emitSettings(ctx)
 	}
 
-	render(ctx: PageContext): LedFrame {
-		const now = Date.now()
-		const dt = (now - this.lastMs) / 1000
-		this.lastMs = now
-		if (this.clockSrc === "internal") {
-			const period = 1 / this.rate
-			this.acc += dt
-			let n = 0
-			while (this.acc >= period && n < MAX_CATCHUP) {
-				this.acc -= period
-				n++
-				this.step(ctx)
-			}
-			if (this.acc >= period) this.acc = 0 // hit the cap — drop the backlog
-		}
+	/** Purely visual — the counters advance in onTick, not here. */
+	render(): LedFrame {
 		return mpFrame(this.st, this.size)
 	}
 
@@ -539,8 +529,7 @@ export class MeadowphysicsPage implements Page {
 	serialize() {
 		const st = this.st
 		return {
-			rate: this.rate,
-			clock: this.clockSrc,
+			div: this.div,
 			patch: {
 				count: [...st.count], min: [...st.min], max: [...st.max],
 				speed: [...st.speed], smin: [...st.smin], smax: [...st.smax],
@@ -553,7 +542,10 @@ export class MeadowphysicsPage implements Page {
 		}
 	}
 
-	dispose() {}
+	/** Slot unloaded/replaced — never strand a sounding note in Max. */
+	dispose(ctx: PageContext) {
+		this.allNotesOff(ctx)
+	}
 
 	private step(ctx: PageContext) {
 		for (const e of mpTick(this.st)) this.sendNote(ctx, e.row, e.on)
@@ -576,20 +568,10 @@ export class MeadowphysicsPage implements Page {
 	private applySetting(key: string, raw: unknown): boolean {
 		const spec = SPEC_BY_KEY.get(key)
 		if (!spec) return false
-		if (key === "rate") {
-			const v = Number(raw)
-			if (!Number.isFinite(v)) return false
-			this.rate = clamp(Math.round(v), spec.min ?? 1, spec.max ?? v)
-			return true
-		}
-		if (key === "clock") {
-			const v = String(raw)
-			if (!spec.options?.includes(v)) return false
-			this.clockSrc = v
-			this.acc = 0
-			return true
-		}
-		return false
+		const v = Number(raw)
+		if (!Number.isFinite(v)) return false
+		if (key === "div") this.div = clamp(Math.round(v), spec.min ?? 1, spec.max ?? v)
+		return true
 	}
 
 	private announce(ctx: PageContext) {
@@ -598,10 +580,7 @@ export class MeadowphysicsPage implements Page {
 	}
 
 	private emitSettings(ctx: PageContext) {
-		ctx.osc.send(
-			`/grid/out/page/${ctx.slotLabel}/settings`,
-			JSON.stringify({ rate: this.rate, clock: this.clockSrc })
-		)
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, JSON.stringify({ div: this.div }))
 	}
 }
 

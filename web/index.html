@@ -87,13 +87,27 @@
 		.settings .note { font-size: 12px; letter-spacing: .3px; opacity: .45; }
 		.settings .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; }
 		.settings .field label { font-size: 12px; letter-spacing: .3px; opacity: .7; }
-		.settings input[type="number"] {
+		.settings input[type="number"], .settings input[type="text"] {
 			font: inherit; font-size: 12px; width: 64px; text-align: right;
 			color: var(--ink); background: transparent;
 			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px;
 		}
 		.settings input[type="checkbox"] { accent-color: var(--ink); width: 16px; height: 16px; }
 		.settings select.select { padding: 4px 22px 4px 8px; }
+		.settings input:disabled, .settings select:disabled { opacity: .35; cursor: not-allowed; }
+		.settings .sub { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .35; margin: 16px 0 6px; }
+		.settings .sub:first-child { margin-top: 0; }
+		aside.col { display: flex; flex-direction: column; gap: 16px; }
+		/* Transport: a pulse dot that blinks on each clock tick (when echo is on). */
+		#transport .pulse {
+			width: 9px; height: 9px; border-radius: 50%;
+			border: 1px solid var(--ink); background: transparent; opacity: .35;
+			transition: opacity .05s linear, background .05s linear;
+		}
+		#transport .pulse.beat { background: var(--ink); opacity: 1; }
+		#clockRate { font: inherit; font-size: 12px; width: 58px; text-align: right;
+			color: var(--ink); background: transparent;
+			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px; }
 	</style>
 </head>
 <body>
@@ -109,15 +123,44 @@
 					<span class="lbl">page</span>
 					<select class="select" id="pageSelect"></select>
 				</div>
+				<div class="group" id="transport">
+					<span class="lbl">clock</span>
+					<button class="chip" id="clockRun">run</button>
+					<button class="chip" id="clockStep">step</button>
+					<input id="clockRate" type="number" min="0.1" max="200" step="1" title="internal clock rate (Hz)" />
+					<select class="select" id="clockSource" title="internal timer, or one step per /grid/in/clock/tick">
+						<option value="internal">internal</option>
+						<option value="external">external</option>
+					</select>
+					<span class="pulse" id="clockPulse" title="tick (needs echo)"></span>
+				</div>
 			</div>
 			<div id="grid"></div>
 			<div class="readout" id="readout">&nbsp;</div>
 		</div>
-		<aside class="settings">
-			<div class="title">page settings</div>
-			<div class="ctx" id="settingsCtx">—</div>
-			<div id="settingsFields"></div>
-			<div class="note" id="settingsNote"></div>
+		<aside class="col">
+			<div class="settings">
+				<div class="title">page settings</div>
+				<div class="ctx" id="settingsCtx">—</div>
+				<div id="settingsFields"></div>
+				<div class="note" id="settingsNote"></div>
+			</div>
+			<div class="settings">
+				<div class="title">app settings</div>
+				<div class="sub">clock</div>
+				<div class="field"><label for="setClockRate">rate (Hz)</label><input id="setClockRate" type="number" min="0.1" max="200" step="1" /></div>
+				<div class="field"><label for="setClockSource">source</label>
+					<select class="select" id="setClockSource"><option value="internal">internal</option><option value="external">external</option></select>
+				</div>
+				<div class="field"><label for="setClockEcho">tick echo</label><input id="setClockEcho" type="checkbox" /></div>
+				<div class="sub">sleep</div>
+				<div class="field"><label for="setIdleConn">after, grid (min)</label><input id="setIdleConn" type="number" min="1" max="10080" step="1" /></div>
+				<div class="field"><label for="setIdleDisc">after, no grid (min)</label><input id="setIdleDisc" type="number" min="1" max="10080" step="1" /></div>
+				<div class="field"><label for="setCaffeinate">caffeinate</label><input id="setCaffeinate" type="checkbox" /></div>
+				<div class="note" id="idleNote">—</div>
+				<div class="sub">osc (restart to apply)</div>
+				<div class="field"><label>in / out</label><input id="setOscPorts" type="text" disabled /></div>
+			</div>
 		</aside>
 	</main>
 
@@ -207,6 +250,75 @@
 			});
 		}
 
+		// --- Transport + app settings ------------------------------------------------
+		// Both are plain OSC clients: everything below is a /grid/in/... message, exactly
+		// what Max would send. State comes back as /grid/out/{clock,idle,settings}.
+		const el = (id) => document.getElementById(id);
+		const clockRunBtn = el("clockRun"), clockStepBtn = el("clockStep");
+		const clockRateEl = el("clockRate"), clockSourceEl = el("clockSource"), clockPulseEl = el("clockPulse");
+		const idleNoteEl = el("idleNote");
+		let clockState = { running: false, source: "internal", rate: 20, tick: 0 };
+		let appSettings = null;
+
+		const setSetting = (path, v) => send("/grid/in/settings/" + path, [v]);
+
+		clockRunBtn.onclick = () => send("/grid/in/clock/run", [clockState.running ? 0 : 1]);
+		clockStepBtn.onclick = () => send("/grid/in/clock/tick", []);
+		clockRateEl.onchange = () => { const v = Number(clockRateEl.value); if (Number.isFinite(v)) setSetting("clock/rate", v); };
+		clockSourceEl.onchange = () => setSetting("clock/source", clockSourceEl.value);
+
+		function renderTransport() {
+			clockRunBtn.textContent = clockState.running ? "stop" : "run";
+			clockRunBtn.classList.toggle("on", clockState.running);
+			// The step button only means anything when something else supplies the ticks.
+			clockStepBtn.style.display = clockState.source === "external" ? "" : "none";
+			if (document.activeElement !== clockRateEl) clockRateEl.value = clockState.rate;
+			clockSourceEl.value = clockState.source;
+		}
+
+		let pulseTimer = null;
+		function pulse() {
+			clockPulseEl.classList.add("beat");
+			clearTimeout(pulseTimer);
+			pulseTimer = setTimeout(() => clockPulseEl.classList.remove("beat"), 60);
+		}
+
+		// App settings panel — same "don't fight the user's cursor" rule as above.
+		const appFields = [
+			["setClockRate", "clock/rate", (s) => s.clock.rate, "number"],
+			["setClockSource", "clock/source", (s) => s.clock.source, "select"],
+			["setClockEcho", "clock/echo", (s) => s.clock.echo, "check"],
+			["setIdleConn", "idle/connectedMin", (s) => s.idle.connectedMin, "number"],
+			["setIdleDisc", "idle/disconnectedMin", (s) => s.idle.disconnectedMin, "number"],
+			["setCaffeinate", "idle/caffeinate", (s) => s.idle.caffeinate, "check"],
+		];
+		appFields.forEach(([id, path, , kind]) => {
+			const input = el(id);
+			input.onchange = () => {
+				if (kind === "check") setSetting(path, input.checked ? 1 : 0);
+				else if (kind === "select") setSetting(path, input.value);
+				else { const v = Number(input.value); if (Number.isFinite(v)) setSetting(path, v); }
+			};
+		});
+
+		function renderAppSettings() {
+			if (!appSettings) return;
+			appFields.forEach(([id, , read, kind]) => {
+				const input = el(id);
+				if (document.activeElement === input) return;
+				const v = read(appSettings);
+				if (kind === "check") input.checked = !!v; else input.value = v;
+			});
+			el("setOscPorts").value = `${appSettings.osc.inPort} / ${appSettings.osc.outPort}`;
+		}
+
+		function renderIdle(s) {
+			const mins = Math.round(s.sleepAfterMs / 60000);
+			idleNoteEl.textContent = s.caffeinated
+				? "awake — caffeinated"
+				: `${s.asleep ? "asleep" : "awake"} · sleeps after ${mins} min ${s.connected ? "(grid)" : "(no grid)"}`;
+		}
+
 		function setDevice(label) { deviceLabelEl.textContent = label; deviceEl.classList.add("on"); }
 		function clearDevice() { deviceLabelEl.textContent = "no device"; deviceEl.classList.remove("on"); }
 		// Click the indicator to force a connection attempt.
@@ -266,6 +378,10 @@
 					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
 					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); break; }
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
+					case "/grid/out/clock": { try { clockState = JSON.parse(m.args[0]); } catch {} renderTransport(); break; }
+					case "/grid/out/clock/tick": pulse(); break;
+					case "/grid/out/idle": { try { renderIdle(JSON.parse(m.args[0])); } catch {} break; }
+					case "/grid/out/settings": { try { appSettings = JSON.parse(m.args[0]); } catch {} renderAppSettings(); break; }
 					case "/grid/out/leds": {
 						const [w, h, ...levels] = m.args;
 						if (w !== W || h !== H || cells.length !== w * h) buildGrid(w, h);
@@ -344,6 +460,7 @@
 		});
 
 		renderToolbar();
+		renderTransport();
 		buildGrid(W, H);
 		connect();
 	</script>

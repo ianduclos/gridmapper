@@ -18,6 +18,8 @@ import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
+import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
+import type { ClockState } from "../core/clock.js"
 import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, pageSettings } from "../pages/registry.js"
 import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel } from "../core/types.js"
 
@@ -27,9 +29,14 @@ const forceNull = process.argv.includes("--null")
 
 const held = new Set<number>()
 
+// Built once pm + the render loop exist (it needs both), but referenced from callbacks
+// that can fire during boot — hence `let` + optional reads rather than a const.
+let rt: AppRuntime | undefined
+
 // Shared by the physical grid AND the virtual /grid/in/key OSC path (below) — one
 // held-tracking implementation, not two.
 function handleKey(e: KeyEvent) {
+	rt?.idle.activity()
 	const i = e.y * w + e.x
 	if (e.s) held.add(i)
 	else held.delete(i)
@@ -43,8 +50,10 @@ const conn = new GridConnection({
 	forceNull,
 	onLeds: (levels) => broadcastLeds(levels),
 	onKey: handleKey,
-	onRepaint: () => { needsFullPaint = true },
-	onDeviceChange: () => broadcastDevice(),
+	// A repaint request (device attached, or a cable glitch that cleared the grid's LEDs)
+	// must also WAKE us — otherwise a sleeping app leaves the grid dark.
+	onRepaint: () => { needsFullPaint = true; rt?.idle.wake() },
+	onDeviceChange: () => { rt?.idle.activity(); broadcastDevice() },
 })
 const grid = conn.grid
 const { width: w, height: h } = grid.size
@@ -65,12 +74,15 @@ const server = createGridServer({
 	staticFile: UI_INDEX,
 	onMessage: (path, args) => routeControl(path, args),
 	onConnect: (send) => {
+		rt?.idle.activity() // someone opened the UI
 		send("/grid/out/device", [grid.id, w, h])
 		send("/grid/out/size", [w, h])
 		send("/grid/out/pagetypes", PAGE_TYPES)
 		send("/grid/out/pagespecs", [JSON.stringify(SPECS_MAP)])
 		send("/grid/out/focus/page", [slotLabel(pm.focusedSlot)])
 		send("/grid/out/slots", slotPages)
+		// Transport + power + persisted settings, so a late-joining panel is in sync.
+		for (const m of rt?.snapshot() ?? []) send(m.path, m.args)
 		// Per-slot current settings, so a late-joining panel reflects live state.
 		for (const slot of SLOT_INDICES) {
 			const s = pm.serialize(slot)
@@ -111,25 +123,26 @@ const modifiers: Modifiers = {
 	get shift2() { return shift.shift2 },
 }
 
+// PageContext.clock is a live getter view of the transport, so a page always reads the
+// current state, never a snapshot taken at init. (`rt` is built further down — it needs
+// the PageManager that needs this context — hence the lazy reads.)
+const clockView: ClockState = {
+	get running() { return rt?.clock.running ?? false },
+	get source() { return rt?.clock.source ?? settings.clock.source },
+	get rate() { return rt?.clock.rate ?? settings.clock.rate },
+	get tick() { return rt?.clock.tick ?? 0 },
+}
+
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 	size: grid.size,
 	modifiers,
+	clock: clockView,
 	osc: { send: emitOut },
 	setShift: (which, down) => shift.set(which, down),
 }
 
 const pm = new PageManager(baseCtx, (_frame, reason) => {
 	if (reason === "focus") needsFullPaint = true
-})
-
-// emitOut reaches Max AND the web UI (see above), so focus/slot acks broadcast to both.
-routeControl = createOscRouter({
-	pm,
-	shift,
-	reconnect: () => conn.reconnect(),
-	onKey: handleKey,
-	emit: emitOut,
-	slotPages,
 })
 
 function renderTick() {
@@ -143,6 +156,29 @@ function renderTick() {
 }
 
 const renderLoop = createRenderLoop({ onFrame: renderTick })
+
+// Transport + idle policy + persisted settings (shared with the daemon — see appRuntime).
+rt = createAppRuntime({
+	pm,
+	loop: renderLoop,
+	conn,
+	settings,
+	emit: emitOut,
+	onWake: () => { needsFullPaint = true; renderTick() },
+})
+
+// emitOut reaches Max AND the web UI (see above), so focus/slot acks broadcast to both.
+routeControl = createOscRouter({
+	pm,
+	shift,
+	reconnect: () => conn.reconnect(),
+	onKey: handleKey,
+	emit: emitOut,
+	slotPages,
+	clock: rt.clock,
+	idle: rt.idle,
+	settings: rt.settings,
+})
 
 for (const slot of SLOT_INDICES) pm.load(slot, pageFactory(slotPages[slot])!)
 pm.focus(0 as Slot)
@@ -158,6 +194,7 @@ console.log(forceNull ? "[sim] --null: simulated grid only." : "[sim] auto-conne
 
 process.on("SIGINT", () => {
 	renderLoop.stop()
+	try { rt?.close() } catch {} // stops the clock, flushes any pending settings write
 	try { grid.ledLevelAll(0) } catch {}
 	setTimeout(() => {
 		try { conn.close() } catch {}

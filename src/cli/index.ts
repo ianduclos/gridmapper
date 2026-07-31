@@ -16,6 +16,8 @@ import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
+import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
+import type { ClockState } from "../core/clock.js"
 import { pageFactory, DEFAULT_PAGE } from "../pages/registry.js"
 import {
 	type PageContext,
@@ -28,9 +30,14 @@ import {
 const useNull = process.argv.includes("--null")
 const held = new Set<number>()
 
+// Built once pm + the render loop exist; referenced from callbacks that can fire during
+// boot, so it's a `let` with optional reads (same shape as sim.ts).
+let rt: AppRuntime | undefined
+
 // Shared by the physical grid AND the virtual /grid/in/key OSC path (below) — one
 // held-tracking implementation, not two.
 function handleKey(e: KeyEvent) {
+	rt?.idle.activity()
 	const i = e.y * w + e.x
 	if (e.s) held.add(i)
 	else held.delete(i)
@@ -45,7 +52,10 @@ const conn = new GridConnection({
 	size: { width: 16, height: 8 },
 	forceNull: useNull,
 	onKey: handleKey,
-	onRepaint: () => { needsFullPaint = true },
+	// A repaint request (device attached, or a cable glitch that cleared the grid's LEDs)
+	// must also WAKE us — otherwise a sleeping daemon leaves the grid dark.
+	onRepaint: () => { needsFullPaint = true; rt?.idle.wake() },
+	onDeviceChange: () => rt?.idle.activity(),
 })
 const grid = conn.grid
 const { width: w } = grid.size
@@ -79,9 +89,18 @@ const modifiers: Modifiers = {
 	get shift2() { return shift.shift2 },
 }
 
+// Live getter view of the transport for PageContext.clock — see sim.ts for why it's lazy.
+const clockView: ClockState = {
+	get running() { return rt?.clock.running ?? false },
+	get source() { return rt?.clock.source ?? settings.clock.source },
+	get rate() { return rt?.clock.rate ?? settings.clock.rate },
+	get tick() { return rt?.clock.tick ?? 0 },
+}
+
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 	size: grid.size,
 	modifiers,
+	clock: clockView,
 	osc: { send: emitOut },
 	setShift: (which, down) => shift.set(which, down),
 }
@@ -102,6 +121,17 @@ function renderTick() {
 
 const renderLoop = createRenderLoop({ onFrame: renderTick })
 
+// Transport + idle policy + persisted settings — the SAME wiring the sim uses, so the
+// daemon can't drift (see core/appRuntime.ts).
+rt = createAppRuntime({
+	pm,
+	loop: renderLoop,
+	conn,
+	settings,
+	emit: emitOut,
+	onWake: () => { needsFullPaint = true; renderTick() },
+})
+
 // Load the default page into every slot; focus a.
 for (const slot of SLOT_INDICES) pm.load(slot, pageFactory(DEFAULT_PAGE)!)
 pm.focus(0 as Slot)
@@ -121,13 +151,19 @@ osc.onMessage(
 		onKey: handleKey,
 		emit: emitOut,
 		slotPages,
+		clock: rt.clock,
+		idle: rt.idle,
+		settings: rt.settings,
 	})
 )
+// Announce transport + power + settings, so a patch that boots after us is in sync.
+for (const m of rt.snapshot()) emitOut(m.path, ...m.args)
 
 console.log(`[daemon] up. OSC in ${settings.osc.inPort} / out ${settings.osc.outPort}. 8 slots (a–h), default Base — press the grid.`)
 
 const shutdown = () => {
 	renderLoop.stop()
+	try { rt?.close() } catch {} // stops the clock, flushes any pending settings write
 	try { grid.ledLevelAll(0) } catch {}
 	setTimeout(() => {
 		try { conn.close() } catch {}

@@ -4,6 +4,8 @@
 // (x, y) cell coordinates and LED intensity 0..15 (varibright). Only the driver
 // (io/serialoscDriver.ts) knows the serialosc/OSC wire format.
 
+import type { ClockState } from "./clock.js"
+
 /** A monome grid is a W×H field of buttons. grid 128 = 16 wide × 8 tall. */
 export interface GridSize {
 	width: number
@@ -55,6 +57,11 @@ export interface Modifiers {
 export interface PageContext {
 	size: GridSize
 	modifiers: Modifiers
+	/**
+	 * Live view of the app transport (core/clock.ts). Read it any time — it is the same
+	 * object the host mutates, never a copy taken at init.
+	 */
+	clock: Readonly<ClockState>
 	osc: {
 		send: (path: string, ...args: Array<number | string | boolean>) => void
 	}
@@ -77,10 +84,26 @@ export interface Page {
 	onBlur(ctx: PageContext): void
 	onKey(ev: KeyEvent, ctx: PageContext): void
 	onOsc?(path: string, args: any[], ctx: PageContext): void
+	/**
+	 * One app-clock tick. Unlike keys, this reaches EVERY loaded page, focused or not —
+	 * a sequencer in slot b keeps running (and keeps emitting OSC) while you look at
+	 * slot a. `tick` is the running count since boot/reset; divide it down yourself.
+	 */
+	onTick?(tick: number, ctx: PageContext): void
+	/**
+	 * The transport changed (start/stop/rate/source/reset). Also reaches every loaded
+	 * page. This is where a sequencer releases sounding notes on stop.
+	 */
+	onClock?(state: Readonly<ClockState>, ctx: PageContext): void
 	render(ctx: PageContext): LedFrame | undefined
 	/** Structural config for preset capture; MUST exclude transient runtime state. */
 	serialize?(): unknown
-	dispose(): void
+	/**
+	 * The slot is being unloaded/replaced. `ctx` is passed so a page that owns external
+	 * state (a sequencer with sounding notes) can release it; implementations that don't
+	 * need it may keep the zero-arg form.
+	 */
+	dispose(ctx: PageContext): void
 }
 
 // 8 hot-swappable page slots, labelled a..h (mirrors the twister).
@@ -99,5 +122,5 @@ export const slotFromLabel = (label: string): Slot | undefined => {
 	return idx === -1 ? undefined : SLOT_INDICES[idx]
 }
 
-export type OnFrameReason = "key" | "osc" | "dirty" | "focus"
+export type OnFrameReason = "key" | "osc" | "dirty" | "focus" | "tick"
 export type OnFrame = (frame: LedFrame | undefined, reason: OnFrameReason) => void
