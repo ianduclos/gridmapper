@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { SettingsStore, writeSettings, DEFAULT_SETTINGS, minToMs, type Settings } from "../src/core/settings.js"
+import { SettingsStore, writeSettings, loadSettings, DEFAULT_SETTINGS, minToMs, type Settings } from "../src/core/settings.js"
 
 const tmp = () => join(mkdtempSync(join(tmpdir(), "gridmapper-settings-")), "settings.json")
 const clone = (): Settings => structuredClone(DEFAULT_SETTINGS)
@@ -36,11 +36,13 @@ describe("SettingsStore.apply", () => {
 		const seen: string[] = []
 		const st = store((_s, p) => seen.push(p))
 		expect(st.apply("clock/rate", 45)).toBe(true)
-		expect(st.apply("clock/source", "external")).toBe(true)
+		expect(st.apply("clock/lanes/1/source", "external")).toBe(true)
+		expect(st.apply("clock/lanes/1/div", 3)).toBe(true)
 		expect(st.apply("idle/caffeinate", 1)).toBe(true)
-		expect(st.get().clock).toMatchObject({ rate: 45, source: "external" })
+		expect(st.get().clock.rate).toBe(45)
+		expect(st.get().clock.lanes[1]).toEqual({ source: "external", div: 3 })
 		expect(st.get().idle.caffeinate).toBe(true)
-		expect(seen).toEqual(["clock/rate", "clock/source", "idle/caffeinate"])
+		expect(seen).toEqual(["clock/rate", "clock/lanes", "clock/lanes", "idle/caffeinate"])
 	})
 
 	it("clamps out-of-range values rather than storing them", () => {
@@ -57,8 +59,14 @@ describe("SettingsStore.apply", () => {
 		expect(st.get().clock.echo).toBe(true)
 		expect(st.apply("clock/echo", 0)).toBe(true)
 		expect(st.get().clock.echo).toBe(false)
-		expect(st.apply("clock/source", "wall-clock")).toBe(false)
-		expect(st.get().clock.source).toBe("internal")
+		expect(st.apply("clock/lanes/0/source", "wall-clock")).toBe(false)
+		expect(st.get().clock.lanes[0].source).toBe("internal")
+	})
+
+	it("refuses a lane index that doesn't exist", () => {
+		const st = store()
+		expect(st.apply("clock/lanes/9/div", 2)).toBe(false)
+		expect(st.apply("clock/lanes/0/nonsense", 2)).toBe(false)
 	})
 
 	it("refuses boot-only and unknown keys", () => {
@@ -96,5 +104,18 @@ describe("defaults", () => {
 
 	it("ships the clock stopped-by-default (no run flag is persisted at all)", () => {
 		expect("run" in DEFAULT_SETTINGS.clock).toBe(false)
+	})
+
+	it("lane 0 defaults to 1:1 with the master, so the pre-lane behaviour is the default", () => {
+		expect(DEFAULT_SETTINGS.clock.lanes[0]).toEqual({ source: "internal", div: 1 })
+	})
+
+	it("migrates a pre-lane file: clock.source becomes lane 0's source", () => {
+		const path = tmp()
+		writeFileSync(path, JSON.stringify({ clock: { rate: 30, source: "external" } }))
+		const loaded = loadSettings(path)
+		expect(loaded.clock.rate).toBe(30)
+		expect(loaded.clock.lanes[0].source).toBe("external")
+		expect(loaded.clock.lanes[1]).toEqual(DEFAULT_SETTINGS.clock.lanes[1])
 	})
 })

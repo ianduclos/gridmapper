@@ -11,7 +11,7 @@ import {
 import type { ClockState } from "../src/core/clock.js"
 
 const SIZE: GridSize = { width: 16, height: 8 }
-const STOPPED_CLOCK: ClockState = { running: false, source: "internal", rate: 20, tick: 0 }
+const STOPPED_CLOCK: ClockState = { running: false, rate: 20, tick: 0, lanes: [] }
 
 function makePm(onFrame?: Parameters<typeof PageManager.prototype.constructor>[1]) {
 	const modifiers: Modifiers = { held: new Set(), shift1: false, shift2: false }
@@ -28,6 +28,7 @@ function makePm(onFrame?: Parameters<typeof PageManager.prototype.constructor>[1
 /** Records which lifecycle calls it received, and from which slot. */
 function clockedPage() {
 	const ticks: number[] = []
+	const lanes: number[] = []
 	const clocks: ClockState[] = []
 	let slot = -1
 	let disposedCtx: PageContext | undefined
@@ -36,12 +37,12 @@ function clockedPage() {
 		onFocus() {},
 		onBlur() {},
 		onKey() {},
-		onTick(n) { ticks.push(n) },
+		onTick(n, lane) { ticks.push(n); lanes.push(lane) },
 		onClock(s) { clocks.push({ ...s }) },
 		render() { return undefined },
 		dispose(ctx) { disposedCtx = ctx },
 	}
-	return { page, ticks, clocks, get slot() { return slot }, get disposedCtx() { return disposedCtx } }
+	return { page, ticks, lanes, clocks, get slot() { return slot }, get disposedCtx() { return disposedCtx } }
 }
 
 describe("PageManager transport fan-out", () => {
@@ -56,13 +57,22 @@ describe("PageManager transport fan-out", () => {
 		for (const p of pages) expect(p.ticks).toEqual([1, 2])
 	})
 
+	it("passes the lane through, so a page can follow just its own", () => {
+		const pm = makePm()
+		const p = clockedPage()
+		pm.load(0 as Slot, () => p.page)
+		pm.tick(1, 0)
+		pm.tick(1, 3)
+		expect(p.lanes).toEqual([0, 3])
+	})
+
 	it("fans clock changes out to every loaded page", () => {
 		const pm = makePm()
 		const pages = SLOT_INDICES.map(() => clockedPage())
 		SLOT_INDICES.forEach((slot, i) => pm.load(slot, () => pages[i].page))
 
-		pm.clockChanged({ running: true, source: "internal", rate: 20, tick: 5 })
-		for (const p of pages) expect(p.clocks).toEqual([{ running: true, source: "internal", rate: 20, tick: 5 }])
+		pm.clockChanged({ running: true, rate: 20, tick: 5, lanes: [] })
+		for (const p of pages) expect(p.clocks).toEqual([{ running: true, rate: 20, tick: 5, lanes: [] }])
 	})
 
 	it("skips pages that don't implement the optional hooks", () => {

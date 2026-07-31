@@ -75,16 +75,18 @@ export class PageManager {
 	}
 
 	/**
-	 * One app-clock tick, fanned out to EVERY loaded page — not just the focused one, so
-	 * a sequencer keeps running (and keeps emitting OSC) in a slot you aren't looking at.
+	 * One app-clock tick on one lane, fanned out to EVERY loaded page — not just the
+	 * focused one, so a sequencer keeps running (and keeps emitting OSC) in a slot you
+	 * aren't looking at. Every lane reaches every page and the page filters, which keeps
+	 * the framework from having to read a page's own settings to route ticks.
 	 * Guarded per page: one page throwing must not stall the transport for the others.
 	 */
-	tick(n: number) {
+	tick(n: number, lane = 0) {
 		for (const slot of SLOT_INDICES) {
 			const p = this.pages[slot]
 			if (!p?.onTick) continue
 			try {
-				p.onTick(n, this.ctxPerSlot[slot])
+				p.onTick(n, lane, this.ctxPerSlot[slot])
 			} catch (err) {
 				console.error(`[PageManager] onTick error in slot ${slotLabel(slot)}:`, err)
 			}

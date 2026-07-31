@@ -98,6 +98,14 @@
 		.settings .sub { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .35; margin: 16px 0 6px; }
 		.settings .sub:first-child { margin-top: 0; }
 		aside.col { display: flex; flex-direction: column; gap: 16px; }
+		/* Page settings sit under the grid, where there's room to spread out. */
+		.settings.wide { max-width: none; width: 100%; }
+		.settings.wide #settingsFields { display: flex; flex-wrap: wrap; gap: 4px 28px; }
+		.settings.wide .field { margin: 6px 0; }
+		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
+			color: var(--ink); background: transparent;
+			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px; }
+		#clockRate { cursor: ns-resize; touch-action: none; }
 		/* Transport: a pulse dot that blinks on each clock tick (when echo is on). */
 		#transport .pulse {
 			width: 9px; height: 9px; border-radius: 50%;
@@ -126,33 +134,31 @@
 				<div class="group" id="transport">
 					<span class="lbl">clock</span>
 					<button class="chip" id="clockRun">run</button>
-					<button class="chip" id="clockStep">step</button>
-					<input id="clockRate" type="number" min="0.1" max="200" step="1" title="internal clock rate (Hz)" />
-					<select class="select" id="clockSource" title="internal timer, or one step per /grid/in/clock/tick">
-						<option value="internal">internal</option>
-						<option value="external">external</option>
-					</select>
+					<input id="clockRate" type="number" min="0.1" max="200" step="1" title="master rate (Hz) — drag to change" />
 					<span class="pulse" id="clockPulse" title="tick (needs echo)"></span>
+					<button class="chip" id="clockStep" title="one manual tick into the lane on the right">step</button>
+					<input id="clockStepLane" type="number" min="0" max="3" step="1" value="0" title="lane to step" />
 				</div>
 			</div>
 			<div id="grid"></div>
 			<div class="readout" id="readout">&nbsp;</div>
-		</div>
-		<aside class="col">
-			<div class="settings">
+			<div class="settings wide">
 				<div class="title">page settings</div>
 				<div class="ctx" id="settingsCtx">—</div>
 				<div id="settingsFields"></div>
 				<div class="note" id="settingsNote"></div>
 			</div>
+		</div>
+		<aside class="col">
 			<div class="settings">
 				<div class="title">app settings</div>
 				<div class="sub">clock</div>
 				<div class="field"><label for="setClockRate">rate (Hz)</label><input id="setClockRate" type="number" min="0.1" max="200" step="1" /></div>
-				<div class="field"><label for="setClockSource">source</label>
-					<select class="select" id="setClockSource"><option value="internal">internal</option><option value="external">external</option></select>
-				</div>
 				<div class="field"><label for="setClockEcho">tick echo</label><input id="setClockEcho" type="checkbox" /></div>
+				<!-- Four lanes. A page picks one, and the lane decides internal vs external —
+				     that's how "internal or external clock per page" works without a second clock. -->
+				<div class="sub">lanes</div>
+				<div id="laneRows"></div>
 				<div class="sub">sleep</div>
 				<div class="field"><label for="setIdleConn">after, grid (min)</label><input id="setIdleConn" type="number" min="1" max="10080" step="1" /></div>
 				<div class="field"><label for="setIdleDisc">after, no grid (min)</label><input id="setIdleDisc" type="number" min="1" max="10080" step="1" /></div>
@@ -255,25 +261,81 @@
 		// what Max would send. State comes back as /grid/out/{clock,idle,settings}.
 		const el = (id) => document.getElementById(id);
 		const clockRunBtn = el("clockRun"), clockStepBtn = el("clockStep");
-		const clockRateEl = el("clockRate"), clockSourceEl = el("clockSource"), clockPulseEl = el("clockPulse");
-		const idleNoteEl = el("idleNote");
-		let clockState = { running: false, source: "internal", rate: 20, tick: 0 };
+		const clockRateEl = el("clockRate"), clockPulseEl = el("clockPulse"), clockStepLaneEl = el("clockStepLane");
+		const laneRowsEl = el("laneRows"), idleNoteEl = el("idleNote");
+		let clockState = { running: false, rate: 20, tick: 0, lanes: [] };
 		let appSettings = null;
 
 		const setSetting = (path, v) => send("/grid/in/settings/" + path, [v]);
 
 		clockRunBtn.onclick = () => send("/grid/in/clock/run", [clockState.running ? 0 : 1]);
-		clockStepBtn.onclick = () => send("/grid/in/clock/tick", []);
+		clockStepBtn.onclick = () => send("/grid/in/clock/tick", [Number(clockStepLaneEl.value) || 0]);
 		clockRateEl.onchange = () => { const v = Number(clockRateEl.value); if (Number.isFinite(v)) setSetting("clock/rate", v); };
-		clockSourceEl.onchange = () => setSetting("clock/source", clockSourceEl.value);
+
+		// Drag the rate field to set tempo: up is faster. Shift = fine. Throttled, because
+		// the settings store debounces its disk write but the socket shouldn't be flooded.
+		let dragFrom = null, lastRateSend = 0;
+		clockRateEl.addEventListener("pointerdown", (e) => {
+			dragFrom = { y: e.clientY, rate: Number(clockRateEl.value) || 20 };
+			clockRateEl.setPointerCapture(e.pointerId);
+		});
+		clockRateEl.addEventListener("pointermove", (e) => {
+			if (!dragFrom) return;
+			e.preventDefault();
+			const perPx = e.shiftKey ? 0.05 : 0.5;
+			const next = Math.max(0.1, Math.min(200, dragFrom.rate + (dragFrom.y - e.clientY) * perPx));
+			const rounded = e.shiftKey ? Math.round(next * 10) / 10 : Math.round(next);
+			clockRateEl.value = rounded;
+			const now = Date.now();
+			if (now - lastRateSend < 50) return;
+			lastRateSend = now;
+			setSetting("clock/rate", rounded);
+		});
+		const endDrag = () => {
+			if (!dragFrom) return;
+			dragFrom = null;
+			setSetting("clock/rate", Number(clockRateEl.value)); // make sure the last value lands
+		};
+		clockRateEl.addEventListener("pointerup", endDrag);
+		clockRateEl.addEventListener("pointercancel", endDrag);
 
 		function renderTransport() {
 			clockRunBtn.textContent = clockState.running ? "stop" : "run";
 			clockRunBtn.classList.toggle("on", clockState.running);
-			// The step button only means anything when something else supplies the ticks.
-			clockStepBtn.style.display = clockState.source === "external" ? "" : "none";
-			if (document.activeElement !== clockRateEl) clockRateEl.value = clockState.rate;
-			clockSourceEl.value = clockState.source;
+			if (document.activeElement !== clockRateEl && !dragFrom) clockRateEl.value = clockState.rate;
+			renderLanes();
+		}
+
+		// One row per lane: source + divisor. Rebuilt only when the shape changes, so
+		// typing in a div box isn't interrupted by the echo coming back.
+		function renderLanes() {
+			const lanes = clockState.lanes || [];
+			if (laneRowsEl.childElementCount !== lanes.length) {
+				laneRowsEl.innerHTML = "";
+				lanes.forEach((_l, i) => {
+					const row = document.createElement("div"); row.className = "field";
+					const lab = document.createElement("label"); lab.textContent = i;
+					const src = document.createElement("select"); src.className = "select";
+					["internal", "external"].forEach((o) => {
+						const op = document.createElement("option"); op.value = o; op.textContent = o; src.appendChild(op);
+					});
+					src.onchange = () => setSetting(`clock/lanes/${i}/source`, src.value);
+					const div = document.createElement("input");
+					div.type = "number"; div.min = 1; div.max = 64; div.step = 1; div.title = "÷ master";
+					div.style.width = "48px";
+					div.onchange = () => { const v = Number(div.value); if (Number.isFinite(v)) setSetting(`clock/lanes/${i}/div`, v); };
+					row.append(lab, src, div);
+					laneRowsEl.appendChild(row);
+				});
+			}
+			lanes.forEach((lane, i) => {
+				const row = laneRowsEl.children[i];
+				const [, src, div] = row.children;
+				if (document.activeElement !== src) src.value = lane.source;
+				if (document.activeElement !== div) div.value = lane.div;
+				// An external lane ignores the master, so its divisor is meaningless.
+				div.disabled = lane.source === "external";
+			});
 		}
 
 		let pulseTimer = null;
@@ -286,7 +348,6 @@
 		// App settings panel — same "don't fight the user's cursor" rule as above.
 		const appFields = [
 			["setClockRate", "clock/rate", (s) => s.clock.rate, "number"],
-			["setClockSource", "clock/source", (s) => s.clock.source, "select"],
 			["setClockEcho", "clock/echo", (s) => s.clock.echo, "check"],
 			["setIdleConn", "idle/connectedMin", (s) => s.idle.connectedMin, "number"],
 			["setIdleDisc", "idle/disconnectedMin", (s) => s.idle.disconnectedMin, "number"],
@@ -379,7 +440,8 @@
 					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); break; }
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
 					case "/grid/out/clock": { try { clockState = JSON.parse(m.args[0]); } catch {} renderTransport(); break; }
-					case "/grid/out/clock/tick": pulse(); break;
+					// [lane, n] — blink on lane 0 only, or four lanes would strobe at once.
+					case "/grid/out/clock/tick": if (Number(m.args[0]) === 0) pulse(); break;
 					case "/grid/out/idle": { try { renderIdle(JSON.parse(m.args[0])); } catch {} break; }
 					case "/grid/out/settings": { try { appSettings = JSON.parse(m.args[0]); } catch {} renderAppSettings(); break; }
 					case "/grid/out/leds": {

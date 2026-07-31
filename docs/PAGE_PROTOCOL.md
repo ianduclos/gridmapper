@@ -52,7 +52,7 @@ interface Page {
   onBlur(ctx: PageContext): void               // page hidden
   onKey(ev: KeyEvent, ctx: PageContext): void  // a key went down (s=1) or up (s=0)
   onOsc?(path: string, args: any[], ctx: PageContext): void   // optional, app OSC in
-  onTick?(tick: number, ctx: PageContext): void               // optional, app clock
+  onTick?(tick: number, lane: number, ctx: PageContext): void // optional, app clock
   onClock?(state: ClockState, ctx: PageContext): void         // optional, transport
   render(ctx: PageContext): LedFrame | undefined              // the current frame
   serialize?(): unknown                        // optional, structural config for presets
@@ -69,7 +69,7 @@ When each is called:
 | `onBlur`    | When focus leaves this slot. Clear visual state if you want.    |
 | `onKey`     | On every key edge, **only while focused**. Mutate state; don't draw here. |
 | `onOsc`     | When app OSC is routed to this slot (optional).                 |
-| `onTick`    | On every app-clock tick — in **every** slot, focused or not (optional). |
+| `onTick`    | On every app-clock tick, on **every lane**, in **every** slot — focused or not (optional). |
 | `onClock`   | When the transport starts/stops/changes rate or source, every slot (optional). |
 | `render`    | **Every frame** (~58fps) while focused. Return the frame for *now*. |
 | `serialize` | When a preset is captured (optional).                          |
@@ -151,7 +151,8 @@ Frames are for *drawing*. If your page needs musical time — a sequencer, an ar
 anything that steps — do **not** count frames. Take the app clock:
 
 ```ts
-onTick(tick: number, ctx: PageContext) {      // one app-clock tick
+onTick(tick: number, lane: number, ctx: PageContext) {
+  if (lane !== this.lane) return              // follow one lane; ignore the rest
   if (tick % this.div !== 0) return           // your own divider, if you want one
   this.advance(ctx)                           // mutate state, emit OSC
 }
@@ -167,9 +168,14 @@ Three things to know:
   running while you look at slot a — that's the point. So `onBlur` must **not** stop it or
   release its notes.
 - **The transport is off by default** and is app-wide, not per-page: `/grid/in/clock/run`,
-  `/grid/in/clock/tick` (external/manual step), `/grid/in/settings/clock/rate`. Read the
-  current state any time via `ctx.clock` (`{ running, source, rate, tick }`) — it's a live
+  `/grid/in/clock/tick <lane>` (manual step), `/grid/in/settings/clock/rate`. Read the
+  current state any time via `ctx.clock` (`{ running, rate, tick, lanes }`) — it's a live
   view, not a snapshot.
+- **Four lanes, and the lane owns internal-vs-external.** Each lane is either a divisor of
+  the master timer or fed entirely by OSC. So a page doesn't implement a clock choice — it
+  declares a `lane` setting and follows it, and you change what that lane *is* from the app
+  settings panel. Expose the lane as a `SettingSpec` (0–3) so it's configurable like
+  anything else. Effective rate = master ÷ lane divisor ÷ your own divider.
 - **You own your own cleanup.** Release sounding notes in `onClock` (on stop) and in
   `dispose(ctx)` (slot replaced). Nothing else will do it for you.
 

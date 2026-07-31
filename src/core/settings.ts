@@ -12,7 +12,15 @@
 import { readFileSync, writeFileSync, renameSync } from "node:fs"
 import { resolve as resolvePath } from "node:path"
 import { clamp } from "../util/scale.js"
-import { type ClockSource, isClockSource, clampRate } from "./clock.js"
+import {
+	type LaneConfig,
+	isClockSource,
+	clampRate,
+	clampDiv,
+	sanitizeLanes,
+	DEFAULT_LANES,
+	LANE_COUNT,
+} from "./clock.js"
 
 const SETTINGS_PATH = resolvePath(process.cwd(), "configs/settings.json")
 const SAVE_DEBOUNCE_MS = 300 // a slider drag shouldn't thrash the disk
@@ -23,8 +31,10 @@ export type Settings = {
 		outPort: number
 	}
 	clock: {
+		/** Master internal rate in Hz. */
 		rate: number
-		source: ClockSource
+		/** Per-lane source + divisor (see core/clock.ts). Always LANE_COUNT entries. */
+		lanes: LaneConfig[]
 		/** Echo every tick as /grid/out/clock/tick (off by default — it's 20 msg/s). */
 		echo: boolean
 	}
@@ -40,7 +50,7 @@ export type Settings = {
 
 export const DEFAULT_SETTINGS: Settings = {
 	osc: { inPort: 57131, outPort: 57130 },
-	clock: { rate: 20, source: "internal", echo: false },
+	clock: { rate: 20, lanes: DEFAULT_LANES.map((l) => ({ ...l })), echo: false },
 	idle: { connectedMin: 240, disconnectedMin: 15, caffeinate: false },
 }
 
@@ -68,11 +78,24 @@ const cleanBool = (value: unknown, fallback: boolean) => {
 	return fallback
 }
 
+/**
+ * Lanes, tolerating a settings file written before they existed. A pre-lane file has a
+ * single `clock.source`; that was the one and only tick stream, so it becomes lane 0's
+ * source and the rest fall back to defaults.
+ */
+const migrateLanes = (clockNode: Record<string, unknown>): LaneConfig[] => {
+	const lanes = sanitizeLanes(clockNode.lanes)
+	if (!Array.isArray(clockNode.lanes) && isClockSource(clockNode.source)) {
+		lanes[0].source = clockNode.source
+	}
+	return lanes
+}
+
 /** Load configs/settings.json, tolerating a missing, partial or malformed file. */
-export function loadSettings(): Settings {
+export function loadSettings(path = SETTINGS_PATH): Settings {
 	let parsed: unknown
 	try {
-		parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"))
+		parsed = JSON.parse(readFileSync(path, "utf8"))
 	} catch (err) {
 		const code = (err as NodeJS.ErrnoException)?.code
 		if (code && code !== "ENOENT") {
@@ -93,7 +116,7 @@ export function loadSettings(): Settings {
 		},
 		clock: {
 			rate: clampRate(clockNode.rate ?? DEFAULT_SETTINGS.clock.rate),
-			source: isClockSource(clockNode.source) ? clockNode.source : DEFAULT_SETTINGS.clock.source,
+			lanes: migrateLanes(clockNode),
 			echo: cleanBool(clockNode.echo, DEFAULT_SETTINGS.clock.echo),
 		},
 		idle: {
@@ -148,11 +171,19 @@ export class SettingsStore {
 		let ok = true
 		if (section === "clock") {
 			if (key === "rate") c.clock.rate = clampRate(value)
-			else if (key === "source") {
-				if (!isClockSource(value)) return false
-				c.clock.source = value
-			} else if (key === "echo") c.clock.echo = cleanBool(value, c.clock.echo)
-			else ok = false
+			else if (key === "echo") c.clock.echo = cleanBool(value, c.clock.echo)
+			else if (key === "lanes") {
+				// clock/lanes/<i>/<source|div> — the web panel's four lane rows.
+				const [, , idxRaw, laneKey] = path.split("/").filter(Boolean)
+				const i = Number(idxRaw)
+				if (!Number.isInteger(i) || i < 0 || i >= LANE_COUNT) return false
+				if (laneKey === "source") {
+					if (!isClockSource(value)) return false
+					c.clock.lanes[i].source = value
+				} else if (laneKey === "div") {
+					c.clock.lanes[i].div = clampDiv(value)
+				} else return false
+			} else ok = false
 		} else if (section === "idle") {
 			if (key === "connectedMin") c.idle.connectedMin = cleanMinutes(value, c.idle.connectedMin)
 			else if (key === "disconnectedMin") c.idle.disconnectedMin = cleanMinutes(value, c.idle.disconnectedMin)

@@ -24,7 +24,7 @@ function makePm() {
 	const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 		size: SIZE,
 		modifiers,
-		clock: { running: false, source: "internal", rate: 20, tick: 0 },
+		clock: { running: false, rate: 20, tick: 0, lanes: [] },
 		osc: { send: () => {} },
 		setShift: () => {},
 	}
@@ -225,10 +225,19 @@ describe("createOscRouter — transport + settings", () => {
 
 	function makeRouter() {
 		const ticks: number[] = []
-		const clock = new AppClock({ rate: 10, onTick: (n) => ticks.push(n) })
+		const laneTicks: Array<{ tick: number; lane: number }> = []
+		const clock = new AppClock({
+			rate: 10,
+			onTick: (n, lane) => {
+				laneTicks.push({ tick: n, lane })
+				if (lane === 0) ticks.push(n)
+			},
+		})
+		// Mirror the host wiring (see core/appRuntime.ts): a settings change reaches the
+		// live clock, which is what makes the lane rows in the web panel actually work.
 		const settings = new SettingsStore(
 			structuredClone(DEFAULT_SETTINGS),
-			undefined,
+			(s) => s.clock.lanes.forEach((lane, i) => clock.setLane(i, lane)),
 			join(mkdtempSync(join(tmpdir(), "gridmapper-router-")), "settings.json")
 		)
 		const emit = vi.fn()
@@ -242,7 +251,7 @@ describe("createOscRouter — transport + settings", () => {
 			clock,
 			settings,
 		})
-		return { router, clock, settings, emit, ticks }
+		return { router, clock, settings, emit, ticks, laneTicks }
 	}
 
 	it("starts and stops the transport", () => {
@@ -263,6 +272,45 @@ describe("createOscRouter — transport + settings", () => {
 		router("/grid/in/clock/tick", [])
 		router("/grid/in/clock/tick", [])
 		expect(ticks).toEqual([1, 2])
+	})
+
+	it("routes a manual tick to the lane in the argument, defaulting to lane 0", () => {
+		const { router, laneTicks } = makeRouter()
+		router("/grid/in/clock/tick", [2])
+		router("/grid/in/clock/tick", [])
+		router("/grid/in/clock/tick", [99]) // out of range → lane 0, never a crash
+		expect(laneTicks).toEqual([
+			{ tick: 1, lane: 2 },
+			{ tick: 1, lane: 0 },
+			{ tick: 2, lane: 0 },
+		])
+	})
+
+	it("routes lane settings through to the live clock", () => {
+		const { router, clock, settings } = makeRouter()
+		router("/grid/in/settings/clock/lanes/1/source", ["external"])
+		router("/grid/in/settings/clock/lanes/1/div", [7])
+		expect(settings.get().clock.lanes[1]).toEqual({ source: "external", div: 7 })
+		expect(clock.lane(1)).toMatchObject({ source: "external", div: 7 })
+	})
+
+	it("/grid/in/heartbeat is inert but still counts as activity", () => {
+		const idle = { activity: vi.fn(), wake: vi.fn(), sleep: vi.fn() }
+		const { clock } = makeRouter()
+		const router = createOscRouter({
+			pm: makePm(),
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit: () => {},
+			slotPages: [],
+			clock,
+			idle: idle as any,
+		})
+		router("/grid/in/heartbeat", [])
+		expect(idle.activity).toHaveBeenCalledTimes(1)
+		expect(clock.tick).toBe(0) // it must never do anything else
+		expect(clock.running).toBe(false)
 	})
 
 	it("resets the counter and re-emits state on demand", () => {

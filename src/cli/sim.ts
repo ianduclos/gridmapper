@@ -19,7 +19,7 @@ import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
-import type { ClockState } from "../core/clock.js"
+import type { ClockState, LaneState } from "../core/clock.js"
 import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, pageSettings } from "../pages/registry.js"
 import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel } from "../core/types.js"
 
@@ -128,9 +128,9 @@ const modifiers: Modifiers = {
 // the PageManager that needs this context — hence the lazy reads.)
 const clockView: ClockState = {
 	get running() { return rt?.clock.running ?? false },
-	get source() { return rt?.clock.source ?? settings.clock.source },
 	get rate() { return rt?.clock.rate ?? settings.clock.rate },
 	get tick() { return rt?.clock.tick ?? 0 },
+	get lanes() { return (rt?.clock.laneStates ?? []) as LaneState[] },
 }
 
 const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {

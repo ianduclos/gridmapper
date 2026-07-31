@@ -87,9 +87,11 @@ export interface Page {
 	/**
 	 * One app-clock tick. Unlike keys, this reaches EVERY loaded page, focused or not —
 	 * a sequencer in slot b keeps running (and keeps emitting OSC) while you look at
-	 * slot a. `tick` is the running count since boot/reset; divide it down yourself.
+	 * slot a. It also reaches every page on EVERY lane, so filter: a clocked page
+	 * declares which lane it follows and ignores the rest (see pages/meadowphysics.ts).
+	 * `tick` is that lane's running count since boot/reset.
 	 */
-	onTick?(tick: number, ctx: PageContext): void
+	onTick?(tick: number, lane: number, ctx: PageContext): void
 	/**
 	 * The transport changed (start/stop/rate/source/reset). Also reaches every loaded
 	 * page. This is where a sequencer releases sounding notes on stop.

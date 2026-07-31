@@ -339,7 +339,7 @@ describe("meadowphysics display", () => {
 
 function makeCtx() {
 	const sent: Array<{ path: string; args: any[] }> = []
-	const clock: ClockState = { running: true, source: "internal", rate: 20, tick: 0 }
+	const clock: ClockState = { running: true, rate: 20, tick: 0, lanes: [] }
 	const ctx = {
 		size: SIZE,
 		modifiers: { held: new Set<number>(), shift1: false, shift2: false },
@@ -356,7 +356,7 @@ function makeCtx() {
 
 /** Ticks a page until it emits its first note, or gives up. */
 function tickUntilNote(page: MeadowphysicsPage, ctx: PageContext, notes: () => unknown[], max = 60) {
-	for (let n = 1; n <= max && notes().length === 0; n++) page.onTick(n, ctx)
+	for (let n = 1; n <= max && notes().length === 0; n++) page.onTick(n, 0, ctx)
 }
 
 describe("MeadowphysicsPage (app clock)", () => {
@@ -399,12 +399,12 @@ describe("MeadowphysicsPage (app clock)", () => {
 		page.init(ctx)
 		page.onOsc("/setting/div", [4], ctx)
 		expect((page.serialize() as any).div).toBe(4)
-		for (let n = 1; n <= 28; n++) page.onTick(n, ctx)
+		for (let n = 1; n <= 28; n++) page.onTick(n, 0, ctx)
 
 		// 28 ticks at div 4 must land exactly where 7 ticks at div 1 land.
 		const plain = new MeadowphysicsPage()
 		plain.init(makeCtx().ctx)
-		for (let n = 1; n <= 7; n++) plain.onTick(n, ctx)
+		for (let n = 1; n <= 7; n++) plain.onTick(n, 0, ctx)
 		expect((page as any).st.pos).toEqual((plain as any).st.pos)
 		expect((page as any).st.pos[0]).toBeLessThan(8) // and it did move
 	})
@@ -463,13 +463,26 @@ describe("MeadowphysicsPage (app clock)", () => {
 		expect(st.note[1]).toBe(0)
 	})
 
+	it("only its own lane advances it", () => {
+		const { ctx, notes } = makeCtx()
+		const page = new MeadowphysicsPage()
+		page.init(ctx)
+		page.onOsc("/setting/lane", [2], ctx)
+		// Ticks on every other lane must be ignored entirely.
+		for (const lane of [0, 1, 3]) for (let n = 1; n <= 60; n++) page.onTick(n, lane, ctx)
+		expect(notes()).toHaveLength(0)
+		expect((page as any).st.pos[0]).toBe(8) // never moved
+		for (let n = 1; n <= 60 && notes().length === 0; n++) page.onTick(n, 2, ctx)
+		expect(notes().length).toBeGreaterThan(0)
+	})
+
 	it("announces its type and settings on init and focus", () => {
 		const { ctx, sent } = makeCtx()
 		const page = new MeadowphysicsPage()
 		page.init(ctx)
 		expect(sent[0]).toMatchObject({ path: "/grid/out/page/a/type", args: ["meadowphysics"] })
 		expect(sent[1].path).toBe("/grid/out/page/a/settings")
-		expect(JSON.parse(sent[1].args[0])).toEqual({ div: 1 })
+		expect(JSON.parse(sent[1].args[0])).toEqual({ lane: 0, div: 1 })
 	})
 })
 

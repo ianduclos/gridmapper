@@ -12,7 +12,7 @@
  *   - the /grid/out/{clock,idle,settings} echoes for Max and the web UI
  */
 
-import { AppClock, type ClockState } from "./clock.js"
+import { AppClock, type ClockState, type LaneState } from "./clock.js"
 import { IdleManager } from "./idleManager.js"
 import { SettingsStore, minToMs, type Settings } from "./settings.js"
 import type { PageManager } from "./pageManager.js"
@@ -57,7 +57,7 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 	const settings = new SettingsStore(opts.settings, (s, path) => {
 		if (path.startsWith("clock/")) {
 			clock.setRate(s.clock.rate)
-			clock.setSource(s.clock.source)
+			s.clock.lanes.forEach((lane, i) => clock.setLane(i, lane))
 		} else if (path.startsWith("idle/")) {
 			idle.setPolicy({
 				connectedMs: minToMs(s.idle.connectedMin),
@@ -69,12 +69,12 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 
 	clock = new AppClock({
 		rate: settings.get().clock.rate,
-		source: settings.get().clock.source,
+		lanes: settings.get().clock.lanes,
 		// A running clock is activity: a live sequencer never gets slept out from under Max.
-		onTick: (n) => {
+		onTick: (n, lane) => {
 			idle.activity()
-			pm.tick(n)
-			if (settings.get().clock.echo) emit("/grid/out/clock/tick", n)
+			pm.tick(n, lane)
+			if (settings.get().clock.echo) emit("/grid/out/clock/tick", lane, n)
 		},
 		onChange: (state) => {
 			pm.clockChanged(state)
@@ -98,12 +98,12 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 	})
 	idle.start()
 
-	// The transport always boots stopped — only its rate/source/echo are persisted.
+	// The transport always boots stopped — only its rate/lanes/echo are persisted.
 	const clockView: ClockState = {
 		get running() { return clock.running },
-		get source() { return clock.source },
 		get rate() { return clock.rate },
 		get tick() { return clock.tick },
+		get lanes() { return clock.laneStates as LaneState[] },
 	}
 
 	return {

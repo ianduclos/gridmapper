@@ -6,9 +6,9 @@
  *           Right-edge control keys (test): bottom-right = shift 1, the cell above
  *           it = shift 2 (sustain pedal). Both route through ctx.setShift, so a
  *           local shift behaves exactly like one sent over OSC.
- * Display : keys = brightness 2, octave-root keys = 8, held = 13, sustained = 6.
- *           Control keys: dim when off, bright when on. Columns 13–14 stay dark.
- * Settings: npo (notes per octave) · vertical (steps per row). Live, two-way over OSC.
+ * Display : out-of-scale 1, in-scale 3, root 8, unison 9, held/sustained 13.
+ *           Control keys: faint markers. Columns 13–14 stay dark.
+ * Settings: npo · vertical · root · scale · layout. Live, two-way over OSC.
  * Rules   : keyboard = columns 0..(keysW-1); right-edge controls only exist when
  *           there's a dead zone. Releases everything (held + sustained) on blur so a
  *           page switch never strands a note in Max.
@@ -22,6 +22,16 @@
  * note is parked in `sustained`. When sustain falls, every parked note is released.
  * Re-pressing a sustained note re-arms it as held. Sustain reads ctx.modifiers.shift2,
  * so it works whether the pedal is the local control key OR an external OSC shift.
+ * DOUBLE-TAP the local key to latch it on hands-free; the next tap releases.
+ *
+ * Scales are a 12-EDO idea, so they apply only as a display/layout overlay:
+ *   layout chromatic — the step field is untouched; the scale only changes brightness.
+ *                      `scale: chromatic` keeps the original npo-based octave marking,
+ *                      so microtonal layouts (npo up to 48) are unaffected.
+ *   layout folded    — one key right = the next note IN the scale. The page resolves the
+ *                      degree back to a chromatic step before emitting, so Max's
+ *                      step→pitch map never has to know which scale is selected, and the
+ *                      two layouts are interchangeable at the patch end.
  */
 
 import {
@@ -35,20 +45,37 @@ import {
 } from "../core/types.js"
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
 import { clamp } from "../util/scale.js"
+import {
+	SCALE_NAMES,
+	DEFAULT_SCALE,
+	isScaleName,
+	isInScale,
+	isRootOf,
+	foldedStep,
+	type ScaleName,
+} from "../util/scales.js"
 
 const KEYS_W = 13 // keyboard occupies the left 13 columns
 const BASE_STEP = 0 // bottom-left cell = step 0
 
-const LVL_NORMAL = 2
+const LVL_OUT = 1 // out of scale — still playable, just recessive
+const LVL_NORMAL = 3 // in scale
 const LVL_ROOT = 8
+const LVL_UNISON = 9 // same note as something you're holding, elsewhere on the grid
 const LVL_HELD = 13
 const LVL_SUSTAIN = LVL_HELD // sustained notes look the same as a press
 const LVL_SHIFT = 1 // control keys are faint markers
+
+/** Two taps inside this window on the shift-2 key latch sustain on. */
+const DOUBLE_TAP_MS = 350
 
 // Single source of truth: drives both runtime clamping and the page descriptor.
 const SPECS: SettingSpec[] = [
 	{ key: "npo", label: "notes / octave", type: "number", min: 1, max: 48, step: 1, default: 12 },
 	{ key: "vertical", label: "vertical interval", type: "number", min: 1, max: 24, step: 1, default: 5 },
+	{ key: "root", label: "root (semitone)", type: "number", min: 0, max: 11, step: 1, default: 0 },
+	{ key: "scale", label: "scale", type: "enum", options: SCALE_NAMES, default: DEFAULT_SCALE },
+	{ key: "layout", label: "layout", type: "enum", options: ["chromatic", "folded"], default: "chromatic" },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 
@@ -71,6 +98,13 @@ export class IsometricPage implements Page {
 	// Live settings (defaults from SPECS).
 	private npo = SPEC_BY_KEY.get("npo")!.default as number
 	private vertical = SPEC_BY_KEY.get("vertical")!.default as number
+	private root = SPEC_BY_KEY.get("root")!.default as number
+	private scale = SPEC_BY_KEY.get("scale")!.default as ScaleName
+	private layout = SPEC_BY_KEY.get("layout")!.default as "chromatic" | "folded"
+
+	// Sustain latch: two quick taps on the shift-2 key hold it down until the next tap.
+	private lastSustainTapAt = 0
+	private sustainLatched = false
 
 	init(ctx: PageContext) {
 		this.size = ctx.size
@@ -92,6 +126,8 @@ export class IsometricPage implements Page {
 		this.held.clear()
 		this.sustained.clear()
 		this.prevSustain = false
+		this.sustainLatched = false
+		this.lastSustainTapAt = 0
 		// Drop our shifts so they don't linger after we leave the page.
 		ctx.setShift(1, false)
 		ctx.setShift(2, false)
@@ -100,7 +136,7 @@ export class IsometricPage implements Page {
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		// Right-edge control keys → local shifts (route through the shared ShiftInput).
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
-		if (this.isShift2(ev.x, ev.y)) { ctx.setShift(2, !!ev.s); return }
+		if (this.isShift2(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
 
 		if (ev.x < 0 || ev.x >= this.keysW || ev.y < 0 || ev.y >= this.size.height) return
 		const i = ledIndex(this.size, ev.x, ev.y)
@@ -128,9 +164,8 @@ export class IsometricPage implements Page {
 			return
 		}
 		const raw = args.length ? args[0] : parts[i + 1]
-		const value = Number(raw)
-		if (!Number.isFinite(value)) return
-		if (!this.applySetting(key, value)) return
+		if (raw === undefined) return
+		if (!this.applySetting(key, raw)) return
 		this.emitSettings(ctx)
 	}
 
@@ -143,11 +178,18 @@ export class IsometricPage implements Page {
 		}
 		this.prevSustain = sustain
 
+		// Every step currently sounding — the same note appears at several places on an
+		// isomorphic layout, and lighting all of them shows you the shape you're playing.
+		const sounding = new Set<number>()
+		for (const i of this.held) sounding.add(this.stepOfIndex(i))
+		for (const i of this.sustained) sounding.add(this.stepOfIndex(i))
+
 		const f = makeFrame(this.size)
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = 0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
-				let lvl = isRootStep(this.step(x, y), this.npo) ? LVL_ROOT : LVL_NORMAL
+				let lvl = this.baseLevel(this.step(x, y))
+				if (sounding.has(this.step(x, y))) lvl = LVL_UNISON
 				if (this.sustained.has(i)) lvl = LVL_SUSTAIN
 				if (this.held.has(i)) lvl = LVL_HELD
 				f[i] = lvl
@@ -163,19 +205,60 @@ export class IsometricPage implements Page {
 	}
 
 	serialize() {
-		return { npo: this.npo, vertical: this.vertical }
+		return this.settings()
 	}
 
 	dispose() {}
 
+	/**
+	 * The sustain pedal key. A single press is momentary as always; two presses inside
+	 * DOUBLE_TAP_MS latch it on so you can let go, and the next press releases. The
+	 * ShiftInput debounce is a 10 ms lockout — nowhere near a human double tap, so it
+	 * never eats one.
+	 */
+	private sustainKey(ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) {
+			if (!this.sustainLatched) ctx.setShift(2, false) // plain momentary release
+			return
+		}
+		const now = Date.now()
+		if (this.sustainLatched) {
+			this.sustainLatched = false
+			this.lastSustainTapAt = 0
+			ctx.setShift(2, false)
+			return
+		}
+		if (now - this.lastSustainTapAt < DOUBLE_TAP_MS) this.sustainLatched = true
+		this.lastSustainTapAt = now
+		ctx.setShift(2, true)
+	}
+
+	/**
+	 * The step a cell plays. In `chromatic` the field is the plain isomorphic layout; in
+	 * `folded` the same coordinates index SCALE DEGREES instead, which we resolve back to
+	 * a chromatic step here — so what leaves this page is always an ordinary step and
+	 * Max's step→pitch map never has to know which scale is selected.
+	 */
 	private step(x: number, y: number): number {
-		return stepAt(x, y, this.size.height, this.vertical)
+		const i = stepAt(x, y, this.size.height, this.vertical)
+		return this.layout === "folded" ? foldedStep(i, this.root, this.scale) : i
+	}
+
+	/** Display level for a cell's step, before held/sustain/unison override it. */
+	private baseLevel(step: number): number {
+		// A scale is a 12-EDO idea. Under `chromatic` we keep the original npo-based
+		// octave marking, so microtonal layouts (npo up to 48) still read correctly.
+		if (this.scale === "chromatic") return isRootStep(step, this.npo) ? LVL_ROOT : LVL_NORMAL
+		if (isRootOf(step, this.root)) return LVL_ROOT
+		return isInScale(step, this.root, this.scale) ? LVL_NORMAL : LVL_OUT
+	}
+
+	private stepOfIndex(i: number): number {
+		return this.step(i % this.size.width, Math.floor(i / this.size.width))
 	}
 
 	private sendNote(ctx: PageContext, i: number, on: boolean) {
-		const x = i % this.size.width
-		const y = Math.floor(i / this.size.width)
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, this.step(x, y), on ? 1 : 0)
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, this.stepOfIndex(i), on ? 1 : 0)
 	}
 
 	// Control keys live on the right edge, but only when there's a dead zone right of
@@ -191,12 +274,25 @@ export class IsometricPage implements Page {
 	}
 
 	/** Clamp+store one setting; returns true if it was a known key. */
-	private applySetting(key: string, value: number): boolean {
+	private applySetting(key: string, raw: unknown): boolean {
 		const spec = SPEC_BY_KEY.get(key)
 		if (!spec) return false
-		const v = clamp(Math.round(value), spec.min ?? 1, spec.max ?? value)
+		if (key === "scale") {
+			if (!isScaleName(raw)) return false
+			this.scale = raw
+			return true
+		}
+		if (key === "layout") {
+			if (raw !== "chromatic" && raw !== "folded") return false
+			this.layout = raw
+			return true
+		}
+		const value = Number(raw)
+		if (!Number.isFinite(value)) return false
+		const v = clamp(Math.round(value), spec.min ?? 0, spec.max ?? value)
 		if (key === "npo") this.npo = v
 		else if (key === "vertical") this.vertical = v
+		else if (key === "root") this.root = v
 		return true
 	}
 
@@ -205,11 +301,18 @@ export class IsometricPage implements Page {
 		this.emitSettings(ctx)
 	}
 
+	private settings() {
+		return {
+			npo: this.npo,
+			vertical: this.vertical,
+			root: this.root,
+			scale: this.scale,
+			layout: this.layout,
+		}
+	}
+
 	private emitSettings(ctx: PageContext) {
-		ctx.osc.send(
-			`/grid/out/page/${ctx.slotLabel}/settings`,
-			JSON.stringify({ npo: this.npo, vertical: this.vertical })
-		)
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, JSON.stringify(this.settings()))
 	}
 }
 

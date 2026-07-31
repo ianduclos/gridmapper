@@ -103,18 +103,22 @@ twister's `/twister/...` vocabulary:
   preset save/load/list/delete.
 - **Transport (implemented).** One app clock, **off at boot**, ticking every loaded page
   (not just the focused one) — see `core/clock.ts`.
-  In: `/grid/in/clock/run <0|1>` · `/grid/in/clock/tick` (one manual step; the external-
-  clock path, works under either source) · `/grid/in/clock/reset` · `/grid/in/clock/get`.
-  Out: `/grid/out/clock <json>` `{running,source,rate,tick}` on every change + on connect;
-  `/grid/out/clock/tick <n>` per tick, only while `clock.echo` is on (default off — it's
-  20 msg/s). Pages see it as `ctx.clock` + `onTick`/`onClock` (docs/PAGE_PROTOCOL.md §6).
+  In: `/grid/in/clock/run <0|1>` · `/grid/in/clock/tick [lane]` (one manual step; drives an
+  external lane, and works as a nudge on an internal one) · `/grid/in/clock/reset` ·
+  `/grid/in/clock/get`. Out: `/grid/out/clock <json>` `{running,rate,tick,lanes}` on every
+  change + on connect; `/grid/out/clock/tick <lane> <n>` per tick, only while `clock.echo`
+  is on (default off). Lanes are configured as persisted settings:
+  `/grid/in/settings/clock/lanes/<0..3>/{source,div}`. Pages see it as `ctx.clock` +
+  `onTick(tick, lane)`/`onClock` (docs/PAGE_PROTOCOL.md §6).
 - **Idle / power (implemented).** The render loop **stops entirely** after inactivity —
   default 4h with a grid attached, 15min without (`core/idleManager.ts`). Activity means
   INPUT (key · any `/grid/in/*` · web connect · device attach · a running clock's ticks),
   deliberately not "the frame changed", or a screensaver on an unplugged grid would spin
   at 58fps forever. Sleeping never blanks the grid (the device holds its own LEDs) and
   waking forces a full repaint. While asleep the discovery watcher backs off 2s → 30s.
-  In: `/grid/in/wake` · `/grid/in/sleep`. Out: `/grid/out/idle <json>`.
+  In: `/grid/in/wake` · `/grid/in/sleep` · `/grid/in/heartbeat` (deliberately inert — the
+  router's activity stamp already did the work, so a Max `[metro]` has an address it can
+  hit forever that can never trigger anything else). Out: `/grid/out/idle <json>`.
 - **Live settings (implemented).** `/grid/in/settings/<section>/<key> <value>` — clamped,
   applied to the running clock/idle, and persisted to `configs/settings.json` (debounced,
   atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`
@@ -162,9 +166,13 @@ src/
   core/shiftInput.ts     two shift buttons, leading-edge lockout debounce (ctx.modifiers)
   core/oscRouter.ts      the ONE control-routing dialect (key/connect/shift/focus/slot/
                          page-osc/clock/settings/wake), shared by sim.ts and index.ts
-  core/clock.ts          AppClock — the ONE transport. internal (rate Hz, drift-compensated)
-                         or external (one step per OSC message). OFF at boot. Ticks EVERY
-                         loaded page via PageManager.tick → Page.onTick.
+  core/clock.ts          AppClock — the ONE transport, in FOUR LANES (0-3). Each lane is
+                         internal (a divisor of the drift-compensated master timer) or
+                         external (one step per OSC message). OFF at boot. Every lane ticks
+                         EVERY loaded page via PageManager.tick → Page.onTick(tick, lane);
+                         a page follows one lane, which is how "internal or external clock
+                         per page" works without a second clock. Lane numbering matches
+                         twistermapper's /twister/in/clock <id>.
   core/idleManager.ts    stops the render loop after inactivity (0 CPU), wakes on any event
   core/appRuntime.ts     assembles clock + idle + settings ONCE for both entry points
   render/renderLoop.ts   fixed-rate clock; single output path. FRAME_FPS=58 (just under
@@ -179,17 +187,22 @@ src/
   util/perlin.ts         dependency-free 3D Perlin noise (used by the Perlin screensaver)
   pages/isometric.ts     IsometricPage — isomorphic keyboard (left 13×8) as a pure
                          integer STEP FIELD: emits /grid/out/page/<slot>/note <step> <1|0>
-                         (Max owns step→pitch). Live settings npo + vertical, two-way over
-                         OSC. Right-edge control keys are LOCAL shifts via ctx.setShift
-                         (bottom-right = shift 1; above it = shift 2 = sustain pedal).
+                         (Max owns step→pitch). Settings npo · vertical · root · scale ·
+                         layout, two-way over OSC. layout=chromatic highlights the scale;
+                         layout=folded makes one key = one SCALE DEGREE but still emits a
+                         chromatic step, so Max's map never changes. Unison lighting shows
+                         every cell playing a held note. Right-edge control keys are LOCAL
+                         shifts via ctx.setShift (bottom-right = shift 1; above it =
+                         shift 2 = sustain pedal, DOUBLE-TAP to latch).
+  util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure)
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
   pages/meadowphysics.ts MeadowphysicsPage — faithful port of tehn's iii `grid/mp.lua`:
                          8 cascading counters, rules (inc/dec/min/max/random/pole/stop),
                          trig/tog/reset target matrices, 3 modes (main / hold col 0 =
                          config / +col 1 = rules). Emits /grid/out/page/<slot>/note
                          <row 0..7> <1|0>; Max owns row→pitch. Driven by the APP CLOCK
-                         (onTick), so it runs in every slot, focused or not; `div` divides
-                         the tick down per page.
+                         (onTick), so it runs in every slot, focused or not; `lane` picks
+                         which clock lane to follow and `div` divides it down per page.
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])
   cli/grid-list.ts       discovery probe                          (npm run grid:list)
@@ -238,11 +251,12 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
   animations; press any key → next). Screensavers: (0) per-cell **triangle** 0→15→0,
   0.5 Hz at cell 0 ramping to 1.0 Hz at the last cell; (1) slow evolving **Perlin**
   field. `BasicGridPage` (toggle ↔ OSC) remains as an alternate. `MeadowphysicsPage`
-  (the mp.lua port — see the layout above; 39 unit tests, not yet hardware-verified).
+  (the mp.lua port — see the layout above; 40 unit tests, not yet hardware-verified).
 - Web UI: slot chips (a–h) + page **dropdown** (populated from auto-discovered page
   types); a **transport strip** (run/stop · step · rate · source · tick pulse); a
-  right-hand **page-settings panel** and an **app-settings panel** (clock, sleep
-  timeouts, caffeinate, live awake/asleep readout, read-only OSC ports). The UI is a
+  **page-settings panel under the grid** and a right-hand **app-settings panel** (clock
+  rate + echo, the four lane rows, sleep timeouts, caffeinate, live awake/asleep readout,
+  read-only OSC ports). The rate field is drag-to-change (shift = fine). The UI is a
   pure OSC client — every control is a `/grid/in/...` message Max could send instead.
 
 **Page authoring (`docs/PAGE_PROTOCOL.md`):** a page exports `page: PageModule`
@@ -254,7 +268,7 @@ page's `render()` every frame, so pages animate by reading a clock — no timers
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
 are skipped by the loader. **Sequencers take musical time from the app clock**
 (`onTick`/`onClock`), never from frames — that's what lets them run in an unfocused slot.
-124 unit tests pass.
+164 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —

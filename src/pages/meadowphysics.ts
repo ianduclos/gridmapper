@@ -17,7 +17,8 @@
  *           CONFIG : markers at 5 when set / 2 when clear, speed bar + speed at 5,
  *                    position ghosted at 2, selected row lit 15 in col 0.
  *           RULE   : destination row + rtype at 2/7, rule glyph at 9 in the right 8×8.
- * Settings: div — advance one tick every Nth app-clock tick (1..16).
+ * Settings: lane — which app-clock lane to follow (0..3; the lane decides internal vs
+ *           external). div — advance one step every Nth tick of that lane (1..16).
  * Rules   : driven by the APP CLOCK (core/clock.ts) via onTick, so it advances in every
  *           slot, focused or not — eight of these can run at once. Sounding notes are
  *           released when the transport stops and when the slot is unloaded, never on
@@ -453,6 +454,7 @@ export function mpFrame(st: MeadowState, size: GridSize): LedFrame {
 // --- the page ------------------------------------------------------------------------------
 
 const SPECS: SettingSpec[] = [
+	{ key: "lane", label: "clock lane", type: "number", min: 0, max: 3, step: 1, default: 0 },
 	{ key: "div", label: "clock ÷", type: "number", min: 1, max: 16, step: 1, default: 1 },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
@@ -460,6 +462,7 @@ const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 export class MeadowphysicsPage implements Page {
 	private size: GridSize = { width: 16, height: 8 }
 	private st = createMeadowState(this.size)
+	private lane = SPEC_BY_KEY.get("lane")!.default as number
 	private div = SPEC_BY_KEY.get("div")!.default as number
 	private wasRunning = false
 
@@ -484,10 +487,13 @@ export class MeadowphysicsPage implements Page {
 	}
 
 	/**
-	 * One app-clock tick, delivered whether or not this slot is focused. `div` divides it
-	 * down; the counters themselves then divide again per row (mp's own `speed`).
+	 * One app-clock tick, delivered whether or not this slot is focused, and on every
+	 * lane — so we filter to ours. Choosing a lane is how this page picks an internal or
+	 * an external clock (the lane owns that, see core/clock.ts). `div` then divides that
+	 * lane down, and the counters divide again per row (mp's own `speed`).
 	 */
-	onTick(tick: number, ctx: PageContext) {
+	onTick(tick: number, lane: number, ctx: PageContext) {
+		if (lane !== this.lane) return
 		if (tick % this.div !== 0) return
 		this.step(ctx)
 	}
@@ -529,6 +535,7 @@ export class MeadowphysicsPage implements Page {
 	serialize() {
 		const st = this.st
 		return {
+			lane: this.lane,
 			div: this.div,
 			patch: {
 				count: [...st.count], min: [...st.min], max: [...st.max],
@@ -570,7 +577,9 @@ export class MeadowphysicsPage implements Page {
 		if (!spec) return false
 		const v = Number(raw)
 		if (!Number.isFinite(v)) return false
-		if (key === "div") this.div = clamp(Math.round(v), spec.min ?? 1, spec.max ?? v)
+		const clamped = clamp(Math.round(v), spec.min ?? 0, spec.max ?? v)
+		if (key === "div") this.div = clamped
+		else if (key === "lane") this.lane = clamped
 		return true
 	}
 
@@ -580,7 +589,10 @@ export class MeadowphysicsPage implements Page {
 	}
 
 	private emitSettings(ctx: PageContext) {
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, JSON.stringify({ div: this.div }))
+		ctx.osc.send(
+			`/grid/out/page/${ctx.slotLabel}/settings`,
+			JSON.stringify({ lane: this.lane, div: this.div })
+		)
 	}
 }
 

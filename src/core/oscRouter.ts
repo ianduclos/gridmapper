@@ -14,7 +14,7 @@ import type { KeyEvent } from "./types.js"
 import { slotFromLabel, slotLabel } from "./types.js"
 import type { PageManager } from "./pageManager.js"
 import type { ShiftInput } from "./shiftInput.js"
-import type { AppClock } from "./clock.js"
+import { type AppClock, isLane } from "./clock.js"
 import type { IdleManager } from "./idleManager.js"
 import type { SettingsStore } from "./settings.js"
 import { isPageType, pageFactory } from "../pages/registry.js"
@@ -71,8 +71,12 @@ export function createOscRouter(opts: OscRouterOpts): (path: string, args: any[]
 			clock?.setRunning(args.length ? truthy(args[0]) : true)
 			return
 		}
+		// /grid/in/clock/tick [lane] — one manual step. Advances the lane whatever its
+		// source, so it drives an external lane and still works as a nudge on an internal
+		// one. No arg → lane 0.
 		if (path === "/grid/in/clock/tick") {
-			clock?.step()
+			const lane = args.length ? Number(args[0]) : 0
+			clock?.step(isLane(lane) ? lane : 0)
 			return
 		}
 		if (path === "/grid/in/clock/reset") {
@@ -86,6 +90,11 @@ export function createOscRouter(opts: OscRouterOpts): (path: string, args: any[]
 
 		// --- idle / render-loop power -------------------------------------------------
 		// Waking is implicit above (idle.activity()); these are the explicit overrides.
+		//
+		// /grid/in/heartbeat is deliberately inert: the activity stamp at the top of this
+		// router already did the work, so a Max [metro] has an address it can hit forever
+		// that is guaranteed never to do anything else.
+		if (path === "/grid/in/heartbeat") return
 		if (path === "/grid/in/wake") {
 			idle?.wake()
 			return
