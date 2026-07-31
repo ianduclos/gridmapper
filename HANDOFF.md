@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-07-19
+updated: 2026-07-31
 entries: 0
 ---
 
@@ -46,29 +46,70 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   `npm run dev` = headless daemon. `npm test` · `npx tsc --noEmit` · `npm run grid:list`.
 - **Works:** serialosc connect + runtime hotplug; render loop (58fps) + quadrant
   reconciler; 8 page slots with **auto-discovered** pages (`base`, `screensaver`,
-  `isometric`, `toggle`, `blank`); two-color web UI (slot chips + page dropdown + clickable
-  connect indicator); physical + web key input, mirrored both ways. **Page-settings
-  panel is live** (declared `SettingSpec[]` → controls → page, two-way over OSC). The
-  **sim now bridges real OSC to/from Max** (`emitOut` = OSC + web). **Control routing
-  (key/connect/shift/focus/slot-page/page-osc) is now a single shared dispatcher,
-  `core/oscRouter.ts`, used by both `sim.ts` and the daemon** — this closed the daemon's
-  missing slot/page parity (`/grid/in/slot/<a-h>/page` now works headless too).
-  `isometric` is a configurable **step field** (`npo` + `vertical`, emits step ints) with
-  local shift keys + a sustain pedal. **Runtime hotplug lives in `io/gridConnection.ts`
-  and is shared by the sim AND the daemon** (daemon no longer connects-or-exits). 36 tests green.
-- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — do it
-  calmly, matching the twister protocol; prioritize **Max → daemon** (state snapshot
-  on request, not on connect). Plus: single-instance guard.
+  `isometric`, `toggle`, `blank`, `meadowphysics`); two-color web UI (slot chips + page
+  dropdown + clickable connect indicator + transport strip); physical + web key input,
+  mirrored both ways. **Page-settings panel is live** (declared `SettingSpec[]` →
+  controls → page, two-way over OSC) and now sits **under the grid**; an **app-settings
+  panel** (clock, lanes, sleep, caffeinate) sits right. The **sim bridges real OSC to/from
+  Max** (`emitOut` = OSC + web). **Control routing is a single shared dispatcher,
+  `core/oscRouter.ts`**, used by both `sim.ts` and the daemon.
+  **Runtime hotplug lives in `io/gridConnection.ts`** and is shared by both.
+- **Transport (new):** `core/clock.ts` — one app clock, **off at boot**, in **4 lanes**
+  (each internal ÷n of the drift-compensated master, or external via
+  `/grid/in/clock/tick <lane>`). Every lane ticks **every loaded page**
+  (`Page.onTick(tick, lane)`), so sequencers run in slots you aren't looking at, and a
+  page picks internal-vs-external simply by choosing a lane. Lane IDs 0–3 deliberately
+  match twistermapper's `/twister/in/clock <id>`.
+- **Power (new):** `core/idleManager.ts` — the render loop **stops entirely** after
+  inactivity (4h with a grid, 15min without; both persisted + OSC-settable). Activity =
+  INPUT only, never "the frame changed". `core/appRuntime.ts` assembles clock + idle +
+  settings once for BOTH entry points so they can't drift.
+- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — prioritize
+  **Max → daemon** (state snapshot on request, not on connect); a single-page preset blob
+  is ~732 B and fits one datagram, so `serialize()` ⇄ `restore()` is the cheap first step.
+  Plus: single-instance guard; the twistermapper clock bridge (~20 lines now that lane
+  IDs match). 164 tests green.
 - **Background agent:** launchd `com.ianduclos.gridmapper` runs the **sim** always-on
   (OSC↔Max + hotplug + web UI on 57191, served, not auto-opened). Template + manage cmds
   in `deploy/`. Holds 57131 + the grid → `launchctl bootout gui/$(id -u)/com.ianduclos.gridmapper`
   before a manual `npm run sim`; `kickstart -k …` to pick up edits (runs `tsx` on source).
 - **Parked:** web-UI button "bounce" — `transform: translateY(.5px)` on `.cell:active`
-  in `web/index.html` (remove system-wide, UI layer, not pages).
+  in `web/index.html` (remove system-wide, UI layer, not pages). BPM display for the
+  transport (needs a ticks-per-beat setting; the rate is a raw tick rate today).
+- **Broken, needs hands:** the monome is **not visible to serialosc** (`/serialosc/list`
+  returns nothing while `serialoscd` runs), so the agent sits on NullGrid. Replug the USB.
+  Nothing since 2026-07-19 has been verified on hardware.
 
 ---
 
 ## Session log (newest first)
+### 2026-07-31 — Claude
+Big session, three parts. **(1) Meadowphysics** — faithful port of tehn's iii
+`grid/mp.lua` (`src/pages/meadowphysics.ts` + 40 tests): 8 cascading counters, all 8
+rules, trig/tog/reset matrices, 3 modes, glyphs verbatim. **(2) App clock + idle**
+(`core/clock.ts`, `core/idleManager.ts`, `core/appRuntime.ts`): one transport, off at
+boot, ticking every loaded page — this is what stops a sequencer freezing when its slot
+loses focus; and the always-on agent now stops its 58fps loop entirely after inactivity.
+Live settings persist to `configs/settings.json` (`core/settings.ts` gained a
+`SettingsStore` + atomic debounced writes). **(3) Clock lanes + scales**: 4 lanes give
+per-page internal/external choice without a second clock; `util/scales.ts` (16 scales)
+drives isometric's new `root`/`scale`/`layout`, where `folded` makes one key = one scale
+degree but still emits a CHROMATIC step so Max's map is untouched. Plus unison lighting,
+double-tap-to-latch sustain, inert `/grid/in/heartbeat`, drag-to-change tempo, page
+settings moved under the grid.
+Also fixed a **real bug**: on a USB glitch serialosc bounces `/sys/disconnect` →
+`/sys/connect` keeping the same routing, but the grid clears its own LEDs while the
+reconciler's cache still thinks they're correct — so it sat dark until something changed.
+The driver now surfaces `/sys/connect` and `GridConnection` turns it into a full repaint.
+Verified: `tsc` clean, **164 tests**, and on the sim — a page on an external lane stayed
+put through a second of transport while a page on lane 0 ran, then took 20 steps from 40
+manual ticks. **NOT hardware-verified** (see *Broken, needs hands* above).
+Gotcha earned the hard way: a scheduled **cloud** routine can't push to the repo, so it
+implemented this plan overnight and the work evaporated with the container. Don't schedule
+cloud work whose only deliverable is a `git push` without confirming write access first.
+Next: Max handshake / presets (`serialize()` ⇄ `restore()` first), single-instance guard,
+twistermapper clock bridge.
+
 ### 2026-07-19 — Claude
 Two small additions, mirroring the pair twistermapper just shipped (see its
 2026-07-19 CHANGES.md entry). (1) `pages/blank.ts`: inert `BlankPage` (name
