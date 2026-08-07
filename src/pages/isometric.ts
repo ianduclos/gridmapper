@@ -35,11 +35,13 @@
  *
  * `orientation` transposes the STEP FIELD in place — the grid stays landscape, the keyboard
  * stays the same left-hand block and the control keys never move. Only the two axes swap:
- *   standard   — right = +1 step, up = +`vertical`  (chromatic run along the LONG axis)
- *   horizontal — up = +1 step, right = +`vertical`  (chromatic run along the SHORT axis)
- * Step 0 stays bottom-left in both, so home never moves under your hand. It composes with
- * everything else: `folded` folds the transposed index, and scale/root highlighting reads
- * the resulting step exactly as before.
+ *   standard   — right = +1 step, UP    = +`vertical` (chromatic run along the LONG axis,
+ *                home bottom-left)
+ *   horizontal — DOWN  = +1 step, right = +`vertical` (chromatic run along the SHORT axis,
+ *                home top-left) — the 90° turn mirrored top-to-bottom, so a column right
+ *                is up an INTERVAL (a fourth at the default `vertical` of 5).
+ * It composes with everything else: `folded` folds the transposed index, and scale/root
+ * highlighting reads the resulting step exactly as before.
  *
  * Note the side effect on unison lighting: `horizontal` runs the chromatic axis over only
  * 8 cells, so with `vertical` 5 a note repeats far less often than in `standard` (where 13
@@ -85,10 +87,11 @@ const LVL_SHIFT = 1 // control keys are faint markers
 const DOUBLE_TAP_MS = 350
 
 /**
- * Which way the step field runs. Two modes, not four rotations: the other two turns put
- * step 0 in a far corner and read backwards under the hand, so they aren't worth the
- * setting. Both of these keep home at the BOTTOM-LEFT — `horizontal` is the 270° turn
- * mirrored back, which is the same thing as transposing the two axes in place.
+ * Which way the step field runs. Two modes, not four rotations — the rest read backwards
+ * under the hand and aren't worth the setting. `horizontal` is the 90° turn mirrored
+ * top-to-bottom: the chromatic run moves to the short axis and DESCENDS from the top-left,
+ * while the interval axis points RIGHT (up a fourth per column at the default `vertical`
+ * of 5). Without that mirror the raw 90° turn would send the interval axis leftward.
  */
 export type Orientation = "standard" | "horizontal"
 const ORIENTATIONS = ["standard", "horizontal"] as const
@@ -107,11 +110,13 @@ const SPECS: SettingSpec[] = [
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 
 /**
- * Step index for cell (x, y). Two axes at right angles define the field — the +1-step
- * axis and the +`vertical` axis — and `orientation` just says which is which. Step 0 is
- * the bottom-left corner either way, so both read as "up and to the right from home":
- *   standard   — right = +1 step,  up    = +vertical  (the long axis is the chromatic run)
- *   horizontal — up    = +1 step,  right = +vertical  (the short axis is the chromatic run)
+ * Step index for cell (x, y). Two axes at right angles define the field — the +1-step axis
+ * and the +`vertical` axis — and `orientation` says which is which:
+ *   standard   — right = +1 step, UP    = +vertical  (long axis chromatic,  home bottom-left)
+ *   horizontal — DOWN  = +1 step, right = +vertical  (short axis chromatic, home top-left)
+ * `horizontal` is the 90° turn mirrored top-to-bottom, which is what keeps its interval
+ * axis pointing RIGHT (up a fourth per column at the default `vertical` of 5) instead of
+ * left as the raw turn would have it.
  */
 export function stepAt(
 	x: number,
@@ -122,9 +127,10 @@ export function stepAt(
 	baseStep = BASE_STEP,
 ): number {
 	const right = x
+	const down = y
 	const up = height - 1 - y
 	return orientation === "horizontal"
-		? baseStep + up + right * vertical
+		? baseStep + down + right * vertical
 		: baseStep + right + up * vertical
 }
 

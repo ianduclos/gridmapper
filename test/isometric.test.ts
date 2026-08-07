@@ -134,12 +134,12 @@ describe("isometric scales", () => {
 })
 
 describe("isometric orientation", () => {
-	// Two modes only, and both keep step 0 at the bottom-left: `horizontal` is the 270
-	// turn mirrored back, i.e. the two axes transposed in place. The keyboard block and
-	// the control keys never move.
-	it("step 0 is the bottom-left corner in BOTH modes", () => {
+	// Two modes only. `horizontal` is the 90 turn mirrored: the interval axis still runs
+	// RIGHTWARD, the chromatic run moves to the short axis and descends from the top-left.
+	// The keyboard block and the control keys never move.
+	it("home is bottom-left in standard, top-left in horizontal", () => {
 		expect(stepAt(0, H - 1, H, V, "standard")).toBe(0)
-		expect(stepAt(0, H - 1, H, V, "horizontal")).toBe(0)
+		expect(stepAt(0, 0, H, V, "horizontal")).toBe(0)
 	})
 
 	it("standard: right = +1 step, up = +vertical", () => {
@@ -147,17 +147,24 @@ describe("isometric orientation", () => {
 		expect(stepAt(0, H - 2, H, V, "standard") - stepAt(0, H - 1, H, V, "standard")).toBe(V)
 	})
 
-	it("horizontal: up = +1 step, right = +vertical", () => {
-		expect(stepAt(0, H - 2, H, V, "horizontal") - stepAt(0, H - 1, H, V, "horizontal")).toBe(1)
-		expect(stepAt(1, H - 1, H, V, "horizontal") - stepAt(0, H - 1, H, V, "horizontal")).toBe(V)
+	it("horizontal: down = +1 step, right = +vertical", () => {
+		expect(stepAt(0, 1, H, V, "horizontal") - stepAt(0, 0, H, V, "horizontal")).toBe(1)
+		expect(stepAt(1, 0, H, V, "horizontal") - stepAt(0, 0, H, V, "horizontal")).toBe(V)
 	})
 
-	it("horizontal is exactly standard with the two axes swapped", () => {
-		// standard(H-1-y, H-1-x) = (H-1-y) + x*V = horizontal(x, y) — the reflection in the
-		// bottom-left diagonal, which is what "270 turn, mirrored back" comes out as.
+	it("horizontal moves RIGHT by an interval, never left", () => {
+		// The whole point of mirroring the 90 turn instead of taking it raw: the raw turn
+		// would put the interval axis on the LEFT, so a column right would go DOWN a fourth.
+		for (let y = 0; y < H; y++) expect(stepAt(1, y, H, V, "horizontal") - stepAt(0, y, H, V, "horizontal")).toBe(V)
+	})
+
+	it("horizontal is the 90 turn mirrored top-to-bottom", () => {
+		// Raw 90 turn = down + left*V (home top-right). Mirroring x sends the interval
+		// axis rightward and gives exactly what `horizontal` produces.
+		const raw90Mirrored = (x: number, y: number) => y + x * V
 		for (let y = 0; y < H; y++)
 			for (let x = 0; x < KEYS_W; x++)
-				expect(stepAt(x, y, H, V, "horizontal")).toBe(stepAt(H - 1 - y, H - 1 - x, H, V, "standard"))
+				expect(stepAt(x, y, H, V, "horizontal")).toBe(raw90Mirrored(x, y))
 	})
 
 	it("neither mode can produce a negative step", () => {
@@ -171,9 +178,9 @@ describe("isometric orientation", () => {
 		expect(page().p.serialize()).toMatchObject({ orientation: "standard" })
 	})
 
-	it("a horizontal press emits the transposed step", () => {
+	it("a horizontal press emits the mirrored step", () => {
 		const { p, ctx, notes } = page({ orientation: "horizontal" })
-		p.onKey({ x: 0, y: H - 1, s: 1 }, ctx) // still home
+		p.onKey({ x: 0, y: 0, s: 1 }, ctx) // home is the top-left now
 		expect(notes()[0].args[0]).toBe(0)
 		p.onKey({ x: 2, y: 3, s: 1 }, ctx)
 		expect(notes()[1].args[0]).toBe(stepAt(2, 3, H, V, "horizontal"))
@@ -181,8 +188,8 @@ describe("isometric orientation", () => {
 
 	it("orientation composes with the folded layout", () => {
 		const { p, ctx, notes } = page({ orientation: "horizontal", layout: "folded", scale: "pentatonic-major" })
-		// Going UP column 0 now walks scale degrees 0,1,2,3 -> C,D,E,G.
-		for (const y of [H - 1, H - 2, H - 3, H - 4]) p.onKey({ x: 0, y, s: 1 }, ctx)
+		// Going DOWN column 0 now walks scale degrees 0,1,2,3 -> C,D,E,G.
+		for (const y of [0, 1, 2, 3]) p.onKey({ x: 0, y, s: 1 }, ctx)
 		expect(notes().map((m) => m.args[0])).toEqual([0, 2, 4, 7])
 	})
 

@@ -191,10 +191,13 @@ src/
                          layout · orientation, two-way over OSC. orientation transposes the
                          STEP FIELD in place — grid stays landscape, keyboard block and
                          control keys never move, only the two axes swap. standard = right
-                         is +1 step, up is +vertical; horizontal = up is +1 step, right is
-                         +vertical (the 270° turn mirrored back). Step 0 is bottom-left in
-                         both. horizontal runs the chromatic axis over 8 cells not 13, so
-                         unison twins are inherently sparser there.
+                         is +1 step, up is +vertical (home bottom-left); horizontal = DOWN
+                         is +1 step, right is +vertical (home top-left) — the 90° turn
+                         mirrored top-to-bottom, which is what keeps a column right worth
+                         an INTERVAL (a fourth at the default vertical of 5) instead of
+                         the leftward interval axis the raw turn gives. horizontal runs the
+                         chromatic axis over 8 cells not 13, so unison twins are inherently
+                         sparser there.
                          layout=chromatic highlights the scale;
                          layout=folded makes one key = one SCALE DEGREE but still emits a
                          chromatic step, so Max's map never changes. Unison lighting shows
