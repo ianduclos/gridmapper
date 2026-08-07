@@ -7,11 +7,11 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/ianduclos/_SecondBrain/01_Projects/gridmapper/node_modules/tsx/dist/cli.mjs</string>
-		<string>/Users/ianduclos/_SecondBrain/01_Projects/gridmapper/src/cli/sim.ts</string>
+		<string>/Users/ianduclos/_SecondBrain/02_Areas/_Coding/gridmapper/node_modules/tsx/dist/cli.mjs</string>
+		<string>/Users/ianduclos/_SecondBrain/02_Areas/_Coding/gridmapper/src/cli/sim.ts</string>
 	</array>
 	<key>WorkingDirectory</key>
-	<string>/Users/ianduclos/_SecondBrain/01_Projects/gridmapper</string>
+	<string>/Users/ianduclos/_SecondBrain/02_Areas/_Coding/gridmapper</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
