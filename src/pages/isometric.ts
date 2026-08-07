@@ -3,26 +3,45 @@
  * Summary : Isomorphic keyboard on the left 13×8 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
  * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> 1; release → 0.
- *           Right-edge control keys (test): bottom-right = shift 1, the cell above
- *           it = shift 2 (sustain pedal). Both route through ctx.setShift, so a
- *           local shift behaves exactly like one sent over OSC.
- * Display : out-of-scale 1, in-scale 3, root 8, unison 12, held/sustained 15.
- *           Control keys: faint markers. Columns 13–14 stay dark.
+ *           Column 15 (top→bottom): row 4 = sustain TOGGLE, row 6 = sustain pedal,
+ *           row 7 = shift 1. Column 14 = eight chord presets, one per row.
+ * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
+ *           Presets: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
+ *           Shift keys are faint markers. Column 13 stays dark.
  * Settings: npo · vertical · root · scale · layout · orientation. Live, two-way over OSC.
- * Rules   : keyboard = columns 0..(keysW-1); right-edge controls only exist when
- *           there's a dead zone. Releases everything (held + sustained) on blur so a
- *           page switch never strands a note in Max.
+ * Rules   : keyboard = columns 0..(keysW-1); the control columns only exist when
+ *           there's a dead zone. Releases everything on blur so a page switch never
+ *           strands a note in Max; SAVED CHORDS survive (stored content, not state).
  * ------------------------------------------------------------------------------
  * Step field: one column right = +1 step; one row UP = +`vertical` steps. Bottom-left
  * is step 0. We send only the step integer + an on/off flag — no pitch, no velocity.
  * `npo` does NOT change the step we emit; it sets the octave size for root highlighting
  * and is shared with Max (in: /grid/in/page/<slot>/setting/npo <n>; out: /settings).
  *
- * Sustain (shift 2): while held, a keyboard release does NOT send a note-off — the
- * note is parked in `sustained`. When sustain falls, every parked note is released.
- * Re-pressing a sustained note re-arms it as held. Sustain reads ctx.modifiers.shift2,
- * so it works whether the pedal is the local control key OR an external OSC shift.
- * DOUBLE-TAP the local key to latch it on hands-free; the next tap releases.
+ * SUSTAIN is a two-input OR — the momentary pedal (shift 2) OR the latching toggle —
+ * so either alone holds notes. While it's on, a keyboard release parks the note in
+ * `sustained` instead of sending a note-off; when sustain falls, every parked note is
+ * released. The pedal reads ctx.modifiers.shift2, so it works whether it's the local
+ * control key or an external OSC shift, and a DOUBLE-TAP latches it hands-free.
+ *
+ * The two latches are not the same: the pedal's double-tap latch sustains and leaves the
+ * chord presets PLAYABLE, while the toggle sustains and ARMS them for saving. That is the
+ * whole reason there are two of them.
+ *
+ * CHORD PRESETS (column 14, one slot per row) store PITCHES — a list of steps — so a
+ * later change of root/scale/vertical/orientation doesn't move a saved chord. Armed, a
+ * press saves whatever is ringing (saving silence clears the slot). Not armed, a press
+ * PLAYS, momentarily: the chord sounds while the key is down and keeps ringing if a
+ * sustain is active when you let go, which is what lets you latch the pedal and stack
+ * chords up. Out: /grid/out/page/<slot>/chords <json> — a dense array, null = empty.
+ *
+ * Notes are tracked by STEP and reconciled against what Max was last told, because three
+ * sources (fingers, the sustain buffer, held presets) can claim the same note at once.
+ * One consequence worth knowing: two unison twins produce ONE note-on, and the note only
+ * stops when the last source lets go. The other is that "turn it off" can mean the note
+ * rather than the cell — while any sustain is on, pressing a note that is already ringing
+ * SILENCES it wherever it sounds, which is how you subtract a note from a held chord.
+ * A note another finger is physically holding is exempt; you stop that by releasing it.
  *
  * Scales are a 12-EDO idea, so they apply only as a display/layout overlay:
  *   layout chromatic — the step field is untouched; the scale only changes brightness.
@@ -78,13 +97,22 @@ const BASE_STEP = 0 // bottom-left cell = step 0
 const LVL_OUT = 1 // out of scale — still playable, just recessive
 const LVL_NORMAL = 3 // in scale
 const LVL_ROOT = 8 // octave / scale root
-const LVL_UNISON = 12 // same note as something you're holding, elsewhere on the grid
-const LVL_HELD = 15
-const LVL_SUSTAIN = LVL_HELD // sustained notes look the same as a press
+const LVL_UNISON = 12 // the note is SOUNDING — lit at every cell that plays it
+const LVL_HELD = 15 // this exact cell is under a finger
 const LVL_SHIFT = 1 // control keys are faint markers
+
+// Chord preset column. "armed" = the sustain toggle is on, so a press SAVES rather
+// than plays; the whole column brightens so you can see which mode you're in.
+const LVL_PRESET_EMPTY = 1
+const LVL_PRESET_FULL = 6
+const LVL_PRESET_EMPTY_ARMED = 3
+const LVL_PRESET_FULL_ARMED = 9
 
 /** Two taps inside this window on the shift-2 key latch sustain on. */
 const DOUBLE_TAP_MS = 350
+
+/** The sustain TOGGLE: 5th button down the last column. */
+const SUSTAIN_TOGGLE_ROW = 4
 
 /**
  * Which way the step field runs. Two modes, not four rotations — the rest read backwards
@@ -140,9 +168,21 @@ export const isRootStep = (step: number, npo: number): boolean => ((step % npo) 
 export class IsometricPage implements Page {
 	private size: GridSize = { width: 16, height: 8 }
 	private keysW = KEYS_W
-	private held = new Set<number>() // ledIndex of currently-held keyboard cells
-	private sustained = new Set<number>() // released-but-held by the sustain pedal
+	// Three independent sources can make a note sound, so notes are tracked by STEP and
+	// reconciled — a step goes on when the first source claims it and off when the last
+	// one lets go. That is what stops two unison twins from double-triggering Max, and
+	// what lets "turn that note off" mean the note rather than one cell.
+	private held = new Set<number>() // ledIndex of cells physically under a finger
+	private sustained = new Set<number>() // STEPS parked by whichever sustain is active
+	private presetHeld = new Map<number, number[]>() // preset slot → its steps, while held
+	private lastSounding = new Set<number>() // what Max currently believes is on
+	private killedByPress = new Set<number>() // cells whose press was a note-OFF gesture
 	private prevSustain = false
+
+	/** Chord presets: slot (row) → the steps saved there. Survives focus changes. */
+	private chords = new Map<number, number[]>()
+	/** The latching half of sustain — OR'd with the momentary pedal. */
+	private sustainToggle = false
 
 	// Live settings (defaults from SPECS).
 	private npo = SPEC_BY_KEY.get("npo")!.default as number
@@ -159,9 +199,7 @@ export class IsometricPage implements Page {
 	init(ctx: PageContext) {
 		this.size = ctx.size
 		this.keysW = Math.min(KEYS_W, this.size.width)
-		this.held.clear()
-		this.sustained.clear()
-		this.prevSustain = false
+		this.allNotesOff(ctx)
 		this.announce(ctx)
 	}
 
@@ -170,12 +208,9 @@ export class IsometricPage implements Page {
 	}
 
 	onBlur(ctx: PageContext) {
-		// Release everything (held + sustained) so a page switch can't strand a note.
-		for (const i of this.held) this.sendNote(ctx, i, false)
-		for (const i of this.sustained) this.sendNote(ctx, i, false)
-		this.held.clear()
-		this.sustained.clear()
-		this.prevSustain = false
+		// Release everything so a page switch can't strand a note. Saved chords stay —
+		// they're stored content, not runtime state.
+		this.allNotesOff(ctx)
 		this.sustainLatched = false
 		this.lastSustainTapAt = 0
 		// Drop our shifts so they don't linger after we leave the page.
@@ -187,18 +222,81 @@ export class IsometricPage implements Page {
 		// Right-edge control keys → local shifts (route through the shared ShiftInput).
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
 		if (this.isShift2(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
+		if (this.isSustainToggle(ev.x, ev.y)) { this.toggleKey(ev, ctx); return }
+
+		const slot = this.presetSlotAt(ev.x, ev.y)
+		if (slot !== null) { this.presetKey(slot, ev, ctx); return }
 
 		if (ev.x < 0 || ev.x >= this.keysW || ev.y < 0 || ev.y >= this.size.height) return
 		const i = ledIndex(this.size, ev.x, ev.y)
-		if (ev.s) {
-			this.sustained.delete(i) // re-pressing a sustained note re-arms it as held
-			this.held.add(i)
-			this.sendNote(ctx, i, true)
-		} else {
-			this.held.delete(i)
-			if (ctx.modifiers.shift2) this.sustained.add(i) // sustain: defer the note-off
-			else this.sendNote(ctx, i, false)
+		if (ev.s) this.pressKey(i, ctx)
+		else this.releaseKey(i, ctx)
+	}
+
+	/**
+	 * A keyboard press. Normally it just claims the cell — but while ANY sustain is on,
+	 * pressing a note that is already ringing turns it OFF instead, which is how you
+	 * subtract a note from a sustained chord. That kills the note wherever it is sounding
+	 * (twins included), not just the cell you hit. A note some other finger is physically
+	 * holding is left alone — you stop that by releasing it, same as always.
+	 */
+	private pressKey(i: number, ctx: PageContext) {
+		const step = this.stepOfIndex(i)
+		if (this.sustainOn(ctx) && this.lastSounding.has(step) && !this.isPhysicallyHeld(step)) {
+			this.silenceStep(step)
+			this.killedByPress.add(i) // so this cell's RELEASE doesn't re-sustain it
+			this.commit(ctx)
+			return
 		}
+		this.held.add(i)
+		this.commit(ctx)
+	}
+
+	private releaseKey(i: number, ctx: PageContext) {
+		if (this.killedByPress.delete(i)) return // that press was a note-off gesture
+		this.held.delete(i)
+		if (this.sustainOn(ctx)) this.sustained.add(this.stepOfIndex(i))
+		this.commit(ctx)
+	}
+
+	/**
+	 * The sustain TOGGLE. Latching, and OR'd with the momentary pedal, so either one alone
+	 * sustains. It doubles as the SAVE arm for the chord presets: while it's on, a preset
+	 * key stores the ringing chord instead of playing one. That's the difference between it
+	 * and the pedal's double-tap latch, which sustains but leaves the presets playable.
+	 */
+	private toggleKey(ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) return // latching: act on press, ignore release
+		this.sustainToggle = !this.sustainToggle
+		this.commit(ctx)
+	}
+
+	/**
+	 * A chord preset key. Armed (toggle on) it SAVES whatever is ringing — saving silence
+	 * clears the slot. Otherwise it PLAYS, momentarily: the chord sounds while the key is
+	 * down and, if a sustain is active when you let go, keeps ringing. That's what makes
+	 * "double-tap the pedal, then stab presets" stack chords up.
+	 */
+	private presetKey(slot: number, ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) {
+			const steps = this.presetHeld.get(slot)
+			if (!steps) return
+			this.presetHeld.delete(slot)
+			if (this.sustainOn(ctx)) for (const s of steps) this.sustained.add(s)
+			this.commit(ctx)
+			return
+		}
+		if (this.sustainToggle) {
+			const chord = [...this.lastSounding].sort((a, b) => a - b)
+			if (chord.length) this.chords.set(slot, chord)
+			else this.chords.delete(slot)
+			this.emitChords(ctx)
+			return
+		}
+		const chord = this.chords.get(slot)
+		if (!chord) return
+		this.presetHeld.set(slot, [...chord])
+		this.commit(ctx)
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
@@ -220,27 +318,20 @@ export class IsometricPage implements Page {
 	}
 
 	render(ctx: PageContext): LedFrame {
-		// Sustain pedal (shift 2): on its falling edge, release everything sustained.
-		const sustain = ctx.modifiers.shift2
-		if (this.prevSustain && !sustain) {
-			for (const i of this.sustained) this.sendNote(ctx, i, false)
-			this.sustained.clear()
-		}
-		this.prevSustain = sustain
+		// Sustain can also fall because an OSC shift dropped, which never reaches onKey.
+		this.commit(ctx)
 
-		// Every step currently sounding — the same note appears at several places on an
-		// isomorphic layout, and lighting all of them shows you the shape you're playing.
-		const sounding = new Set<number>()
-		for (const i of this.held) sounding.add(this.stepOfIndex(i))
-		for (const i of this.sustained) sounding.add(this.stepOfIndex(i))
+		// A note is lit at EVERY cell that plays it — on an isomorphic layout that shows
+		// the shape you're playing — and the cells actually under a finger burn brighter.
+		const sounding = this.lastSounding
 
 		const f = makeFrame(this.size)
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = 0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
-				let lvl = this.baseLevel(this.step(x, y))
-				if (sounding.has(this.step(x, y))) lvl = LVL_UNISON
-				if (this.sustained.has(i)) lvl = LVL_SUSTAIN
+				const step = this.step(x, y)
+				let lvl = this.baseLevel(step)
+				if (sounding.has(step)) lvl = LVL_UNISON
 				if (this.held.has(i)) lvl = LVL_HELD
 				f[i] = lvl
 			}
@@ -251,11 +342,30 @@ export class IsometricPage implements Page {
 			f[ledIndex(this.size, w - 1, h - 1)] = LVL_SHIFT
 			f[ledIndex(this.size, w - 1, h - 2)] = LVL_SHIFT
 		}
+		if (this.hasSustainToggle()) {
+			f[ledIndex(this.size, this.size.width - 1, SUSTAIN_TOGGLE_ROW)] =
+				this.sustainToggle ? LVL_HELD : LVL_SHIFT
+		}
+		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
+		// and the whole column lifts while the toggle arms them for saving.
+		if (this.hasPresets()) {
+			const cx = this.size.width - 2
+			for (let slot = 0; slot < this.size.height; slot++) {
+				const full = this.chords.has(slot)
+				let lvl = this.sustainToggle
+					? full ? LVL_PRESET_FULL_ARMED : LVL_PRESET_EMPTY_ARMED
+					: full ? LVL_PRESET_FULL : LVL_PRESET_EMPTY
+				if (this.presetHeld.has(slot)) lvl = LVL_HELD
+				f[ledIndex(this.size, cx, slot)] = lvl
+			}
+		}
 		return f
 	}
 
 	serialize() {
-		return this.settings()
+		// Saved chords are stored content, so they belong in a preset capture; the sustain
+		// state and anything currently sounding deliberately do not.
+		return { ...this.settings(), chords: this.chordArray() }
 	}
 
 	dispose() {}
@@ -269,6 +379,7 @@ export class IsometricPage implements Page {
 	private sustainKey(ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) {
 			if (!this.sustainLatched) ctx.setShift(2, false) // plain momentary release
+			this.commit(ctx)
 			return
 		}
 		const now = Date.now()
@@ -276,11 +387,13 @@ export class IsometricPage implements Page {
 			this.sustainLatched = false
 			this.lastSustainTapAt = 0
 			ctx.setShift(2, false)
+			this.commit(ctx)
 			return
 		}
 		if (now - this.lastSustainTapAt < DOUBLE_TAP_MS) this.sustainLatched = true
 		this.lastSustainTapAt = now
 		ctx.setShift(2, true)
+		this.commit(ctx)
 	}
 
 	/**
@@ -307,8 +420,61 @@ export class IsometricPage implements Page {
 		return this.step(i % this.size.width, Math.floor(i / this.size.width))
 	}
 
-	private sendNote(ctx: PageContext, i: number, on: boolean) {
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, this.stepOfIndex(i), on ? 1 : 0)
+	/** Sustain is a two-input OR: the latching toggle, or the momentary pedal. */
+	private sustainOn(ctx: PageContext): boolean {
+		return this.sustainToggle || ctx.modifiers.shift2
+	}
+
+	/** Every step any source is currently asking for. */
+	private soundingSteps(): Set<number> {
+		const s = new Set<number>()
+		for (const i of this.held) s.add(this.stepOfIndex(i))
+		for (const step of this.sustained) s.add(step)
+		for (const steps of this.presetHeld.values()) for (const step of steps) s.add(step)
+		return s
+	}
+
+	private isPhysicallyHeld(step: number): boolean {
+		for (const i of this.held) if (this.stepOfIndex(i) === step) return true
+		return false
+	}
+
+	/** Drop a step from every hands-off source, so it stops ringing everywhere. */
+	private silenceStep(step: number) {
+		this.sustained.delete(step)
+		for (const [slot, steps] of this.presetHeld) {
+			const kept = steps.filter((s) => s !== step)
+			if (kept.length) this.presetHeld.set(slot, kept)
+			else this.presetHeld.delete(slot)
+		}
+	}
+
+	/** Settle the sustain edge, then send only the notes that actually changed. */
+	private commit(ctx: PageContext) {
+		const on = this.sustainOn(ctx)
+		if (this.prevSustain && !on) this.sustained.clear() // falling edge drops the pedal
+		this.prevSustain = on
+
+		const now = this.soundingSteps()
+		for (const step of now) if (!this.lastSounding.has(step)) this.note(ctx, step, true)
+		for (const step of this.lastSounding) if (!now.has(step)) this.note(ctx, step, false)
+		this.lastSounding = now
+	}
+
+	private note(ctx: PageContext, step: number, on: boolean) {
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, step, on ? 1 : 0)
+	}
+
+	/** Silence everything and forget all runtime state (saved chords survive). */
+	private allNotesOff(ctx: PageContext) {
+		this.held.clear()
+		this.sustained.clear()
+		this.presetHeld.clear()
+		this.killedByPress.clear()
+		this.sustainToggle = false
+		this.prevSustain = false
+		for (const step of this.lastSounding) this.note(ctx, step, false)
+		this.lastSounding = new Set()
 	}
 
 	// Control keys live on the right edge, but only when there's a dead zone right of
@@ -321,6 +487,32 @@ export class IsometricPage implements Page {
 	}
 	private isShift2(x: number, y: number): boolean {
 		return this.hasControls() && x === this.size.width - 1 && y === this.size.height - 2
+	}
+	/** The toggle needs a last column tall enough to have a 5th row, and no key clash. */
+	private hasSustainToggle(): boolean {
+		return this.hasControls() && this.size.height > SUSTAIN_TOGGLE_ROW + 2
+	}
+	private isSustainToggle(x: number, y: number): boolean {
+		return this.hasSustainToggle() && x === this.size.width - 1 && y === SUSTAIN_TOGGLE_ROW
+	}
+	/** Presets need a SECOND dead column, so a narrow grid simply doesn't get them. */
+	private hasPresets(): boolean {
+		return this.size.width - 2 >= this.keysW
+	}
+	/** The preset slot at (x, y), or null if that isn't a preset key. One slot per row. */
+	private presetSlotAt(x: number, y: number): number | null {
+		if (!this.hasPresets() || x !== this.size.width - 2) return null
+		if (y < 0 || y >= this.size.height) return null
+		return y
+	}
+
+	/** Chords as a dense array (null = empty slot) — the shape Max and the web UI get. */
+	private chordArray(): (number[] | null)[] {
+		return Array.from({ length: this.size.height }, (_, slot) => this.chords.get(slot) ?? null)
+	}
+
+	private emitChords(ctx: PageContext) {
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/chords`, JSON.stringify(this.chordArray()))
 	}
 
 	/** Clamp+store one setting; returns true if it was a known key. */
@@ -354,6 +546,7 @@ export class IsometricPage implements Page {
 	private announce(ctx: PageContext) {
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/type`, "isometric")
 		this.emitSettings(ctx)
+		this.emitChords(ctx)
 	}
 
 	private settings() {

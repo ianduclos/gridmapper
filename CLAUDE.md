@@ -201,9 +201,20 @@ src/
                          layout=chromatic highlights the scale;
                          layout=folded makes one key = one SCALE DEGREE but still emits a
                          chromatic step, so Max's map never changes. Unison lighting shows
-                         every cell playing a held note. Right-edge control keys are LOCAL
-                         shifts via ctx.setShift (bottom-right = shift 1; above it =
-                         shift 2 = sustain pedal, DOUBLE-TAP to latch).
+                         every cell playing a SOUNDING note. Notes are tracked by STEP and
+                         reconciled, so twins send ONE note-on and a note lasts until the
+                         last source lets go. Col 15: row 4 = sustain TOGGLE (latching),
+                         row 6 = shift 2 = sustain pedal (DOUBLE-TAP to latch), row 7 =
+                         shift 1 (still unused). SUSTAIN = toggle OR pedal. Col 14 = 8
+                         CHORD PRESETS storing PITCHES: armed (toggle on) a press SAVES the
+                         ringing chord (saving silence clears the slot), otherwise it PLAYS
+                         momentarily and keeps ringing under sustain — so latch the pedal
+                         and presets stack. The two latches differ on purpose: the pedal's
+                         double-tap sustains and leaves presets playable, the toggle
+                         sustains and arms them for saving. Under any sustain, pressing an
+                         already-ringing note SILENCES it everywhere (subtract a note from
+                         a chord); a note another finger holds is exempt.
+                         Out: /grid/out/page/<slot>/chords <json> (dense array, null=empty).
   util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure)
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
   pages/meadowphysics.ts MeadowphysicsPage — faithful port of tehn's iii `grid/mp.lua`:

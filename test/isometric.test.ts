@@ -129,6 +129,7 @@ describe("isometric scales", () => {
 			scale: "blues",
 			layout: "folded",
 			orientation: "horizontal",
+			chords: Array(H).fill(null), // saved chords ride along; none saved here
 		})
 	})
 })
@@ -273,5 +274,233 @@ describe("isometric sustain latch", () => {
 		p.onKey({ x: 4, y: H - 1, s: 0 }, ctx)
 		// The release must NOT have sent a note-off — it's parked in `sustained`.
 		expect(notes().filter((m) => m.args[1] === 0)).toHaveLength(0)
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Sustain toggle + chord presets
+// ---------------------------------------------------------------------------------
+const TOGGLE = { x: SIZE.width - 1, y: 4 } // 5th button down the last column
+const PEDAL = { x: SIZE.width - 1, y: H - 2 } // the momentary shift-2 pedal
+const preset = (slot: number) => ({ x: SIZE.width - 2, y: slot })
+
+/** Steps Max currently believes are sounding, from the note stream. */
+const soundingFrom = (notes: () => Array<{ args: any[] }>) => {
+	const on = new Set<number>()
+	for (const m of notes()) (m.args[1] === 1 ? on.add(m.args[0]) : on.delete(m.args[0]))
+	return on
+}
+
+const tap = (p: IsometricPage, ctx: PageContext, k: { x: number; y: number }) => {
+	p.onKey({ ...k, s: 1 }, ctx)
+	p.onKey({ ...k, s: 0 }, ctx)
+}
+
+/** Play a chord on the bottom row and let go — under sustain it stays ringing. */
+const ringing = (p: IsometricPage, ctx: PageContext, xs: number[]) => {
+	for (const x of xs) p.onKey({ x, y: H - 1, s: 1 }, ctx)
+	for (const x of xs) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+}
+
+describe("isometric sustain toggle", () => {
+	it("latches on press and stays on after release", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		expect(soundingFrom(notes).size).toBe(1) // still ringing after the release
+	})
+
+	it("turning it off releases what it was sustaining", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		tap(p, ctx, { x: 3, y: H - 1 })
+		expect(soundingFrom(notes).size).toBe(1)
+		tap(p, ctx, TOGGLE) // off
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("is OR'd with the pedal — either one alone sustains", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE) // toggle ON
+		p.onKey({ ...PEDAL, s: 1 }, ctx) // pedal down too
+		tap(p, ctx, { x: 3, y: H - 1 })
+		p.onKey({ ...PEDAL, s: 0 }, ctx) // pedal up, toggle still holds it
+		expect(soundingFrom(notes).size).toBe(1)
+		tap(p, ctx, TOGGLE) // now both are off
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("lights up when on", () => {
+		const { p, ctx } = page()
+		expect(at(p.render(ctx), TOGGLE.x, TOGGLE.y)).toBe(1)
+		tap(p, ctx, TOGGLE)
+		expect(at(p.render(ctx), TOGGLE.x, TOGGLE.y)).toBe(15)
+	})
+})
+
+describe("isometric chord presets", () => {
+	it("saves the ringing chord while the toggle is armed", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(2))
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[2]).toEqual([0, 4, 7])
+	})
+
+	it("saving silence clears the slot", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(2))
+		tap(p, ctx, TOGGLE) // off — releases the chord
+		tap(p, ctx, TOGGLE) // armed again, nothing ringing
+		tap(p, ctx, preset(2))
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[2]).toBeNull()
+	})
+
+	it("plays the chord back momentarily when NOT armed", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(0))
+		tap(p, ctx, TOGGLE) // disarm + release everything
+		expect(soundingFrom(notes).size).toBe(0)
+
+		p.onKey({ ...preset(0), s: 1 }, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		p.onKey({ ...preset(0), s: 0 }, ctx)
+		expect(soundingFrom(notes).size).toBe(0) // no sustain, so it stops
+	})
+
+	it("a double-tapped pedal sustains preset playback, and chords stack", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(0))
+		ringing(p, ctx, [2, 5, 9])
+		tap(p, ctx, preset(1))
+		tap(p, ctx, TOGGLE) // disarm, all quiet
+		expect(soundingFrom(notes).size).toBe(0)
+
+		tap(p, ctx, PEDAL) // double-tap latches sustain WITHOUT arming save
+		tap(p, ctx, PEDAL)
+		tap(p, ctx, preset(0))
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7])) // rang on after release
+		tap(p, ctx, preset(1))
+		expect(soundingFrom(notes)).toEqual(new Set([0, 2, 4, 5, 7, 9])) // stacked
+		p.onKey({ ...PEDAL, s: 1 }, ctx) // third tap drops the latch
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("stores pitches, so a later layout change does not move the chord", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(3))
+		tap(p, ctx, TOGGLE)
+		p.onOsc("/setting/root", [3], ctx)
+		p.onOsc("/setting/orientation", ["horizontal"], ctx)
+		p.onKey({ ...preset(3), s: 1 }, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7])) // same pitches
+	})
+
+	it("an empty slot does nothing", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, preset(5))
+		expect(notes()).toHaveLength(0)
+	})
+
+	it("shows empty, loaded, armed and playing states", () => {
+		const { p, ctx } = page()
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(1) // empty
+		tap(p, ctx, TOGGLE)
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(3) // empty, armed
+		ringing(p, ctx, [0, 4])
+		tap(p, ctx, preset(1))
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(9) // loaded, armed
+		tap(p, ctx, TOGGLE)
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(6) // loaded
+		p.onKey({ ...preset(1), s: 1 }, ctx)
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(15) // playing
+	})
+})
+
+describe("isometric note reconciliation", () => {
+	it("two unison twins produce ONE note-on, and it lasts until both let go", () => {
+		const { p, ctx, notes } = page()
+		// vertical 5: (5, bottom) and (0, one row up) are both step 5.
+		p.onKey({ x: 5, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x: 0, y: H - 2, s: 1 }, ctx)
+		expect(notes().filter((m) => m.args[1] === 1)).toHaveLength(1)
+		p.onKey({ x: 5, y: H - 1, s: 0 }, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([5])) // other finger still down
+		p.onKey({ x: 0, y: H - 2, s: 0 }, ctx)
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("pressing a ringing note turns it off everywhere", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		tap(p, ctx, { x: 5, y: H - 1 }) // step 5, now sustained
+		expect(soundingFrom(notes)).toEqual(new Set([5]))
+		// Press its TWIN, not the original cell — the note dies all the same.
+		tap(p, ctx, { x: 0, y: H - 2 })
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("that kill press does not re-sustain the note on release", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		p.onKey({ x: 5, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x: 5, y: H - 1, s: 0 }, ctx)
+		p.onKey({ x: 5, y: H - 1, s: 1 }, ctx) // kill
+		p.onKey({ x: 5, y: H - 1, s: 0 }, ctx) // release must stay silent
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("can subtract one note from a sustained chord", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		for (const x of [0, 4, 7]) tap(p, ctx, { x, y: H - 1 })
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		tap(p, ctx, { x: 4, y: H - 1 })
+		expect(soundingFrom(notes)).toEqual(new Set([0, 7]))
+	})
+
+	it("takes a note out of a sustained PRESET chord too", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		for (const x of [0, 4, 7]) tap(p, ctx, { x, y: H - 1 })
+		tap(p, ctx, preset(0))
+		tap(p, ctx, TOGGLE)
+		tap(p, ctx, PEDAL) // latch sustain, presets playable
+		tap(p, ctx, PEDAL)
+		tap(p, ctx, preset(0))
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		tap(p, ctx, { x: 4, y: H - 1 })
+		expect(soundingFrom(notes)).toEqual(new Set([0, 7]))
+	})
+
+	it("without sustain, re-pressing a note just re-triggers as before", () => {
+		const { p, ctx, notes } = page()
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([3]))
+	})
+
+	it("blur silences everything but keeps the saved chords", () => {
+		const { p, ctx, notes, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(0))
+		p.onBlur(ctx)
+		expect(soundingFrom(notes).size).toBe(0)
+		p.onFocus(ctx)
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[0]).toEqual([0, 4, 7])
 	})
 })
