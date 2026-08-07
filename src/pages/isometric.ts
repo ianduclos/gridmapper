@@ -8,7 +8,7 @@
  *           local shift behaves exactly like one sent over OSC.
  * Display : out-of-scale 1, in-scale 3, root 8, unison 9, held/sustained 13.
  *           Control keys: faint markers. Columns 13–14 stay dark.
- * Settings: npo · vertical · root · scale · layout. Live, two-way over OSC.
+ * Settings: npo · vertical · root · scale · layout · rotation. Live, two-way over OSC.
  * Rules   : keyboard = columns 0..(keysW-1); right-edge controls only exist when
  *           there's a dead zone. Releases everything (held + sustained) on blur so a
  *           page switch never strands a note in Max.
@@ -32,6 +32,14 @@
  *                      degree back to a chromatic step before emitting, so Max's
  *                      step→pitch map never has to know which scale is selected, and the
  *                      two layouts are interchangeable at the patch end.
+ *
+ * `rotation` (0/90/180/270) turns the STEP FIELD in place — the grid stays landscape, the
+ * keyboard stays the same left-hand block and the control keys never move. Only the two
+ * axes rotate, clockwise, so at 90 one row DOWN = +1 step and one column RIGHT =
+ * +`vertical`, with step 0 in the top-left. This is the setting for playing the same
+ * layout with the short axis as the chromatic run (8 steps across, 13 rows of `vertical`)
+ * instead of the long one. It composes with everything else: `folded` folds the rotated
+ * index, and scale/root highlighting reads the resulting step exactly as before.
  */
 
 import {
@@ -69,6 +77,12 @@ const LVL_SHIFT = 1 // control keys are faint markers
 /** Two taps inside this window on the shift-2 key latch sustain on. */
 const DOUBLE_TAP_MS = 350
 
+/** Clockwise turns of the step field, in degrees. */
+export type Rotation = 0 | 90 | 180 | 270
+const ROTATIONS = [0, 90, 180, 270] as const
+export const isRotation = (v: unknown): v is Rotation =>
+	(ROTATIONS as readonly number[]).includes(v as number)
+
 // Single source of truth: drives both runtime clamping and the page descriptor.
 const SPECS: SettingSpec[] = [
 	{ key: "npo", label: "notes / octave", type: "number", min: 1, max: 48, step: 1, default: 12 },
@@ -76,13 +90,42 @@ const SPECS: SettingSpec[] = [
 	{ key: "root", label: "root (semitone)", type: "number", min: 0, max: 11, step: 1, default: 0 },
 	{ key: "scale", label: "scale", type: "enum", options: SCALE_NAMES, default: DEFAULT_SCALE },
 	{ key: "layout", label: "layout", type: "enum", options: ["chromatic", "folded"], default: "chromatic" },
+	{ key: "rotation", label: "rotation (° CW)", type: "enum", options: ROTATIONS.map(String), default: "0" },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 
-/** Step index for cell (x, y). Bottom-left = baseStep; up a row = +vertical. */
-export function stepAt(x: number, y: number, height: number, vertical: number, baseStep = BASE_STEP): number {
-	const rowsUp = height - 1 - y
-	return baseStep + x + rowsUp * vertical
+/**
+ * Step index for cell (x, y) inside a `keysW` × `height` keyboard block.
+ *
+ * Two axes define the field: the +1-step axis and the +`vertical` axis, at right angles.
+ * `rotation` turns that pair clockwise, which is why each case below reads as
+ * "<the +1 direction> + <the +vertical direction> × vertical". The origin follows the
+ * rotation to whichever corner keeps every step in the block non-negative:
+ *   0 → bottom-left · 90 → top-left · 180 → top-right · 270 → bottom-right.
+ */
+export function stepAt(
+	x: number,
+	y: number,
+	keysW: number,
+	height: number,
+	vertical: number,
+	rotation: Rotation = 0,
+	baseStep = BASE_STEP,
+): number {
+	const right = x
+	const left = keysW - 1 - x
+	const down = y
+	const up = height - 1 - y
+	switch (rotation) {
+		case 90:
+			return baseStep + down + right * vertical
+		case 180:
+			return baseStep + left + down * vertical
+		case 270:
+			return baseStep + up + left * vertical
+		default:
+			return baseStep + right + up * vertical
+	}
 }
 
 /** Is this step an octave root (step ≡ 0 mod npo)? Display-only. */
@@ -101,6 +144,7 @@ export class IsometricPage implements Page {
 	private root = SPEC_BY_KEY.get("root")!.default as number
 	private scale = SPEC_BY_KEY.get("scale")!.default as ScaleName
 	private layout = SPEC_BY_KEY.get("layout")!.default as "chromatic" | "folded"
+	private rotation = Number(SPEC_BY_KEY.get("rotation")!.default) as Rotation
 
 	// Sustain latch: two quick taps on the shift-2 key hold it down until the next tap.
 	private lastSustainTapAt = 0
@@ -240,7 +284,7 @@ export class IsometricPage implements Page {
 	 * Max's step→pitch map never has to know which scale is selected.
 	 */
 	private step(x: number, y: number): number {
-		const i = stepAt(x, y, this.size.height, this.vertical)
+		const i = stepAt(x, y, this.keysW, this.size.height, this.vertical, this.rotation)
 		return this.layout === "folded" ? foldedStep(i, this.root, this.scale) : i
 	}
 
@@ -287,6 +331,13 @@ export class IsometricPage implements Page {
 			this.layout = raw
 			return true
 		}
+		if (key === "rotation") {
+			// The web panel sends the enum as a string, Max will send an int — take either.
+			const deg = Number(raw)
+			if (!isRotation(deg)) return false
+			this.rotation = deg
+			return true
+		}
 		const value = Number(raw)
 		if (!Number.isFinite(value)) return false
 		const v = clamp(Math.round(value), spec.min ?? 0, spec.max ?? value)
@@ -308,6 +359,7 @@ export class IsometricPage implements Page {
 			root: this.root,
 			scale: this.scale,
 			layout: this.layout,
+			rotation: this.rotation,
 		}
 	}
 

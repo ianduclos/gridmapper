@@ -188,7 +188,11 @@ src/
   pages/isometric.ts     IsometricPage — isomorphic keyboard (left 13×8) as a pure
                          integer STEP FIELD: emits /grid/out/page/<slot>/note <step> <1|0>
                          (Max owns step→pitch). Settings npo · vertical · root · scale ·
-                         layout, two-way over OSC. layout=chromatic highlights the scale;
+                         layout · rotation, two-way over OSC. rotation (0/90/180/270 CW)
+                         turns the STEP FIELD in place — grid stays landscape, keyboard
+                         block and control keys never move, only the two axes swap (at 90:
+                         down = +1 step, right = +vertical, step 0 top-left).
+                         layout=chromatic highlights the scale;
                          layout=folded makes one key = one SCALE DEGREE but still emits a
                          chromatic step, so Max's map never changes. Unison lighting shows
                          every cell playing a held note. Right-edge control keys are LOCAL
