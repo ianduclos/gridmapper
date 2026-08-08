@@ -283,7 +283,7 @@ describe("isometric sustain latch", () => {
 // ---------------------------------------------------------------------------------
 const TOGGLE = { x: SIZE.width - 1, y: 4 } // 5th button down the last column
 const PEDAL = { x: SIZE.width - 1, y: H - 2 } // the momentary shift-2 pedal
-const preset = (slot: number) => ({ x: SIZE.width - 2, y: slot })
+const preset = (slot: number) => ({ x: SIZE.width - 3, y: slot })
 
 /** Steps Max currently believes are sounding, from the note stream. */
 const soundingFrom = (notes: () => Array<{ args: any[] }>) => {
@@ -718,7 +718,7 @@ describe("isometric chord preset gestures", () => {
 // ---------------------------------------------------------------------------------
 // Output tracks + looper routing
 // ---------------------------------------------------------------------------------
-const TRACK = (n: number) => ({ x: SIZE.width - 3, y: n })
+const TRACK = (n: number) => ({ x: SIZE.width - 2, y: n })
 
 describe("isometric tracks", () => {
 	it("track 0 is active at boot and live notes carry it", () => {

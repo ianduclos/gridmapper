@@ -225,7 +225,7 @@ src/
                          RETRIGGERS (explicit off+on, MIDI-safe) unless it is ringing purely
                          from sustain, where the press subtracts it.
                          Out: /grid/out/page/<slot>/patterns <json>.
-                         TAXONOMY (cols): 0-12 KEYBOARD · 13 rows0-3 TRACKS · 14 CHORDS ·
+                         TAXONOMY (cols): 0-12 KEYBOARD · 13 CHORDS · 14 rows0-3 TRACKS ·
                          15 rows0-3 LOOPERS, row4 SUSTAIN TOGGLE, row6 PEDAL, row7 SHIFT.
                          TRACKS = 4 outputs (instruments). Notes now carry one:
                          /grid/out/page/<slot>/note <step> <1|0> <track>. Press selects;

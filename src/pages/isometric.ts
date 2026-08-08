@@ -3,8 +3,8 @@
  * Summary : Isomorphic keyboard on the left 13×8 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
  * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> <1|0> <track>.
- *           TAXONOMY — cols 0-12 KEYBOARD; col 13 rows 0-3 TRACKS (outputs);
- *           col 14 CHORDS (8 presets); col 15 rows 0-3 LOOPERS, row 4 SUSTAIN
+ *           TAXONOMY — cols 0-12 KEYBOARD; col 13 CHORDS (8 presets); col 14
+ *           rows 0-3 TRACKS (outputs); col 15 rows 0-3 LOOPERS, row 4 SUSTAIN
  *           TOGGLE, row 6 SUSTAIN PEDAL (shift 2), row 7 SHIFT (shift 1).
  * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
  *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
@@ -31,7 +31,7 @@
  * chord presets PLAYABLE, while the toggle sustains and ARMS them for saving. That is the
  * whole reason there are two of them.
  *
- * CHORDS (column 14, one slot per row) store PITCHES — a list of steps — so a later change
+ * CHORDS (column 13, one slot per row) store PITCHES — a list of steps — so a later change
  * of root/scale/vertical/orientation doesn't move a saved chord. Armed (sustain toggle on),
  * a press saves whatever is ringing; pressing the SAME slot again while that same chord is
  * still ringing RELEASES it, which is the "right, next one" gesture that makes capturing a
@@ -47,7 +47,7 @@
  * the per-track `quant1..4` settings can round that length onto a grid of `lane` clock
  * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
  *
- * TRACKS (column 13, rows 0-3) are output destinations — one instrument each at the Max
+ * TRACKS (column 14, rows 0-3) are output destinations — one instrument each at the Max
  * end. Exactly one is ACTIVE; live notes always go there. A plain press selects. SHIFT +
  * press LATCHES that track for routing-edit: let go of shift and the LOOPER keys stop
  * recording and start meaning "does this looper feed this track" (bright = yes). Press the
@@ -163,7 +163,14 @@ const TIMER_MS = 5
 /** Loop-length quantise choices, in ticks of the followed lane. "off" = free time. */
 const QUANTA = ["off", "1", "2", "4", "8", "16"] as const
 
-/** Output TRACKS: the first four buttons of the third-to-last column. */
+/**
+ * The two control columns, counted from the RIGHT edge so they sit correctly on any grid
+ * width. TRACKS are second-to-last (beside the loopers), CHORDS third-to-last.
+ */
+const TRACK_COL_FROM_RIGHT = 2
+const CHORD_COL_FROM_RIGHT = 3
+
+/** Output TRACKS: the first four buttons of their column. */
 const TRACK_ROWS = 4
 const LVL_TRACK_OFF = 3
 const LVL_TRACK_ON = 12 // the active track
@@ -579,7 +586,7 @@ export class IsometricPage implements Page {
 		}
 		// Tracks: the active one stands out, and the one being routed blinks.
 		if (this.hasTracks()) {
-			const tx = this.size.width - 3
+			const tx = this.size.width - TRACK_COL_FROM_RIGHT
 			for (let idx = 0; idx < TRACK_ROWS; idx++) {
 				const lvl =
 					this.editingTrack === idx ? (blinkOn ? LVL_TRACK_EDIT : LVL_TRACK_EDIT_LO)
@@ -591,7 +598,7 @@ export class IsometricPage implements Page {
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
 		// and the whole column lifts while the toggle arms them for saving.
 		if (this.hasPresets()) {
-			const cx = this.size.width - 2
+			const cx = this.size.width - CHORD_COL_FROM_RIGHT
 			for (let slot = 0; slot < this.size.height; slot++) {
 				const full = this.chords.has(slot)
 				let lvl = this.sustainToggle
@@ -846,11 +853,11 @@ export class IsometricPage implements Page {
 	}
 	/** Presets need a SECOND dead column, so a narrow grid simply doesn't get them. */
 	private hasPresets(): boolean {
-		return this.size.width - 2 >= this.keysW
+		return this.size.width - CHORD_COL_FROM_RIGHT >= this.keysW
 	}
 	/** The preset slot at (x, y), or null if that isn't a preset key. One slot per row. */
 	private presetSlotAt(x: number, y: number): number | null {
-		if (!this.hasPresets() || x !== this.size.width - 2) return null
+		if (!this.hasPresets() || x !== this.size.width - CHORD_COL_FROM_RIGHT) return null
 		if (y < 0 || y >= this.size.height) return null
 		return y
 	}
@@ -866,10 +873,10 @@ export class IsometricPage implements Page {
 
 	/** Tracks need a THIRD dead column; a narrower grid simply doesn't get them. */
 	private hasTracks(): boolean {
-		return this.size.width - 3 >= this.keysW && this.size.height >= TRACK_ROWS
+		return this.size.width - TRACK_COL_FROM_RIGHT >= this.keysW && this.size.height >= TRACK_ROWS
 	}
 	private trackIndexAt(x: number, y: number): number | null {
-		if (!this.hasTracks() || x !== this.size.width - 3) return null
+		if (!this.hasTracks() || x !== this.size.width - TRACK_COL_FROM_RIGHT) return null
 		return y >= 0 && y < TRACK_ROWS ? y : null
 	}
 
