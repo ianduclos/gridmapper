@@ -367,7 +367,15 @@ duplicated this logic by hand.
 > **Two serialosc gotchas — both about not disturbing a live connection (cost ~2h):**
 > 1. Querying discovery (`/serialosc/list`) **while connected breaks that device's key
 >    routing** — presses silently stop, LED output keeps working. Poll discovery only
->    while disconnected.
+>    while disconnected. **This makes the debugging instinct exactly backwards:
+>    `npm run grid:list` is the natural "is the grid there?" reflex and it BREAKS the
+>    thing you are testing.** Debug a live agent in this order, safest first:
+>      - `ls /dev/cu.* | grep usbserial` — does the OS see it at all? Never touches serialosc.
+>      - `tail -f ~/Library/Logs/gridmapper.log` — the agent auto-reconnects within ~2s.
+>      - the web UI's `/grid/out/device` — the app's own view.
+>    Only run `grid:list` / `grid:led` / `grid:log` once the agent reports DISCONNECTED, or
+>    after `launchctl bootout` frees the device. If routing is already broken, an explicit
+>    `/grid/in/connect` re-handshakes; a full agent restart is the reliable clean slate.
 > 2. On a USB/cable glitch serialosc pushes `/sys/disconnect` then `/sys/connect` but
 >    **keeps the same device server + routing — keys resume on their own.** Do NOT tear
 >    down and reconnect on `/sys/disconnect`; reconnecting mid-glitch is what loses key
