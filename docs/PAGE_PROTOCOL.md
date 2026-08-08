@@ -139,7 +139,16 @@ interface KeyEvent { x: number; y: number; s: 0 | 1 } // s: 1 = press, 0 = relea
 
 You **do not** need `setInterval`, and you **do not** need `setDirty()` — those are
 gone from the author's job. (If you ever do spin up a timer for non-visual reasons,
-clear it in `onBlur`/`dispose`.) The framework also **force-repaints on every page
+clear it in `onBlur`/`dispose`.)
+
+> **The one standing exception**, so you know why it's there if you read the code:
+> `pages/isometric.ts` runs its pattern recorders on their own 5ms interval. They are
+> *free time* — the loop is as long as you played, not a whole number of ticks — so
+> neither `render()` (focused-only) nor `onTick` (locked to a transport that boots
+> stopped) can drive them. That timer is cleared in `dispose()` and deliberately **not**
+> in `onBlur()`, for the same reason `onTick` reaches unfocused slots: a running loop has
+> to survive a slot switch. Don't copy the pattern unless your page genuinely needs
+> wall-clock time; if it needs *musical* time, use the clock. The framework also **force-repaints on every page
 change**, so you never have to "kick" the first frame.
 
 Why 58fps: the grid's serialosc redraw default is 60fps; we run just under it so we

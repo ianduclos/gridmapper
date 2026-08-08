@@ -215,7 +215,20 @@ src/
                          already-ringing note SILENCES it everywhere (subtract a note from
                          a chord); a note another finger holds is exempt.
                          Out: /grid/out/page/<slot>/chords <json> (dense array, null=empty).
+                         Col 15 rows 0-3 = 4 PATTERN RECORDERS (util/patternRecorder.ts):
+                         free-time loopers, one key cycling empty→rec→play→stop, shift 1 +
+                         press clears, 60s auto-close. Loop length = what you played;
+                         quant1-4 settings round the LENGTH onto `lane` clock ticks only.
+                         Notes flow keys+presets → LIVE → [record tap] → +playback → INTENT
+                         → [sustain] → reconcile, so a pattern holds what you PLAYED while
+                         the pedal still smears playback. Pressing an already-sounding note
+                         RETRIGGERS (explicit off+on, MIDI-safe) unless it is ringing purely
+                         from sustain, where the press subtracts it.
+                         Out: /grid/out/page/<slot>/patterns <json>.
   util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure)
+  util/patternRecorder.ts free-time note looper: eventsInWindow/quantiseLength (pure) +
+                         PatternRecorder state machine. Used by isometric; owns the ONE
+                         deliberate setInterval in the codebase (see PAGE_PROTOCOL §6).
   pages/basic.ts         BasicGridPage — toggle surface ↔ OSC (registered as "toggle")
   pages/meadowphysics.ts MeadowphysicsPage — faithful port of tehn's iii `grid/mp.lua`:
                          8 cascading counters, rules (inc/dec/min/max/random/pole/stop),

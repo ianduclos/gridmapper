@@ -3,12 +3,15 @@
  * Summary : Isomorphic keyboard on the left 13×8 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
  * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> 1; release → 0.
- *           Column 15 (top→bottom): row 4 = sustain TOGGLE, row 6 = sustain pedal,
- *           row 7 = shift 1. Column 14 = eight chord presets, one per row.
+ *           Column 15 (top→bottom): rows 0-3 = pattern RECORDERS, row 4 = sustain
+ *           TOGGLE, row 6 = sustain pedal, row 7 = shift 1. Column 14 = eight chord
+ *           presets, one per row.
  * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
  *           Presets: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
+ *           Recorders: empty 1, blinking while armed, 6 stopped, 15 looping.
  *           Shift keys are faint markers. Column 13 stays dark.
- * Settings: npo · vertical · root · scale · layout · orientation. Live, two-way over OSC.
+ * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4.
+ *           Live, two-way over OSC.
  * Rules   : keyboard = columns 0..(keysW-1); the control columns only exist when
  *           there's a dead zone. Releases everything on blur so a page switch never
  *           strands a note in Max; SAVED CHORDS survive (stored content, not state).
@@ -35,13 +38,29 @@
  * sustain is active when you let go, which is what lets you latch the pedal and stack
  * chords up. Out: /grid/out/page/<slot>/chords <json> — a dense array, null = empty.
  *
- * Notes are tracked by STEP and reconciled against what Max was last told, because three
- * sources (fingers, the sustain buffer, held presets) can claim the same note at once.
- * One consequence worth knowing: two unison twins produce ONE note-on, and the note only
- * stops when the last source lets go. The other is that "turn it off" can mean the note
- * rather than the cell — while any sustain is on, pressing a note that is already ringing
- * SILENCES it wherever it sounds, which is how you subtract a note from a held chord.
- * A note another finger is physically holding is exempt; you stop that by releasing it.
+ * PATTERN RECORDERS (column 15, rows 0-3) are free-time loopers — see util/patternRecorder.
+ * One key cycles empty → recording → playing → stopped → playing, shift 1 + press clears,
+ * and a take longer than a minute closes itself. Loop length is exactly what you played;
+ * the per-track `quant1..4` settings can round that length onto a grid of `lane` clock
+ * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
+ *
+ * THE NOTE PIPELINE. Notes are tracked by STEP and reconciled against what Max was last
+ * told, because four sources (fingers, held presets, the sustain buffer and the loopers)
+ * can claim one note at once:
+ *
+ *   keys + presets ──> LIVE ──> [record tap] ──┐
+ *                                              ├──> INTENT ──> [sustain] ──> reconcile
+ *   recorder playback ─────────────────────────┘
+ *
+ * Recorders tap LIVE, so a pattern holds what you PLAYED, not what the pedal did with it.
+ * Sustain sits downstream of INTENT, which includes playback — so holding the pedal smears
+ * a running loop into a pad exactly as it smears your hands. Three consequences worth
+ * knowing:
+ *   · pressing a note that is ALREADY SOUNDING (a loop, a preset, another finger) emits an
+ *     explicit note-off then note-on, because a bare second note-on is undefined in MIDI;
+ *   · except when it is ringing purely because sustain parked it — then the press SUBTRACTS
+ *     it, which is how you take a note out of a held chord;
+ *   · a note stops only when the LAST source lets go, so two unison twins are one note.
  *
  * Scales are a 12-EDO idea, so they apply only as a display/layout overlay:
  *   layout chromatic — the step field is untouched; the scale only changes brightness.
@@ -78,6 +97,7 @@ import {
 } from "../core/types.js"
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
 import { clamp } from "../util/scale.js"
+import { PatternRecorder } from "../util/patternRecorder.js"
 import {
 	SCALE_NAMES,
 	DEFAULT_SCALE,
@@ -114,6 +134,19 @@ const DOUBLE_TAP_MS = 350
 /** The sustain TOGGLE: 5th button down the last column. */
 const SUSTAIN_TOGGLE_ROW = 4
 
+/** Pattern recorders: the first four buttons of the last column. */
+const RECORDER_ROWS = 4
+const LVL_REC_EMPTY = 1
+const LVL_REC_ARMED = 9 // the bright half of the recording blink
+const LVL_REC_STOPPED = 6 // has a pattern, not playing
+const BLINK_MS = 220
+
+/** How often the recorder timer wakes. Free time needs finer than a 58fps frame. */
+const TIMER_MS = 5
+
+/** Loop-length quantise choices, in ticks of the followed lane. "off" = free time. */
+const QUANTA = ["off", "1", "2", "4", "8", "16"] as const
+
 /**
  * Which way the step field runs. Two modes, not four rotations — the rest read backwards
  * under the hand and aren't worth the setting. `horizontal` is the 90° turn mirrored
@@ -134,6 +167,14 @@ const SPECS: SettingSpec[] = [
 	{ key: "scale", label: "scale", type: "enum", options: SCALE_NAMES, default: DEFAULT_SCALE },
 	{ key: "layout", label: "layout", type: "enum", options: ["chromatic", "folded"], default: "chromatic" },
 	{ key: "orientation", label: "orientation", type: "enum", options: [...ORIENTATIONS], default: "standard" },
+	{ key: "lane", label: "clock lane (quantise)", type: "number", min: 0, max: 3, step: 1, default: 0 },
+	...Array.from({ length: RECORDER_ROWS }, (_, i): SettingSpec => ({
+		key: `quant${i + 1}`,
+		label: `rec ${i + 1} quantise`,
+		type: "enum",
+		options: [...QUANTA],
+		default: "off",
+	})),
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 
@@ -176,8 +217,16 @@ export class IsometricPage implements Page {
 	private sustained = new Set<number>() // STEPS parked by whichever sustain is active
 	private presetHeld = new Map<number, number[]>() // preset slot → its steps, while held
 	private lastSounding = new Set<number>() // what Max currently believes is on
-	private killedByPress = new Set<number>() // cells whose press was a note-OFF gesture
-	private prevSustain = false
+	private lastIntent = new Set<number>() // pre-sustain, so we can spot what just let go
+	private lastLive = new Set<number>() // keys+presets only — the stream recorders tap
+	private retrigger = new Set<number>() // steps to articulate again this commit
+
+	/** Four free-time loopers. They keep running when the page loses focus. */
+	private recorders = Array.from({ length: RECORDER_ROWS }, () => new PatternRecorder())
+	private timer: ReturnType<typeof setInterval> | null = null
+	private lastTickMs = 0
+	/** The slot's context is created once and reused, so the timer can hold it. */
+	private ctx: PageContext | null = null
 
 	/** Chord presets: slot (row) → the steps saved there. Survives focus changes. */
 	private chords = new Map<number, number[]>()
@@ -191,15 +240,21 @@ export class IsometricPage implements Page {
 	private scale = SPEC_BY_KEY.get("scale")!.default as ScaleName
 	private layout = SPEC_BY_KEY.get("layout")!.default as "chromatic" | "folded"
 	private orientation = SPEC_BY_KEY.get("orientation")!.default as Orientation
+	private lane = SPEC_BY_KEY.get("lane")!.default as number
+	/** Per-recorder loop quantum, in lane ticks. 0 = off (the default). */
+	private quant = new Array<number>(RECORDER_ROWS).fill(0)
 
 	// Sustain latch: two quick taps on the shift-2 key hold it down until the next tap.
 	private lastSustainTapAt = 0
 	private sustainLatched = false
 
 	init(ctx: PageContext) {
+		this.ctx = ctx
 		this.size = ctx.size
 		this.keysW = Math.min(KEYS_W, this.size.width)
-		this.allNotesOff(ctx)
+		this.releaseLive(ctx)
+		for (const r of this.recorders) r.clear()
+		this.syncTimer()
 		this.announce(ctx)
 	}
 
@@ -208,9 +263,11 @@ export class IsometricPage implements Page {
 	}
 
 	onBlur(ctx: PageContext) {
-		// Release everything so a page switch can't strand a note. Saved chords stay —
-		// they're stored content, not runtime state.
-		this.allNotesOff(ctx)
+		// Release what your hands were doing, so a page switch can't strand a note. What
+		// does NOT stop: the pattern recorders — a running loop has to survive a slot
+		// change, exactly like an onTick sequencer (docs/PAGE_PROTOCOL.md §6). Saved
+		// chords stay too; they're stored content, not runtime state.
+		this.releaseLive(ctx)
 		this.sustainLatched = false
 		this.lastSustainTapAt = 0
 		// Drop our shifts so they don't linger after we leave the page.
@@ -223,6 +280,9 @@ export class IsometricPage implements Page {
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
 		if (this.isShift2(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
 		if (this.isSustainToggle(ev.x, ev.y)) { this.toggleKey(ev, ctx); return }
+
+		const rec = this.recorderIndexAt(ev.x, ev.y)
+		if (rec !== null) { this.recorderKey(rec, ev, ctx); return }
 
 		const slot = this.presetSlotAt(ev.x, ev.y)
 		if (slot !== null) { this.presetKey(slot, ev, ctx); return }
@@ -242,21 +302,23 @@ export class IsometricPage implements Page {
 	 */
 	private pressKey(i: number, ctx: PageContext) {
 		const step = this.stepOfIndex(i)
-		if (this.sustainOn(ctx) && this.lastSounding.has(step) && !this.isPhysicallyHeld(step)) {
-			this.silenceStep(step)
-			this.killedByPress.add(i) // so this cell's RELEASE doesn't re-sustain it
+		// Ringing PURELY because sustain parked it — nothing is actively asking for it.
+		// The press subtracts it from the held chord and starts nothing.
+		if (this.sustainOn(ctx) && this.lastSounding.has(step) && !this.lastIntent.has(step)) {
+			this.sustained.delete(step)
 			this.commit(ctx)
 			return
 		}
+		// Something is actively playing it — a loop, a preset, another finger. Articulate
+		// over the top rather than silently joining the note already in progress.
+		if (this.lastSounding.has(step)) this.retrigger.add(step)
 		this.held.add(i)
 		this.commit(ctx)
 	}
 
 	private releaseKey(i: number, ctx: PageContext) {
-		if (this.killedByPress.delete(i)) return // that press was a note-off gesture
 		this.held.delete(i)
-		if (this.sustainOn(ctx)) this.sustained.add(this.stepOfIndex(i))
-		this.commit(ctx)
+		this.commit(ctx) // the sustain stage parks it if a sustain is on
 	}
 
 	/**
@@ -279,11 +341,9 @@ export class IsometricPage implements Page {
 	 */
 	private presetKey(slot: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) {
-			const steps = this.presetHeld.get(slot)
-			if (!steps) return
+			if (!this.presetHeld.has(slot)) return
 			this.presetHeld.delete(slot)
-			if (this.sustainOn(ctx)) for (const s of steps) this.sustained.add(s)
-			this.commit(ctx)
+			this.commit(ctx) // the sustain stage parks the chord if a sustain is on
 			return
 		}
 		if (this.sustainToggle) {
@@ -297,6 +357,22 @@ export class IsometricPage implements Page {
 		if (!chord) return
 		this.presetHeld.set(slot, [...chord])
 		this.commit(ctx)
+	}
+
+	/**
+	 * One recorder key drives the whole state machine:
+	 *   empty -> recording -> playing -> stopped -> playing -> ...
+	 * and shift 1 + press throws the pattern away from any state. Recording opens on the
+	 * arm press, so a leading rest is capturable, and closes itself after MAX_RECORD_MS.
+	 */
+	private recorderKey(idx: number, ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) return // the whole machine acts on press
+		const r = this.recorders[idx]
+		if (ctx.modifiers.shift1) r.clear()
+		else r.press(Date.now(), this.quantumMs(idx))
+		this.emitPatterns(ctx)
+		this.commit(ctx)
+		this.syncTimer()
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
@@ -346,6 +422,20 @@ export class IsometricPage implements Page {
 			f[ledIndex(this.size, this.size.width - 1, SUSTAIN_TOGGLE_ROW)] =
 				this.sustainToggle ? LVL_HELD : LVL_SHIFT
 		}
+		// Recorders: blink while armed, full while looping, mid when stopped with content.
+		if (this.hasRecorders()) {
+			const rx = this.size.width - 1
+			const blinkOn = Date.now() % (BLINK_MS * 2) < BLINK_MS
+			for (let idx = 0; idx < RECORDER_ROWS; idx++) {
+				const st = this.recorders[idx].state
+				const lvl =
+					st === "recording" ? (blinkOn ? LVL_REC_ARMED : LVL_REC_EMPTY)
+					: st === "playing" ? LVL_HELD
+					: st === "stopped" ? LVL_REC_STOPPED
+					: LVL_REC_EMPTY
+				f[ledIndex(this.size, rx, idx)] = lvl
+			}
+		}
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
 		// and the whole column lifts while the toggle arms them for saving.
 		if (this.hasPresets()) {
@@ -365,10 +455,21 @@ export class IsometricPage implements Page {
 	serialize() {
 		// Saved chords are stored content, so they belong in a preset capture; the sustain
 		// state and anything currently sounding deliberately do not.
-		return { ...this.settings(), chords: this.chordArray() }
+		return {
+			...this.settings(),
+			chords: this.chordArray(),
+			patterns: this.recorders.map((r) => r.snapshot()),
+		}
 	}
 
-	dispose() {}
+	dispose(ctx: PageContext) {
+		// The slot is going away for good — now the loops really do stop.
+		this.releaseLive(ctx)
+		for (const r of this.recorders) r.clear()
+		this.commit(ctx)
+		this.syncTimer()
+		this.ctx = null
+	}
 
 	/**
 	 * The sustain pedal key. A single press is momentary as always; two presses inside
@@ -425,56 +526,132 @@ export class IsometricPage implements Page {
 		return this.sustainToggle || ctx.modifiers.shift2
 	}
 
-	/** Every step any source is currently asking for. */
-	private soundingSteps(): Set<number> {
-		const s = new Set<number>()
-		for (const i of this.held) s.add(this.stepOfIndex(i))
-		for (const step of this.sustained) s.add(step)
-		for (const steps of this.presetHeld.values()) for (const step of steps) s.add(step)
-		return s
-	}
-
-	private isPhysicallyHeld(step: number): boolean {
-		for (const i of this.held) if (this.stepOfIndex(i) === step) return true
-		return false
-	}
-
-	/** Drop a step from every hands-off source, so it stops ringing everywhere. */
-	private silenceStep(step: number) {
-		this.sustained.delete(step)
-		for (const [slot, steps] of this.presetHeld) {
-			const kept = steps.filter((s) => s !== step)
-			if (kept.length) this.presetHeld.set(slot, kept)
-			else this.presetHeld.delete(slot)
-		}
-	}
-
-	/** Settle the sustain edge, then send only the notes that actually changed. */
+	/**
+	 * The note pipeline, in stages:
+	 *
+	 *   keys + presets ──> LIVE ──> [record tap] ──┐
+	 *                                              ├──> INTENT ──> [sustain] ──> reconcile
+	 *   recorder playback ─────────────────────────┘
+	 *
+	 * Two things fall out of that shape. Recorders tap LIVE, so a pattern captures what you
+	 * PLAYED rather than what the pedal did with it — sustain is genuinely independent of
+	 * recording. And sustain sits downstream of INTENT, which includes recorder playback, so
+	 * holding the pedal smears a running loop into a pad exactly like it smears your hands.
+	 */
 	private commit(ctx: PageContext) {
-		const on = this.sustainOn(ctx)
-		if (this.prevSustain && !on) this.sustained.clear() // falling edge drops the pedal
-		this.prevSustain = on
+		const nowMs = Date.now()
 
-		const now = this.soundingSteps()
-		for (const step of now) if (!this.lastSounding.has(step)) this.note(ctx, step, true)
-		for (const step of this.lastSounding) if (!now.has(step)) this.note(ctx, step, false)
-		this.lastSounding = now
+		// 1. LIVE — what your hands and the chord presets are asking for.
+		const live = new Set<number>()
+		for (const i of this.held) live.add(this.stepOfIndex(i))
+		for (const steps of this.presetHeld.values()) for (const step of steps) live.add(step)
+
+		// 2. RECORD TAP — the transitions of that stream, before sustain touches them.
+		this.tapRecorders(live, nowMs)
+
+		// 3. INTENT — plus whatever the recorders are playing. Recorders never tap each
+		//    other, so a loop can't record itself into a feedback pile.
+		const intent = new Set(live)
+		for (const r of this.recorders) for (const step of r.sounding) intent.add(step)
+
+		// 4. SUSTAIN — park anything that just LEFT the intent. One rule covering fingers,
+		//    presets and loops alike, instead of each source remembering to sustain itself.
+		if (this.sustainOn(ctx)) {
+			for (const step of this.lastIntent) if (!intent.has(step)) this.sustained.add(step)
+		} else this.sustained.clear()
+		this.lastIntent = intent
+
+		// 5. RECONCILE against what Max was last told.
+		const out = new Set(intent)
+		for (const step of this.sustained) out.add(step)
+		// A retrigger is an articulation of a note that is staying on, so it needs an
+		// explicit off/on pair — a bare second note-on is undefined in MIDI.
+		for (const step of this.retrigger) {
+			if (this.lastSounding.has(step) && out.has(step)) {
+				this.note(ctx, step, false)
+				this.note(ctx, step, true)
+			}
+		}
+		this.retrigger.clear()
+		for (const step of out) if (!this.lastSounding.has(step)) this.note(ctx, step, true)
+		for (const step of this.lastSounding) if (!out.has(step)) this.note(ctx, step, false)
+		this.lastSounding = out
+	}
+
+	/** Feed the live stream's transitions to every armed recorder. */
+	private tapRecorders(live: Set<number>, nowMs: number) {
+		if (this.recorders.some((r) => r.state === "recording")) {
+			for (const step of this.lastLive) if (!live.has(step)) this.recordAll(step, false, nowMs)
+			for (const step of this.retrigger) {
+				if (live.has(step) && this.lastLive.has(step)) {
+					this.recordAll(step, false, nowMs)
+					this.recordAll(step, true, nowMs)
+				}
+			}
+			for (const step of live) if (!this.lastLive.has(step)) this.recordAll(step, true, nowMs)
+		}
+		this.lastLive = live
+	}
+
+	private recordAll(step: number, on: boolean, nowMs: number) {
+		for (const r of this.recorders) r.record(step, on, nowMs)
 	}
 
 	private note(ctx: PageContext, step: number, on: boolean) {
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, step, on ? 1 : 0)
 	}
 
-	/** Silence everything and forget all runtime state (saved chords survive). */
-	private allNotesOff(ctx: PageContext) {
+	/** Drop everything the hands own. Recorders are deliberately untouched. */
+	private releaseLive(ctx: PageContext) {
 		this.held.clear()
 		this.sustained.clear()
 		this.presetHeld.clear()
-		this.killedByPress.clear()
+		this.retrigger.clear()
 		this.sustainToggle = false
-		this.prevSustain = false
-		for (const step of this.lastSounding) this.note(ctx, step, false)
-		this.lastSounding = new Set()
+		this.commit(ctx)
+	}
+
+	// --- the recorder timer ------------------------------------------------------
+	//
+	// Free time fits neither of the framework's clocks: render() only runs for the FOCUSED
+	// page, and onTick is locked to the app transport (which boots stopped). So this page
+	// owns one interval. It is cleared in dispose() but deliberately NOT in onBlur — a loop
+	// has to keep playing when you switch slots, the same guarantee onTick sequencers get.
+
+	private syncTimer() {
+		const needed = this.recorders.some((r) => r.isRunning)
+		if (needed && !this.timer) {
+			this.lastTickMs = Date.now()
+			this.timer = setInterval(() => this.onTimer(), TIMER_MS)
+		} else if (!needed && this.timer) {
+			clearInterval(this.timer)
+			this.timer = null
+		}
+	}
+
+	private onTimer() {
+		const ctx = this.ctx
+		if (!ctx) return
+		const nowMs = Date.now()
+		const dt = nowMs - this.lastTickMs
+		this.lastTickMs = nowMs
+		for (let i = 0; i < this.recorders.length; i++) {
+			this.recorders[i].advance(nowMs, dt, this.quantumMs(i))
+		}
+		this.commit(ctx)
+		this.syncTimer() // a recording may have hit the cap, or a loop been stopped
+	}
+
+	/**
+	 * The loop-length grid for one recorder, in ms. `off` — the default — and a stopped
+	 * transport both mean pure free time, which is the point of a free-time looper.
+	 */
+	private quantumMs(idx: number): number {
+		const q = this.quant[idx] ?? 0
+		const clock = this.ctx?.clock
+		if (!q || !clock?.rate) return 0
+		const lane = clock.lanes?.[this.lane]
+		return (q * 1000 * (lane?.div || 1)) / clock.rate
 	}
 
 	// Control keys live on the right edge, but only when there's a dead zone right of
@@ -506,9 +683,24 @@ export class IsometricPage implements Page {
 		return y
 	}
 
+	/** Recorders need a last column with room above the sustain toggle. */
+	private hasRecorders(): boolean {
+		return this.hasControls() && this.size.height > RECORDER_ROWS
+	}
+	private recorderIndexAt(x: number, y: number): number | null {
+		if (!this.hasRecorders() || x !== this.size.width - 1) return null
+		return y >= 0 && y < RECORDER_ROWS ? y : null
+	}
+
 	/** Chords as a dense array (null = empty slot) — the shape Max and the web UI get. */
 	private chordArray(): (number[] | null)[] {
 		return Array.from({ length: this.size.height }, (_, slot) => this.chords.get(slot) ?? null)
+	}
+
+	/** Summary only — the full event lists would be a big message on every press. */
+	private emitPatterns(ctx: PageContext) {
+		const state = this.recorders.map((r) => ({ state: r.state, ms: Math.round(r.loopMs) }))
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/patterns`, JSON.stringify(state))
 	}
 
 	private emitChords(ctx: PageContext) {
@@ -529,6 +721,15 @@ export class IsometricPage implements Page {
 			this.layout = raw
 			return true
 		}
+		const q = /^quant([1-9]\d*)$/.exec(key)
+		if (q) {
+			const idx = Number(q[1]) - 1
+			if (idx < 0 || idx >= RECORDER_ROWS) return false
+			const raw2 = String(raw)
+			if (!(QUANTA as readonly string[]).includes(raw2)) return false
+			this.quant[idx] = raw2 === "off" ? 0 : Number(raw2)
+			return true
+		}
 		if (key === "orientation") {
 			if (!isOrientation(raw)) return false
 			this.orientation = raw
@@ -540,6 +741,7 @@ export class IsometricPage implements Page {
 		if (key === "npo") this.npo = v
 		else if (key === "vertical") this.vertical = v
 		else if (key === "root") this.root = v
+		else if (key === "lane") this.lane = v
 		return true
 	}
 
@@ -547,6 +749,7 @@ export class IsometricPage implements Page {
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/type`, "isometric")
 		this.emitSettings(ctx)
 		this.emitChords(ctx)
+		this.emitPatterns(ctx)
 	}
 
 	private settings() {
@@ -557,6 +760,10 @@ export class IsometricPage implements Page {
 			scale: this.scale,
 			layout: this.layout,
 			orientation: this.orientation,
+			lane: this.lane,
+			...Object.fromEntries(
+				this.quant.map((v, i) => [`quant${i + 1}`, v === 0 ? "off" : String(v)]),
+			),
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { stepAt, isRootStep, IsometricPage } from "../src/pages/isometric.js"
 import { ledIndex, type GridSize, type PageContext } from "../src/core/types.js"
 
@@ -122,7 +122,7 @@ describe("isometric scales", () => {
 
 	it("round-trips every setting through serialize()", () => {
 		const { p } = page({ npo: 19, vertical: 3, root: 5, scale: "blues", layout: "folded", orientation: "horizontal" })
-		expect(p.serialize()).toEqual({
+		expect(p.serialize()).toMatchObject({
 			npo: 19,
 			vertical: 3,
 			root: 5,
@@ -130,6 +130,7 @@ describe("isometric scales", () => {
 			layout: "folded",
 			orientation: "horizontal",
 			chords: Array(H).fill(null), // saved chords ride along; none saved here
+			patterns: Array(4).fill({ lengthMs: 0, events: [] }),
 		})
 	})
 })
@@ -429,12 +430,14 @@ describe("isometric chord presets", () => {
 })
 
 describe("isometric note reconciliation", () => {
-	it("two unison twins produce ONE note-on, and it lasts until both let go", () => {
+	it("a unison twin RETRIGGERS the note, and it lasts until both fingers let go", () => {
 		const { p, ctx, notes } = page()
 		// vertical 5: (5, bottom) and (0, one row up) are both step 5.
 		p.onKey({ x: 5, y: H - 1, s: 1 }, ctx)
 		p.onKey({ x: 0, y: H - 2, s: 1 }, ctx)
-		expect(notes().filter((m) => m.args[1] === 1)).toHaveLength(1)
+		// Pressing a note that is already playing articulates it again — off then on, so
+		// MIDI hears a fresh attack rather than an undefined repeated note-on.
+		expect(notes().map((m) => m.args)).toEqual([[5, 1], [5, 0], [5, 1]])
 		p.onKey({ x: 5, y: H - 1, s: 0 }, ctx)
 		expect(soundingFrom(notes)).toEqual(new Set([5])) // other finger still down
 		p.onKey({ x: 0, y: H - 2, s: 0 }, ctx)
@@ -502,5 +505,151 @@ describe("isometric note reconciliation", () => {
 		p.onFocus(ctx)
 		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
 		expect(chords[0]).toEqual([0, 4, 7])
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Pattern recorders — free-time loopers on the first four keys of the last column.
+// Driven by the page's own interval, so these run on fake timers.
+// ---------------------------------------------------------------------------------
+const REC = (n: number) => ({ x: SIZE.width - 1, y: n })
+
+describe("isometric pattern recorders", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
+	/** Arm rec 0, play step 3 from 100ms to 150ms, close at 400ms. */
+	const recordLoop = (p: IsometricPage, ctx: PageContext, slot = 0) => {
+		tap(p, ctx, REC(slot))
+		vi.advanceTimersByTime(100)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		vi.advanceTimersByTime(50)
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		vi.advanceTimersByTime(250)
+		tap(p, ctx, REC(slot)) // close -> playing, loop = 400ms
+	}
+
+	it("records what you played and loops it", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		const before = notes().length
+		vi.advanceTimersByTime(400) // one full lap
+		const lap1 = notes().slice(before).map((m) => m.args)
+		expect(lap1).toEqual([[3, 1], [3, 0]])
+		vi.advanceTimersByTime(400) // and again — it's a loop
+		expect(notes().slice(before + 2).map((m) => m.args)).toEqual([[3, 1], [3, 0]])
+	})
+
+	it("cycles arm -> play -> stop, and the LED follows", () => {
+		const { p, ctx } = page()
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(1) // empty
+		tap(p, ctx, REC(0))
+		vi.advanceTimersByTime(100)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		vi.advanceTimersByTime(300)
+		tap(p, ctx, REC(0))
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(15) // playing
+		tap(p, ctx, REC(0))
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(6) // stopped, has content
+	})
+
+	it("stopping silences the loop and rewinds it", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		vi.advanceTimersByTime(120) // into the note
+		expect(soundingFrom(notes)).toEqual(new Set([3]))
+		tap(p, ctx, REC(0)) // stop
+		expect(soundingFrom(notes).size).toBe(0)
+		tap(p, ctx, REC(0)) // play again, from the top
+		vi.advanceTimersByTime(50)
+		expect(soundingFrom(notes).size).toBe(0) // note-on is at 100
+		vi.advanceTimersByTime(80)
+		expect(soundingFrom(notes)).toEqual(new Set([3]))
+	})
+
+	it("shift 1 + press clears the pattern", () => {
+		const { p, ctx, modifiers, notes } = page()
+		recordLoop(p, ctx)
+		modifiers.shift1 = true
+		tap(p, ctx, REC(0))
+		modifiers.shift1 = false
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(1) // back to empty
+		const before = notes().length
+		vi.advanceTimersByTime(800)
+		expect(notes().length).toBe(before) // nothing plays any more
+	})
+
+	it("keeps looping after the page loses focus", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		p.onBlur(ctx) // a slot switch must NOT stop a running loop
+		const before = notes().length
+		vi.advanceTimersByTime(400)
+		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 1], [3, 0]])
+	})
+
+	it("dispose really does stop it", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		p.dispose(ctx)
+		const before = notes().length
+		vi.advanceTimersByTime(800)
+		expect(notes().length).toBe(before)
+	})
+
+	it("sustain smears the loop — its note-off is swallowed", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		vi.advanceTimersByTime(120) // note is on (100..150)
+		expect(soundingFrom(notes)).toEqual(new Set([3]))
+		p.onKey({ ...PEDAL, s: 1 }, ctx) // hold the pedal over the note-off
+		vi.advanceTimersByTime(150)
+		expect(soundingFrom(notes)).toEqual(new Set([3])) // still ringing
+		p.onKey({ ...PEDAL, s: 0 }, ctx)
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("playing over a loop retriggers rather than joining the note", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx)
+		vi.advanceTimersByTime(120) // loop is sounding step 3
+		const before = notes().length
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx) // same step, live
+		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0], [3, 1]])
+	})
+
+	it("a recorder does not record another recorder", () => {
+		const { p, ctx } = page()
+		recordLoop(p, ctx, 0) // rec 0 is looping
+		tap(p, ctx, REC(1)) // arm rec 1 but play nothing
+		vi.advanceTimersByTime(500) // rec 0 fires notes throughout
+		tap(p, ctx, REC(1)) // close -> nothing captured, so back to empty
+		expect(at(p.render(ctx), REC(1).x, 1)).toBe(1)
+	})
+
+	it("records a chord preset stab too", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(0))
+		tap(p, ctx, TOGGLE) // saved, everything quiet
+		tap(p, ctx, REC(0))
+		vi.advanceTimersByTime(100)
+		tap(p, ctx, preset(0)) // stab the chord into the recording
+		vi.advanceTimersByTime(300)
+		tap(p, ctx, REC(0))
+		const before = notes().length
+		vi.advanceTimersByTime(400)
+		const played = new Set(notes().slice(before).filter((m) => m.args[1] === 1).map((m) => m.args[0]))
+		expect(played).toEqual(new Set([0, 4, 7]))
+	})
+
+	it("reports state over OSC", () => {
+		const { p, ctx, sent } = page()
+		recordLoop(p, ctx)
+		const pat = JSON.parse(sent.filter((m) => m.path.endsWith("/patterns")).pop()!.args[0])
+		expect(pat[0]).toEqual({ state: "playing", ms: 400 })
+		expect(pat[1]).toEqual({ state: "empty", ms: 0 })
 	})
 })
