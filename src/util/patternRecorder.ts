@@ -10,8 +10,11 @@
  *
  * One key cycles the whole state machine:
  *   empty --press--> recording --press--> playing --press--> stopped --press--> playing
- * and a shift-press clears from any state. Recording opens on the arm press (so a leading
- * rest is capturable) and auto-closes at MAX_RECORD_MS.
+ * and a shift-press clears from any state.
+ *
+ * Arming does NOT start the clock: the loop begins at the FIRST NOTE, so there is no dead
+ * air at the top from the time it took you to reach the keyboard. Stopping leaves the
+ * playhead where it is and pressing again resumes from there — only a clear rewinds.
  */
 
 export type RecorderState = "empty" | "recording" | "playing" | "stopped"
@@ -68,6 +71,8 @@ export class PatternRecorder {
 	private events: PatternEvent[] = []
 	private lengthMs = 0
 	private recStartMs = 0
+	/** Arming alone doesn't start the clock — the first recorded note does. */
+	private recArmed = false
 	private playhead = 0
 	/**
 	 * Note-offs held over to the next advance. A stab recorded as on-and-off inside one
@@ -97,21 +102,22 @@ export class PatternRecorder {
 			case "empty":
 			case "stopped":
 				if (this.state === "stopped" && this.hasContent) {
-					this.playhead = 0
-					this.state = "playing"
+					this.state = "playing" // resume where it was paused
 					return
 				}
 				this.events = []
 				this.lengthMs = 0
 				this.recStartMs = nowMs
+				this.recArmed = true // waiting for the first note to start the clock
 				this.state = "recording"
 				return
 			case "recording":
 				this.close(nowMs, quantumMs)
 				return
 			case "playing":
+				// Pause, don't rewind: the playhead is left alone so the next press picks
+				// the loop up mid-phrase. Only clear() goes back to the top.
 				this.state = "stopped"
-				this.playhead = 0
 				this.sounding.clear()
 				this.pendingOff = []
 				return
@@ -128,7 +134,8 @@ export class PatternRecorder {
 		this.state = "empty"
 		this.events = []
 		this.lengthMs = 0
-		this.playhead = 0
+		this.recArmed = false
+		this.playhead = 0 // the ONLY thing that rewinds
 		this.sounding.clear()
 		this.pendingOff = []
 	}
@@ -136,6 +143,10 @@ export class PatternRecorder {
 	/** Tap the live note stream. Ignored unless recording. */
 	record(step: number, on: boolean, nowMs: number): void {
 		if (this.state !== "recording") return
+		if (this.recArmed) {
+			this.recStartMs = nowMs // the loop starts HERE, at the first note
+			this.recArmed = false
+		}
 		this.events.push({ atMs: nowMs - this.recStartMs, step, on })
 	}
 
@@ -145,7 +156,8 @@ export class PatternRecorder {
 	 */
 	advance(nowMs: number, dtMs: number, quantumMs = 0): boolean {
 		if (this.state === "recording") {
-			if (nowMs - this.recStartMs < MAX_RECORD_MS) return false
+			// The cap measures from the first note, so sitting armed forever is fine.
+			if (this.recArmed || nowMs - this.recStartMs < MAX_RECORD_MS) return false
 			this.close(nowMs, quantumMs) // hit the cap: close the loop and start playing
 			return false
 		}
@@ -176,6 +188,7 @@ export class PatternRecorder {
 			return
 		}
 		this.lengthMs = quantiseLength(raw, quantumMs)
+		this.recArmed = false
 		this.playhead = 0
 		this.sounding.clear()
 		this.pendingOff = []

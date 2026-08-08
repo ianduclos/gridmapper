@@ -56,18 +56,22 @@ function shuffled(size: number, rng: Rng): number[] {
 }
 
 /**
- * Walks a pool of `size` notes in `mode`, one `next()` per musical step.
+ * Walks a list of notes in `mode`, one `next()` per musical step.
  *
- * The pool changes constantly — you add a finger, a loop lets a note go — so the cursor is
- * kept as a position that is re-clamped rather than an index into a cached array. Changing
- * size refills the urn, because a bag drawn for four notes means nothing once there are
- * five.
+ * Takes the note list rather than just its length, because the pool changes constantly —
+ * you add a finger, a loop lets a note go — and the thing that has to stay true across
+ * those changes is "don't play the same note twice in a row". Growing a chord shifts every
+ * index, so an index-only cursor happily repeats the note it just played; tracking the last
+ * NOTE and skipping a repeat is what makes building a chord finger by finger sound right.
+ * Changing size also refills the urn, since a bag drawn for four notes means nothing once
+ * there are five.
  */
 export class Arpeggiator {
 	mode: ArpMode = "off"
 	private pos = 0
 	private size = 0
 	private bag: number[] = []
+	private lastNote: number | null = null
 
 	constructor(private rng: Rng = Math.random) {}
 
@@ -90,26 +94,38 @@ export class Arpeggiator {
 	reset(): void {
 		this.pos = 0
 		this.bag = []
+		this.lastNote = null
 	}
 
 	/**
-	 * The next index into a pool of `size`, or null if there is nothing to play. Advances
-	 * the cursor, so call it exactly once per step.
+	 * The next NOTE from `pool`, or null if there is nothing to play. Advances the cursor, so
+	 * call it exactly once per step. A repeat of the note just played is skipped — unless
+	 * the pool holds only one note, where repeating is the whole point.
 	 */
-	next(size: number): number | null {
-		if (!this.isOn || size <= 0) return null
-		if (size !== this.size) {
-			this.size = size
+	next(pool: readonly number[]): number | null {
+		if (!this.isOn || !pool.length) {
+			this.lastNote = null
+			return null
+		}
+		if (pool.length !== this.size) {
+			this.size = pool.length
 			this.bag = [] // the old bag was drawn for a different chord
-			if (this.pos >= size) this.pos = 0
+			if (this.pos >= pool.length) this.pos = 0
 		}
+		let note = this.draw(pool)
+		if (pool.length > 1 && note === this.lastNote) note = this.draw(pool)
+		this.lastNote = note
+		return note
+	}
+
+	private draw(pool: readonly number[]): number {
 		if (this.mode === "urn") {
-			if (!this.bag.length) this.bag = shuffled(size, this.rng)
-			return this.bag.pop()!
+			if (!this.bag.length) this.bag = shuffled(pool.length, this.rng)
+			return pool[this.bag.pop()!]
 		}
-		const seq = arpSequence(this.mode, size)
+		const seq = arpSequence(this.mode, pool.length)
 		const idx = seq[this.pos % seq.length]
 		this.pos = (this.pos + 1) % seq.length
-		return idx
+		return pool[idx]
 	}
 }

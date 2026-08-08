@@ -58,13 +58,17 @@ describe("quantiseLength", () => {
 })
 
 describe("PatternRecorder state machine", () => {
-	/** Arm, play one note, close — the standard "has a loop now" setup. */
+	/**
+	 * Arm at 0, play a note from 100 to 250, close at 500. Recording starts at the FIRST
+	 * NOTE, so the loop is 400ms long with events at 0 and 150 — the 100ms spent reaching
+	 * the keyboard is not part of it.
+	 */
 	const recorded = () => {
 		const r = new PatternRecorder()
 		r.press(0)
 		r.record(5, true, 100)
-		r.record(5, false, 150)
-		r.press(400)
+		r.record(5, false, 250)
+		r.press(500)
 		return r
 	}
 
@@ -76,24 +80,49 @@ describe("PatternRecorder state machine", () => {
 		r.record(5, true, 100)
 		r.press(400)
 		expect(r.state).toBe("playing")
-		expect(r.loopMs).toBe(400)
 		r.press(500)
 		expect(r.state).toBe("stopped")
 		r.press(600)
 		expect(r.state).toBe("playing")
 	})
 
-	it("stopping resets the playhead to the start", () => {
+	it("the loop starts at the FIRST NOTE, not at the arm press", () => {
 		const r = recorded()
-		r.advance(520, 120) // playhead past the note-on
+		expect(r.loopMs).toBe(400) // 500 - 100, not 500 - 0
+		expect(r.snapshot().events.map((e) => e.atMs)).toEqual([0, 150])
+	})
+
+	it("sitting armed forever costs nothing", () => {
+		const r = new PatternRecorder()
+		r.press(0)
+		r.advance(MAX_RECORD_MS * 3, 10) // no note yet — the cap hasn't started
+		expect(r.state).toBe("recording")
+	})
+
+	it("stopping PAUSES — the playhead stays where it was", () => {
+		const r = recorded()
+		r.advance(600, 100) // 0 -> 100, past the note-on at 0
 		expect(r.sounding).toEqual(new Set([5]))
-		r.press(520) // stop
+		r.press(600) // stop
+		expect(r.sounding.size).toBe(0) // silenced ...
+		r.press(700) // ... and resumed from 100, NOT rewound
+		r.advance(740, 40) // 100 -> 140: nothing there
+		expect(r.sounding.size).toBe(0) // a rewind would have replayed the note-on at 0
+		r.advance(800, 60) // 140 -> 200: the note-off at 150
 		expect(r.sounding.size).toBe(0)
-		r.press(600) // play again — from the top
-		r.advance(650, 50)
-		expect(r.sounding.size).toBe(0) // note-on is at 100, not yet reached
-		r.advance(710, 60)
-		expect(r.sounding).toEqual(new Set([5]))
+	})
+
+	it("only clear rewinds the playhead", () => {
+		const r = recorded()
+		r.advance(600, 100)
+		r.press(600) // stop, playhead at 100
+		r.clear()
+		expect(r.state).toBe("empty")
+		// Re-record and the new loop starts clean at 0.
+		r.press(1000)
+		r.record(9, true, 1100)
+		r.press(1400)
+		expect(r.snapshot().events[0].atMs).toBe(0)
 	})
 
 	it("an empty take goes back to empty rather than looping silence", () => {
@@ -116,31 +145,32 @@ describe("PatternRecorder state machine", () => {
 	it("closes itself once the recording passes the cap", () => {
 		const r = new PatternRecorder()
 		r.press(0)
-		r.record(5, true, 100)
-		r.advance(MAX_RECORD_MS - 1, 10)
+		r.record(5, true, 100) // the cap counts from HERE
+		r.advance(100 + MAX_RECORD_MS - 1, 10)
 		expect(r.state).toBe("recording")
-		r.advance(MAX_RECORD_MS + 1, 10)
+		r.advance(100 + MAX_RECORD_MS + 1, 10)
 		expect(r.state).toBe("playing")
 		expect(r.loopMs).toBeGreaterThanOrEqual(MAX_RECORD_MS)
 	})
 
 	it("loops — the same note comes round again", () => {
-		const r = recorded()
-		r.advance(520, 120) // 0 -> 120, note on
+		const r = recorded() // events at 0 and 150, loop 400
+		r.advance(600, 100) // 0 -> 100, note on (offset 0)
 		expect(r.sounding).toEqual(new Set([5]))
-		r.advance(620, 100) // 120 -> 220, note off at 150
+		r.advance(700, 100) // 100 -> 200, note off at 150
 		expect(r.sounding.size).toBe(0)
-		r.advance(910, 290) // wraps past 400 and back round to the note-on at 100
+		r.advance(1000, 250) // 200 -> wraps -> 50, picking up the note-on at 0
 		expect(r.sounding).toEqual(new Set([5]))
 	})
 
 	it("quantises the loop LENGTH but not the events inside it", () => {
 		const r = new PatternRecorder()
 		r.press(0)
-		r.record(5, true, 137)
-		r.press(437, 100) // quantum 100ms
-		expect(r.loopMs).toBe(400)
-		expect(r.snapshot().events[0].atMs).toBe(137) // untouched
+		r.record(5, true, 137) // loop starts here
+		r.record(7, true, 200)
+		r.press(437, 100) // raw 300ms, quantum 100ms
+		expect(r.loopMs).toBe(300)
+		expect(r.snapshot().events.map((e) => e.atMs)).toEqual([0, 63]) // untouched
 	})
 
 	it("a zero-length stab still sounds, for one tick", () => {

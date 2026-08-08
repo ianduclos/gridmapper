@@ -244,6 +244,9 @@ describe("isometric unison lighting", () => {
 })
 
 describe("isometric sustain latch", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
 	// Sustain is no longer observable as a shift flag — it has its own state now — so these
 	// watch what it actually does to notes.
 	const playAndRelease = (p: IsometricPage, ctx: PageContext, x = 4) => {
@@ -254,6 +257,7 @@ describe("isometric sustain latch", () => {
 	it("a single press is momentary", () => {
 		const { p, ctx, notes } = page()
 		p.onKey({ ...PEDAL, s: 1 }, ctx)
+		vi.advanceTimersByTime(80)
 		playAndRelease(p, ctx)
 		expect(soundingFrom(notes)).toEqual(new Set([4])) // held by the pedal
 		p.onKey({ ...PEDAL, s: 0 }, ctx)
@@ -262,8 +266,8 @@ describe("isometric sustain latch", () => {
 
 	it("a double tap latches it on, and the next tap releases", () => {
 		const { p, ctx, notes } = page()
-		tap(p, ctx, PEDAL)
-		tap(p, ctx, PEDAL) // second tap, well inside the window
+		pedalTap(p, ctx)
+		pedalTap(p, ctx) // second tap, a human interval later
 		playAndRelease(p, ctx)
 		expect(soundingFrom(notes)).toEqual(new Set([4])) // still held — latched
 		p.onKey({ ...PEDAL, s: 1 }, ctx)
@@ -272,11 +276,25 @@ describe("isometric sustain latch", () => {
 
 	it("a latched pedal actually sustains notes", () => {
 		const { p, ctx, notes } = page()
-		tap(p, ctx, PEDAL)
-		tap(p, ctx, PEDAL) // latched on
+		pedalTap(p, ctx)
+		pedalTap(p, ctx) // latched on
 		playAndRelease(p, ctx)
 		// The release must NOT have sent a note-off — it's parked in `sustained`.
 		expect(notes().filter((m) => m.args[1] === 0)).toHaveLength(0)
+	})
+
+	it("contact bounce does NOT latch it on — that was the stuck pedal", () => {
+		const { p, ctx, notes } = page()
+		// One press whose contact chatters: down, a fast bounce up/down, then a real release.
+		p.onKey({ ...PEDAL, s: 1 }, ctx)
+		vi.advanceTimersByTime(20)
+		p.onKey({ ...PEDAL, s: 0 }, ctx)
+		vi.advanceTimersByTime(20)
+		p.onKey({ ...PEDAL, s: 1 }, ctx) // 20ms apart = bounce, not a double tap
+		vi.advanceTimersByTime(120)
+		p.onKey({ ...PEDAL, s: 0 }, ctx)
+		playAndRelease(p, ctx)
+		expect(soundingFrom(notes).size).toBe(0) // pedal is OFF, nothing stuck
 	})
 
 	it("shift 2 is a plain modifier now — it does NOT sustain", () => {
@@ -317,6 +335,19 @@ const tap = (p: IsometricPage, ctx: PageContext, k: { x: number; y: number }) =>
 	p.onKey({ ...k, s: 0 }, ctx)
 }
 
+/**
+ * Tap the sustain pedal with human-plausible timing. The pedal is debounced (a 10ms
+ * leading-edge lockout, and a double tap must be at least 60ms apart to count), so
+ * instantaneous test taps would be swallowed as contact bounce — which is the point.
+ * Requires fake timers.
+ */
+const pedalTap = (p: IsometricPage, ctx: PageContext) => {
+	p.onKey({ ...PEDAL, s: 1 }, ctx)
+	vi.advanceTimersByTime(80)
+	p.onKey({ ...PEDAL, s: 0 }, ctx)
+	vi.advanceTimersByTime(80)
+}
+
 /** Play a chord on the bottom row and let go — under sustain it stays ringing. */
 const ringing = (p: IsometricPage, ctx: PageContext, xs: number[]) => {
 	for (const x of xs) p.onKey({ x, y: H - 1, s: 1 }, ctx)
@@ -324,6 +355,9 @@ const ringing = (p: IsometricPage, ctx: PageContext, xs: number[]) => {
 }
 
 describe("isometric sustain toggle", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
 	it("latches on press and stays on after release", () => {
 		const { p, ctx, notes } = page()
 		tap(p, ctx, TOGGLE)
@@ -345,6 +379,7 @@ describe("isometric sustain toggle", () => {
 		const { p, ctx, notes } = page()
 		tap(p, ctx, TOGGLE) // toggle ON
 		p.onKey({ ...PEDAL, s: 1 }, ctx) // pedal down too
+		vi.advanceTimersByTime(80)
 		tap(p, ctx, { x: 3, y: H - 1 })
 		p.onKey({ ...PEDAL, s: 0 }, ctx) // pedal up, toggle still holds it
 		expect(soundingFrom(notes).size).toBe(1)
@@ -361,6 +396,9 @@ describe("isometric sustain toggle", () => {
 })
 
 describe("isometric chord presets", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
 	it("saves the ringing chord while the toggle is armed", () => {
 		const { p, ctx, sent } = page()
 		tap(p, ctx, TOGGLE)
@@ -406,8 +444,8 @@ describe("isometric chord presets", () => {
 		tap(p, ctx, TOGGLE) // disarm, all quiet
 		expect(soundingFrom(notes).size).toBe(0)
 
-		tap(p, ctx, PEDAL) // double-tap latches sustain WITHOUT arming save
-		tap(p, ctx, PEDAL)
+		pedalTap(p, ctx) // double-tap latches sustain WITHOUT arming save
+		pedalTap(p, ctx)
 		tap(p, ctx, preset(0))
 		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7])) // rang on after release
 		tap(p, ctx, preset(1))
@@ -438,18 +476,21 @@ describe("isometric chord presets", () => {
 		const { p, ctx } = page()
 		expect(at(p.render(ctx), preset(1).x, 1)).toBe(1) // empty
 		tap(p, ctx, TOGGLE)
-		expect(at(p.render(ctx), preset(1).x, 1)).toBe(3) // empty, armed
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(4) // empty, armed
 		ringing(p, ctx, [0, 4])
 		tap(p, ctx, preset(1))
-		expect(at(p.render(ctx), preset(1).x, 1)).toBe(9) // loaded, armed
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(11) // loaded, armed
 		tap(p, ctx, TOGGLE)
-		expect(at(p.render(ctx), preset(1).x, 1)).toBe(6) // loaded
+		expect(at(p.render(ctx), preset(1).x, 1)).toBe(7) // loaded
 		p.onKey({ ...preset(1), s: 1 }, ctx)
 		expect(at(p.render(ctx), preset(1).x, 1)).toBe(15) // playing
 	})
 })
 
 describe("isometric note reconciliation", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
 	it("a unison twin RETRIGGERS the note, and it lasts until both fingers let go", () => {
 		const { p, ctx, notes } = page()
 		// vertical 5: (5, bottom) and (0, one row up) are both step 5.
@@ -499,8 +540,8 @@ describe("isometric note reconciliation", () => {
 		for (const x of [0, 4, 7]) tap(p, ctx, { x, y: H - 1 })
 		tap(p, ctx, preset(0))
 		tap(p, ctx, TOGGLE)
-		tap(p, ctx, PEDAL) // latch sustain, presets playable
-		tap(p, ctx, PEDAL)
+		pedalTap(p, ctx) // latch sustain, presets playable
+		pedalTap(p, ctx)
 		tap(p, ctx, preset(0))
 		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
 		tap(p, ctx, { x: 4, y: H - 1 })
@@ -538,7 +579,12 @@ describe("isometric pattern recorders", () => {
 	beforeEach(() => vi.useFakeTimers())
 	afterEach(() => vi.useRealTimers())
 
-	/** Arm rec 0, play step 3 from 100ms to 150ms, close at 400ms. */
+	/**
+	 * Arm rec 0, wait 100ms doing nothing, then play step 3 for 50ms and close 250ms later.
+	 * Recording starts at the FIRST NOTE, so the dead 100ms is not in the loop: the result
+	 * is 300ms long with the note-on at offset 0 and the note-off at 50.
+	 */
+	const LOOP_MS = 300
 	const recordLoop = (p: IsometricPage, ctx: PageContext, slot = 0) => {
 		tap(p, ctx, REC(slot))
 		vi.advanceTimersByTime(100)
@@ -546,17 +592,17 @@ describe("isometric pattern recorders", () => {
 		vi.advanceTimersByTime(50)
 		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
 		vi.advanceTimersByTime(250)
-		tap(p, ctx, REC(slot)) // close -> playing, loop = 400ms
+		tap(p, ctx, REC(slot)) // close -> playing
 	}
 
 	it("records what you played and loops it", () => {
 		const { p, ctx, notes } = page()
 		recordLoop(p, ctx)
 		const before = notes().length
-		vi.advanceTimersByTime(400) // one full lap
+		vi.advanceTimersByTime(LOOP_MS) // one full lap
 		const lap1 = notes().slice(before).map((m) => m.args)
 		expect(lap1).toEqual([[3, 1, 0], [3, 0, 0]])
-		vi.advanceTimersByTime(400) // and again — it's a loop
+		vi.advanceTimersByTime(LOOP_MS) // and again — it's a loop
 		expect(notes().slice(before + 2).map((m) => m.args)).toEqual([[3, 1, 0], [3, 0, 0]])
 	})
 
@@ -571,21 +617,33 @@ describe("isometric pattern recorders", () => {
 		tap(p, ctx, REC(0))
 		expect(at(p.render(ctx), REC(0).x, 0)).toBe(15) // playing
 		tap(p, ctx, REC(0))
-		expect(at(p.render(ctx), REC(0).x, 0)).toBe(6) // stopped, has content
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(5) // stopped, has content
 	})
 
-	it("stopping silences the loop and rewinds it", () => {
+	it("stopping PAUSES — it silences but keeps the playhead", () => {
 		const { p, ctx, notes } = page()
 		recordLoop(p, ctx)
-		vi.advanceTimersByTime(120) // into the note
+		vi.advanceTimersByTime(30) // inside the note (0..50)
 		expect(soundingFrom(notes)).toEqual(new Set([3]))
 		tap(p, ctx, REC(0)) // stop
 		expect(soundingFrom(notes).size).toBe(0)
-		tap(p, ctx, REC(0)) // play again, from the top
-		vi.advanceTimersByTime(50)
-		expect(soundingFrom(notes).size).toBe(0) // note-on is at 100
-		vi.advanceTimersByTime(80)
-		expect(soundingFrom(notes)).toEqual(new Set([3]))
+		tap(p, ctx, REC(0)) // resume — from ~30, NOT from the top
+		vi.advanceTimersByTime(10)
+		// A rewind would have re-fired the note-on at offset 0; a resume does not.
+		expect(soundingFrom(notes).size).toBe(0)
+	})
+
+	it("clear is the only thing that rewinds", () => {
+		const { p, ctx, notes, modifiers } = page()
+		recordLoop(p, ctx)
+		vi.advanceTimersByTime(30)
+		tap(p, ctx, REC(0)) // stop mid-note
+		modifiers.shift1 = true
+		tap(p, ctx, REC(0)) // clear
+		modifiers.shift1 = false
+		const before = notes().length
+		vi.advanceTimersByTime(600)
+		expect(notes().length).toBe(before) // nothing left to play
 	})
 
 	it("shift 1 + press clears the pattern", () => {
@@ -605,7 +663,7 @@ describe("isometric pattern recorders", () => {
 		recordLoop(p, ctx)
 		p.onBlur(ctx) // a slot switch must NOT stop a running loop
 		const before = notes().length
-		vi.advanceTimersByTime(400)
+		vi.advanceTimersByTime(LOOP_MS)
 		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 1, 0], [3, 0, 0]])
 	})
 
@@ -621,10 +679,10 @@ describe("isometric pattern recorders", () => {
 	it("sustain smears the loop — its note-off is swallowed", () => {
 		const { p, ctx, notes } = page()
 		recordLoop(p, ctx)
-		vi.advanceTimersByTime(120) // note is on (100..150)
+		vi.advanceTimersByTime(30) // note is on (0..50)
 		expect(soundingFrom(notes)).toEqual(new Set([3]))
 		p.onKey({ ...PEDAL, s: 1 }, ctx) // hold the pedal over the note-off
-		vi.advanceTimersByTime(150)
+		vi.advanceTimersByTime(60)
 		expect(soundingFrom(notes)).toEqual(new Set([3])) // still ringing
 		p.onKey({ ...PEDAL, s: 0 }, ctx)
 		expect(soundingFrom(notes).size).toBe(0)
@@ -633,7 +691,7 @@ describe("isometric pattern recorders", () => {
 	it("playing over a loop retriggers rather than joining the note", () => {
 		const { p, ctx, notes } = page()
 		recordLoop(p, ctx)
-		vi.advanceTimersByTime(120) // loop is sounding step 3
+		vi.advanceTimersByTime(30) // loop is sounding step 3
 		const before = notes().length
 		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx) // same step, live
 		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0, 0], [3, 1, 0]])
@@ -669,7 +727,7 @@ describe("isometric pattern recorders", () => {
 		const { p, ctx, sent } = page()
 		recordLoop(p, ctx)
 		const pat = JSON.parse(sent.filter((m) => m.path.endsWith("/patterns")).pop()!.args[0])
-		expect(pat[0]).toEqual({ state: "playing", ms: 400 })
+		expect(pat[0]).toEqual({ state: "playing", ms: LOOP_MS })
 		expect(pat[1]).toEqual({ state: "empty", ms: 0 })
 	})
 })
@@ -749,12 +807,31 @@ describe("isometric tracks", () => {
 
 	it("lights the selected track and reports it over OSC", () => {
 		const { p, ctx, sent } = page()
-		expect(at(p.render(ctx), TRACK(0).x, 0)).toBe(12)
-		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(3)
+		expect(at(p.render(ctx), TRACK(0).x, 0)).toBe(11) // selected
+		// Idle tracks ramp 2,3,4 down the column so you can tell them apart at a glance.
+		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(2)
+		expect(at(p.render(ctx), TRACK(2).x, 2)).toBe(3)
 		tap(p, ctx, TRACK(1))
-		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(12)
+		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(11)
 		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
 		expect(st).toEqual({ selected: [1], routes: [[], [], [], []] })
+	})
+
+	it("a note-on pulses its track's LED briefly", () => {
+		vi.useFakeTimers()
+		try {
+			const { p, ctx } = page()
+			const idle = at(p.render(ctx), TRACK(1).x, 1)
+			tap(p, ctx, TRACK(1)) // select track 1 so notes land there
+			const selected = at(p.render(ctx), TRACK(1).x, 1)
+			p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+			expect(at(p.render(ctx), TRACK(1).x, 1)).toBeGreaterThan(selected) // pulsing
+			vi.advanceTimersByTime(200)
+			expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(selected) // settled back
+			expect(selected).toBeGreaterThan(idle)
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it("a press on a ringing note only concerns the ACTIVE track", () => {
@@ -778,7 +855,7 @@ describe("isometric looper routing", () => {
 		vi.advanceTimersByTime(50)
 		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
 		vi.advanceTimersByTime(250)
-		tap(p, ctx, REC(slot))
+		tap(p, ctx, REC(slot)) // loop is 300ms, note-on at offset 0
 	}
 
 	/** Enter routing-edit for a track, toggle some loopers in, leave. */
@@ -1007,9 +1084,9 @@ describe("isometric arpeggiator", () => {
 			stepArp(1)
 			seen.push([...soundingFrom(notes)][0])
 		}
-		// The first note sounded on the press; laying the rest of the chord down grew the
-		// pool, which restarts the walk from the lowest note — so 0 is heard twice.
-		expect(seen).toEqual([0, 4, 7, 0])
+		// The first note sounded on the press, and growing the pool must NOT replay it —
+		// the walk carries on from where it was.
+		expect(seen).toEqual([4, 7, 0, 4])
 	})
 
 	it("descending runs the other way", () => {
@@ -1061,12 +1138,15 @@ describe("isometric arpeggiator", () => {
 		tap(p, ctx, TRACK(1)) // exit edit
 		tap(p, ctx, ARP(0)) // arp on, selection is still {0}
 		holdChord(p, ctx, [0, 4, 7])
-		stepArp(1)
-		const sounding = soundingTracked(notes)
-		// exactly one arpeggiated note on track 0 ...
-		expect([...sounding].filter((k) => k.endsWith("@0"))).toHaveLength(1)
-		// ... while the routed loop on track 1 is untouched by the arp
-		expect([...sounding].some((k) => k.endsWith("@1"))).toBe(true)
+		const before = notes().length
+		vi.advanceTimersByTime(300) // one full lap of the loop, several arp steps
+		const after = notes().slice(before).filter((m) => m.args[1] === 1)
+		// The routed loop on track 1 fired once, at its own recorded rhythm ...
+		expect(after.filter((m) => m.args[2] === 1)).toHaveLength(1)
+		// ... while the selected track 0 got stepped through the chord by the arp.
+		expect(after.filter((m) => m.args[2] === 0).length).toBeGreaterThan(1)
+		// And only ever one note at a time on the arpeggiated track.
+		expect([...soundingTracked(notes)].filter((k) => k.endsWith("@0"))).toHaveLength(1)
 	})
 
 	it("the arp setting and the buttons are the same control", () => {
@@ -1076,8 +1156,8 @@ describe("isometric arpeggiator", () => {
 		expect(st.arp).toBe("palindrome")
 		p.onOsc("/setting/arp", ["urn"], ctx)
 		expect((p.serialize() as any).arp).toBe("urn")
-		expect(at(p.render(ctx), ARP(3).x, ARP(3).y)).toBe(15) // urn button lit
-		expect(at(p.render(ctx), ARP(2).x, ARP(2).y)).toBe(3)
+		expect(at(p.render(ctx), ARP(3).x, ARP(3).y)).toBe(14) // urn button lit
+		expect(at(p.render(ctx), ARP(2).x, ARP(2).y)).toBe(3) // idle, ramped by position
 	})
 
 	it("follows the clock when the transport is running, not the free rate", () => {
@@ -1093,6 +1173,6 @@ describe("isometric arpeggiator", () => {
 			p.onTick!(t, 0, ctx)
 			seen.push([...soundingFrom(notes)][0])
 		}
-		expect(seen).toEqual([0, 4, 7]) // ticks drive it instead
+		expect(seen).toEqual([4, 7, 0]) // ticks drive it instead
 	})
 })

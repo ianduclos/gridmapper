@@ -37,19 +37,37 @@ describe("Arpeggiator", () => {
 	it("is off until told otherwise, and yields nothing", () => {
 		const a = new Arpeggiator()
 		expect(a.isOn).toBe(false)
-		expect(a.next(4)).toBeNull()
+		expect(a.next([0, 1, 2, 3])).toBeNull()
 	})
 
 	it("cycles ascending and wraps", () => {
 		const a = new Arpeggiator()
 		a.set("ascending")
-		expect([0, 1, 2, 0, 1].map(() => a.next(3))).toEqual([0, 1, 2, 0, 1])
+		const pool = [10, 20, 30]
+		expect(Array.from({ length: 5 }, () => a.next(pool))).toEqual([10, 20, 30, 10, 20])
 	})
 
 	it("walks a palindrome without doubling the turn", () => {
 		const a = new Arpeggiator()
 		a.set("palindrome")
-		expect(Array.from({ length: 8 }, () => a.next(4))).toEqual([0, 1, 2, 3, 2, 1, 0, 1])
+		const pool = [0, 1, 2, 3]
+		expect(Array.from({ length: 8 }, () => a.next(pool))).toEqual([0, 1, 2, 3, 2, 1, 0, 1])
+	})
+
+	it("never plays the same note twice in a row when the chord GROWS", () => {
+		// Laying a chord down finger by finger used to replay the lowest note, because the
+		// cursor is an index and every index shifts when a note is inserted.
+		const a = new Arpeggiator()
+		a.set("ascending")
+		expect(a.next([0])).toBe(0) // first finger
+		expect(a.next([0, 4])).toBe(4) // second — must NOT be 0 again
+		expect(a.next([0, 4, 7])).not.toBe(4) // third — must not repeat either
+	})
+
+	it("still repeats when there is only one note to play", () => {
+		const a = new Arpeggiator()
+		a.set("ascending")
+		expect([a.next([7]), a.next([7]), a.next([7])]).toEqual([7, 7, 7])
 	})
 
 	it("pressing the lit mode turns it off", () => {
@@ -66,34 +84,24 @@ describe("Arpeggiator", () => {
 	it("urn plays every note once before repeating any", () => {
 		const a = new Arpeggiator(seeded([0.1, 0.9, 0.4, 0.7, 0.2, 0.5]))
 		a.set("urn")
-		const bag = [a.next(4), a.next(4), a.next(4), a.next(4)]
-		expect(new Set(bag)).toEqual(new Set([0, 1, 2, 3])) // a permutation, not a sequence
-		const next = [a.next(4), a.next(4), a.next(4), a.next(4)]
-		expect(new Set(next)).toEqual(new Set([0, 1, 2, 3])) // fresh bag
+		const pool = [0, 1, 2, 3]
+		const bag = Array.from({ length: 4 }, () => a.next(pool))
+		expect(new Set(bag)).toEqual(new Set(pool)) // a permutation, not a sequence
 	})
 
 	it("a changed pool size refills the urn rather than reusing a stale bag", () => {
 		const a = new Arpeggiator(seeded([0.5, 0.2, 0.8, 0.3, 0.6]))
 		a.set("urn")
-		a.next(4)
-		const bag = [a.next(2), a.next(2)]
-		expect(new Set(bag)).toEqual(new Set([0, 1])) // only valid indices for the new size
+		a.next([0, 1, 2, 3])
+		const bag = [a.next([10, 20]), a.next([10, 20])]
+		expect(new Set(bag)).toEqual(new Set([10, 20])) // only notes from the NEW pool
 	})
 
-	it("never returns an index outside a shrinking pool", () => {
+	it("never returns a note outside a shrinking pool", () => {
 		const a = new Arpeggiator()
 		a.set("ascending")
-		a.next(5); a.next(5); a.next(5); a.next(5) // cursor is deep in a 5-note chord
-		for (let i = 0; i < 6; i++) {
-			const idx = a.next(2)!
-			expect(idx).toBeGreaterThanOrEqual(0)
-			expect(idx).toBeLessThan(2)
-		}
-	})
-
-	it("a one-note pool just repeats that note", () => {
-		const a = new Arpeggiator()
-		a.set("ascending")
-		expect([a.next(1), a.next(1), a.next(1)]).toEqual([0, 0, 0])
+		const big = [0, 1, 2, 3, 4]
+		for (let i = 0; i < 4; i++) a.next(big) // cursor is deep in a 5-note chord
+		for (let i = 0; i < 6; i++) expect([10, 20]).toContain(a.next([10, 20]))
 	})
 })

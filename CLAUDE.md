@@ -217,7 +217,9 @@ src/
                          Out: /grid/out/page/<slot>/chords <json> (dense array, null=empty).
                          Col 15 rows 0-3 = 4 PATTERN RECORDERS (util/patternRecorder.ts):
                          free-time loopers, one key cycling empty→rec→play→stop, shift 1 +
-                         press clears, 60s auto-close. Loop length = what you played;
+                         press clears, 60s auto-close. Recording starts at the FIRST NOTE
+                         (arming alone doesn't start the clock); STOP PAUSES and keeps the
+                         playhead — only clear rewinds. Loop length = what you played;
                          quant1-4 settings round the LENGTH onto `lane` clock ticks only.
                          Notes flow keys+presets → LIVE → [record tap] → +playback → INTENT
                          → [sustain] → reconcile, so a pattern holds what you PLAYED while
@@ -227,7 +229,9 @@ src/
                          Out: /grid/out/page/<slot>/patterns <json>.
                          TAXONOMY (cols): 0-12 KEYBOARD · 13 CHORDS · 14 rows0-3 TRACKS +
                          rows4-7 ARPS · 15 rows0-3 LOOPERS, row4 SUSTAIN TOGGLE, row5
-                         PEDAL, row6 SHIFT 2, row7 SHIFT 1. The pedal is NO LONGER shift 2
+                         PEDAL (DEBOUNCED — leading-edge lockout + a 60ms floor on the double
+                         tap, else contact bounce latches it and it feels stuck), row6
+                         SHIFT 2, row7 SHIFT 1. The pedal is NO LONGER shift 2
                          (it owns its state), so /grid/in/shift 2 does not sustain and
                          nothing else does either — sustain is grid-only by choice.
                          TRACKS = 4 outputs (instruments). Notes now carry one:
@@ -246,7 +250,9 @@ src/
                          ARPS (col 14 rows 4-7: ascending/descending/palindrome/urn, one at
                          a time, press the lit one to stop) sit AFTER sustain and act only
                          on SELECTED tracks — a looper routed elsewhere keeps its rhythm.
-                         The record tap is upstream, so loopers capture what you PLAYED.
+                         The record tap is upstream, so loopers capture what you PLAYED. The
+                         arp never plays the same note twice in a row, so growing a chord
+                         doesn't replay the note underneath.
                          Timing is HYBRID: the `lane` clock ÷ arpDiv while the transport
                          runs, free arpRate ms while it is stopped (expect a tempo jump on
                          start/stop). First note of a new chord fires immediately.

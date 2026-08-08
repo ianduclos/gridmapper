@@ -9,7 +9,9 @@
  * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
  *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
  *           Loopers: empty 1, blinking while armed, 6 stopped, 15 looping.
- *           Tracks: 3 idle, 12 selected, blinking while being routed. Arps: 3 / 15.
+ *           Tracks + arps: idle levels RAMP down each group (1,2,3,4) so a row of options
+ *           is distinguishable at a glance; selected/on are much brighter. Every note-on
+ *           pulses its track's LED briefly, so you can see which instrument is being fed.
  *           Shifts and both sustains light while they are holding.
  * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4 ·
  *           arp · arpRate · arpDiv. Live, two-way over OSC.
@@ -23,7 +25,9 @@
  * and is shared with Max (in: /grid/in/page/<slot>/setting/npo <n>; out: /settings).
  *
  * SUSTAIN is a two-input OR — the momentary pedal OR the latching toggle — so either alone
- * holds notes. While it's on, a keyboard release parks the note in `sustained` instead of
+ * holds notes. The pedal is DEBOUNCED (leading-edge lockout, and a double tap must be at
+ * least DOUBLE_TAP_MIN_MS apart): without that, one bouncy press reads as a deliberate
+ * double tap, latches sustain on, and the button feels stuck. While it's on, a keyboard release parks the note in `sustained` instead of
  * sending a note-off; when sustain falls, every parked note is released. A DOUBLE-TAP on
  * the pedal latches it hands-free.
  *
@@ -47,7 +51,10 @@
  *
  * LOOPERS (column 15, rows 0-3) are free-time pattern recorders — see util/patternRecorder.
  * One key cycles empty → recording → playing → stopped → playing, shift 1 + press clears,
- * and a take longer than a minute closes itself. Loop length is exactly what you played;
+ * and a take longer than a minute closes itself. Arming does NOT start the clock: the loop
+ * begins at the FIRST NOTE, so there is no dead air from the time it took to reach the
+ * keyboard. Stopping PAUSES — the playhead stays put and the next press resumes mid-phrase;
+ * only a clear rewinds. Loop length is exactly what you played;
  * the per-track `quant1..4` settings can round that length onto a grid of `lane` clock
  * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
  *
@@ -64,7 +71,9 @@
  *
  * ARPEGGIATORS (column 14, rows 4-7: ascending · descending · palindrome · urn) turn the
  * held chord into one note at a time — see util/arpeggiator.ts. One at a time; pressing the
- * lit one turns it off. It sits AFTER sustain, and acts only on the SELECTED tracks, so a
+ * lit one turns it off; it never plays the same note twice in a row, so building a chord
+ * finger by finger doesn't replay the note underneath. It sits AFTER sustain, and acts only
+ * on the SELECTED tracks, so a
  * looper routed elsewhere keeps its own rhythm while your hands get arpeggiated. The record
  * tap is upstream of it, so loopers still capture what you PLAYED. Timing is hybrid: the
  * `lane` clock (divided by `arpDiv`) while the transport runs, and a free `arpRate` in ms
@@ -158,12 +167,21 @@ const LVL_SHIFT = 1 // control keys are faint markers
 // Chord preset column. "armed" = the sustain toggle is on, so a press SAVES rather
 // than plays; the whole column brightens so you can see which mode you're in.
 const LVL_PRESET_EMPTY = 1
-const LVL_PRESET_FULL = 6
-const LVL_PRESET_EMPTY_ARMED = 3
-const LVL_PRESET_FULL_ARMED = 9
+const LVL_PRESET_FULL = 7
+const LVL_PRESET_EMPTY_ARMED = 4
+const LVL_PRESET_FULL_ARMED = 11
 
-/** Two taps inside this window on the shift-2 key latch sustain on. */
+/** Two taps inside this window on the sustain pedal latch it on. */
 const DOUBLE_TAP_MS = 350
+/**
+ * A second tap CLOSER than this is contact bounce, not a human double tap, and must not
+ * latch. Together with PEDAL_LOCKOUT_MS this replaces the debounce the pedal lost when it
+ * stopped going through ShiftInput — without it, one bouncy press latches sustain ON and it
+ * reads as a stuck button.
+ */
+const DOUBLE_TAP_MIN_MS = 60
+/** Leading-edge lockout, same idea and same window as core/shiftInput.ts. */
+const PEDAL_LOCKOUT_MS = 10
 
 /**
  * The last column is now full, so its rows are absolute (top-down) rather than counted from
@@ -179,8 +197,8 @@ const CONTROL_ROWS = 8 // the last column needs this many rows to hold everythin
 /** Pattern recorders: the first four buttons of the last column. */
 const RECORDER_ROWS = 4
 const LVL_REC_EMPTY = 1
-const LVL_REC_ARMED = 9 // the bright half of the recording blink
-const LVL_REC_STOPPED = 6 // has a pattern, not playing
+const LVL_REC_ARMED = 12 // the bright half of the recording blink
+const LVL_REC_STOPPED = 5 // has a pattern, paused
 const BLINK_MS = 220
 
 /** How often the recorder timer wakes. Free time needs finer than a 58fps frame. */
@@ -199,10 +217,22 @@ const CHORD_COL_FROM_RIGHT = 3
 /** Output TRACKS: the first four buttons of their column, ARPEGGIATORS the four below. */
 const TRACK_ROWS = 4
 const ARP_ROW_START = TRACK_ROWS
-const LVL_ARP_OFF = 3
-const LVL_ARP_ON = 15
-const LVL_TRACK_OFF = 3
-const LVL_TRACK_ON = 12 // the active track
+
+/**
+ * Idle levels RAMP across each group of options (1,2,3,4) instead of all sitting at one
+ * value. A row of four identical dim buttons tells you nothing; a faint gradient tells you
+ * which one your finger is on without counting rows.
+ */
+const rampLevel = (base: number, idx: number) => base + idx
+
+const LVL_TRACK_IDLE = 1 // + idx
+const LVL_ARP_IDLE = 1 // + idx
+const LVL_ARP_ON = 14
+
+/** A note-on gives its track a brief brightness bump — a glance-level activity light. */
+const PULSE_MS = 90
+const PULSE_BUMP = 4
+const LVL_TRACK_ON = 11 // a selected track
 const LVL_TRACK_EDIT = 15 // bright half of the routing-edit blink
 const LVL_TRACK_EDIT_LO = 6
 
@@ -337,6 +367,8 @@ export class IsometricPage implements Page {
 	private arpPool: number[] = [] // distinct steps sounding on selected tracks, ascending
 	private arpNote: number | null = null // the step it is currently letting through
 	private arpAccMs = 0 // free-run accumulator, used only while the transport is stopped
+	/** When each track last received a note-on, for the activity pulse in render(). */
+	private trackPulseAt = new Array<number>(TRACK_ROWS).fill(0)
 	private inArpKick = false // guards the "first note of a new chord" re-entry below
 
 	/** Four free-time loopers. They keep running when the page loses focus. */
@@ -352,6 +384,8 @@ export class IsometricPage implements Page {
 	private sustainToggle = false
 	/** The momentary half. Its own state now, not shift 2. */
 	private sustainPedal = false
+	/** Timestamp of the last ACCEPTED pedal edge — the leading-edge lockout. */
+	private lastPedalEdgeAt = 0
 
 	// Live settings (defaults from SPECS).
 	private npo = SPEC_BY_KEY.get("npo")!.default as number
@@ -599,8 +633,7 @@ export class IsometricPage implements Page {
 	 */
 	private arpStep(ctx: PageContext) {
 		if (!this.arp.isOn) return
-		const idx = this.arp.next(this.arpPool.length)
-		const next = idx === null ? null : this.arpPool[idx]
+		const next = this.arp.next(this.arpPool)
 		if (next !== null && next === this.arpNote) {
 			for (const track of this.selected) this.retrigger.add(noteKey(track, next))
 		}
@@ -694,17 +727,21 @@ export class IsometricPage implements Page {
 		// Tracks: the active one stands out, and the one being routed blinks.
 		if (this.hasTracks()) {
 			const tx = this.size.width - TRACK_COL_FROM_RIGHT
+			const now = Date.now()
 			for (let idx = 0; idx < TRACK_ROWS; idx++) {
-				const lvl =
+				let lvl =
 					this.editingTrack === idx ? (blinkOn ? LVL_TRACK_EDIT : LVL_TRACK_EDIT_LO)
 					: this.selected.has(idx) ? LVL_TRACK_ON
-					: LVL_TRACK_OFF
+					: rampLevel(LVL_TRACK_IDLE, idx)
+				// Activity pulse: a brief lift on every note-on, so you can see which
+				// instrument a loop or an arp is actually feeding.
+				if (now - this.trackPulseAt[idx] < PULSE_MS) lvl = Math.min(15, lvl + PULSE_BUMP)
 				f[ledIndex(this.size, tx, idx)] = lvl
 			}
 			// Arpeggiators sit under the tracks: only the running mode is lit.
 			for (let idx = 0; idx < ARP_BUTTONS.length; idx++) {
 				f[ledIndex(this.size, tx, ARP_ROW_START + idx)] =
-					this.arp.mode === ARP_BUTTONS[idx] ? LVL_ARP_ON : LVL_ARP_OFF
+					this.arp.mode === ARP_BUTTONS[idx] ? LVL_ARP_ON : rampLevel(LVL_ARP_IDLE, idx)
 			}
 		}
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
@@ -750,6 +787,13 @@ export class IsometricPage implements Page {
 	 * never eats one.
 	 */
 	private sustainKey(ev: KeyEvent, ctx: PageContext) {
+		// Leading-edge lockout: the first edge acts instantly, then ANY edge is swallowed
+		// briefly. Chatter is ALTERNATING, so a same-state filter would not catch it — see
+		// core/shiftInput.ts, which learned this the hard way.
+		const t = Date.now()
+		if (t - this.lastPedalEdgeAt < PEDAL_LOCKOUT_MS) return
+		this.lastPedalEdgeAt = t
+
 		if (!ev.s) {
 			if (!this.sustainLatched) this.sustainPedal = false // plain momentary release
 			this.commit(ctx)
@@ -763,7 +807,10 @@ export class IsometricPage implements Page {
 			this.commit(ctx)
 			return
 		}
-		if (now - this.lastSustainTapAt < DOUBLE_TAP_MS) this.sustainLatched = true
+		// A deliberate double tap latches; anything faster than a human could manage is
+		// bounce and only re-arms the window.
+		const gap = now - this.lastSustainTapAt
+		if (gap >= DOUBLE_TAP_MIN_MS && gap < DOUBLE_TAP_MS) this.sustainLatched = true
 		this.lastSustainTapAt = now
 		this.sustainPedal = true
 		this.commit(ctx)
@@ -921,7 +968,9 @@ export class IsometricPage implements Page {
 	}
 
 	private note(ctx: PageContext, key: number, on: boolean) {
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, stepOf(key), on ? 1 : 0, trackOf(key))
+		const track = trackOf(key)
+		if (on && track < this.trackPulseAt.length) this.trackPulseAt[track] = Date.now()
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, stepOf(key), on ? 1 : 0, track)
 	}
 
 	/** Drop everything the hands own. Recorders are deliberately untouched. */
