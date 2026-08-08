@@ -6,9 +6,10 @@
  *           TAXONOMY — cols 0-12 KEYBOARD; col 13 CHORDS (8 presets); col 14
  *           rows 0-3 TRACKS (outputs) + rows 4-7 ARPS; col 15 rows 0-3 LOOPERS,
  *           row 4 SUSTAIN TOGGLE, row 5 SUSTAIN PEDAL, row 6 SHIFT 2, row 7 SHIFT 1.
- * Display : out-of-scale 1, in-scale 3, root 8, in the CHORD 12, finger-down 15, and —
- *           while the arp runs — the note it is voicing right now 15 on top, so the
- *           sustained chord stays readable underneath it.
+ * Display : out-of-scale 1, in-scale 3, root 8, in the CHORD 12, finger-down 15.
+ *           While the ARP runs the whole ladder steps DOWN to make room for the voiced
+ *           note — in-scale 2, root 5, chord 9, finger 12, voiced 15 — because a
+ *           highlight at 15 over a chord at 12 is invisible at the top of varibright.
  *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
  *           Loopers: empty 1, blinking while armed, 6 stopped, 15 looping.
  *           Tracks + arps: idle levels RAMP down each group (1,2,3,4) so a row of options
@@ -164,7 +165,17 @@ const LVL_NORMAL = 3 // in scale
 const LVL_ROOT = 8 // octave / scale root
 const LVL_UNISON = 12 // the note is SOUNDING — lit at every cell that plays it
 const LVL_HELD = 15 // this exact cell is under a finger
-const LVL_ARP_VOICE = 15 // the note the arpeggiator is voicing this step
+
+// While the arp runs the WHOLE PALETTE steps down, to make headroom under the voiced
+// note. Pushing the highlight up doesn't work — 12 against 15 is invisible at the
+// compressed top of varibright, the same trap as unison-9 against root-8 was. So the
+// chord and the map get out of its way instead, and the dimmer map doubles as a
+// mode indicator that the arp is on.
+const LVL_NORMAL_DIM = 2
+const LVL_ROOT_DIM = 5
+const LVL_ARP_CHORD = 9 // a chord member the arp is not currently voicing
+const LVL_ARP_HELD = 12 // ... with a finger on it
+const LVL_ARP_VOICE = 15 // the note being voiced RIGHT NOW
 const LVL_SHIFT = 1 // control keys are faint markers
 
 // Chord preset column. "armed" = the sustain toggle is on, so a press SAVES rather
@@ -694,15 +705,16 @@ export class IsometricPage implements Page {
 		// cells under a finger, and — while the arp runs — the note it is voicing right now
 		// on top. The chord staying visible under the arp is what lets you see what a chord
 		// preset would capture while it plays.
+		const arpOn = this.arp.isOn
 		const f = makeFrame(this.size)
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = 0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
 				const step = this.step(x, y)
-				let lvl = this.baseLevel(step)
-				if (this.litSteps.has(step)) lvl = LVL_UNISON
-				if (this.held.has(i)) lvl = LVL_HELD
-				if (this.arp.isOn && this.voicedSteps.has(step)) lvl = LVL_ARP_VOICE
+				let lvl = this.baseLevel(step, arpOn)
+				if (this.litSteps.has(step)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
+				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
+				if (arpOn && this.voicedSteps.has(step)) lvl = LVL_ARP_VOICE
 				f[i] = lvl
 			}
 		}
@@ -842,13 +854,18 @@ export class IsometricPage implements Page {
 		return this.layout === "folded" ? foldedStep(i, this.root, this.scale) : i
 	}
 
-	/** Display level for a cell's step, before held/sustain/unison override it. */
-	private baseLevel(step: number): number {
+	/**
+	 * Display level for a cell's step, before chord/finger/arp override it. `dim` steps the
+	 * scale map down so an arpeggiated note has somewhere to stand out from.
+	 */
+	private baseLevel(step: number, dim = false): number {
+		const root = dim ? LVL_ROOT_DIM : LVL_ROOT
+		const normal = dim ? LVL_NORMAL_DIM : LVL_NORMAL
 		// A scale is a 12-EDO idea. Under `chromatic` we keep the original npo-based
 		// octave marking, so microtonal layouts (npo up to 48) still read correctly.
-		if (this.scale === "chromatic") return isRootStep(step, this.npo) ? LVL_ROOT : LVL_NORMAL
-		if (isRootOf(step, this.root)) return LVL_ROOT
-		return isInScale(step, this.root, this.scale) ? LVL_NORMAL : LVL_OUT
+		if (this.scale === "chromatic") return isRootStep(step, this.npo) ? root : normal
+		if (isRootOf(step, this.root)) return root
+		return isInScale(step, this.root, this.scale) ? normal : LVL_OUT
 	}
 
 	private stepOfIndex(i: number): number {

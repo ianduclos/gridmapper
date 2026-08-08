@@ -1183,9 +1183,22 @@ describe("isometric arpeggiator", () => {
 		const f = p.render(ctx)
 		const levels = [0, 4, 7].map((x) => at(f, x, H - 1))
 		// Every chord member is visible ...
-		expect(levels.every((l) => l >= 12)).toBe(true)
-		// ... and exactly one of them is the brighter note the arp is voicing.
+		expect(levels.every((l) => l >= 9)).toBe(true)
+		// ... exactly one is the voiced note ...
 		expect(levels.filter((l) => l === 15)).toHaveLength(1)
+		// ... and the gap to it is big enough to actually SEE at the top of varibright.
+		// (12 under 15 was in the frame but indistinguishable on hardware.)
+		const quiet = levels.filter((l) => l !== 15)
+		expect(Math.min(...quiet)).toBeLessThanOrEqual(9)
+		expect(15 - Math.max(...quiet)).toBeGreaterThanOrEqual(5)
+	})
+
+	it("dims the scale map while arping so the chord still reads above it", () => {
+		const { p, ctx } = page()
+		const rootBefore = at(p.render(ctx), 0, H - 1) // step 0 = root, nothing playing
+		tap(p, ctx, ARP(0))
+		const rootAfter = at(p.render(ctx), 0, H - 1)
+		expect(rootAfter).toBeLessThan(rootBefore) // background stepped down
 	})
 
 	it("the arp setting and the buttons are the same control", () => {
