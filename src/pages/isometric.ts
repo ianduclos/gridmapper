@@ -497,7 +497,11 @@ export class IsometricPage implements Page {
 		let subtractedEverywhere = true
 		for (const track of this.selected) {
 			const key = noteKey(track, step)
-			const parkedOnly = this.lastSounding.has(key) && !this.lastIntent.has(key)
+			// Test the sustain buffer directly rather than the output: with the arp on, a
+			// parked note is only in the output when it happens to be the one being voiced,
+			// so going by the output would break "press it to take it out of the chord"
+			// for every note except that one.
+			const parkedOnly = this.sustained.has(key) && !this.lastIntent.has(key)
 			if (this.sustainOn(ctx) && parkedOnly) {
 				this.sustained.delete(key)
 				continue
@@ -986,9 +990,14 @@ export class IsometricPage implements Page {
 		}
 	}
 
-	/** The pitches currently sounding, deduped across tracks — what a chord preset saves. */
+	/**
+	 * The pitches in the current CHORD — held plus sustained, pooled across tracks. This is
+	 * what a chord preset saves, and it is deliberately the PRE-arp set: with the arp on,
+	 * the actual output is one note at a time, so saving from that would capture a single
+	 * pitch instead of the chord you can see lit on the grid.
+	 */
 	private soundingChord(): number[] {
-		return [...new Set([...this.lastSounding].map(stepOf))].sort((a, b) => a - b)
+		return [...this.litSteps].sort((a, b) => a - b)
 	}
 
 	/** Feed the live stream's transitions to every armed recorder. */

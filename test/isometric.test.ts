@@ -1201,6 +1201,34 @@ describe("isometric arpeggiator", () => {
 		expect(rootAfter).toBeLessThan(rootBefore) // background stepped down
 	})
 
+	it("saves the WHOLE chord to a preset while arpeggiating", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, TOGGLE) // sustain toggle: arms saving AND holds the chord
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, ARP(0)) // arp on — output is now ONE note at a time
+		stepArp(1)
+		tap(p, ctx, preset(2))
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[2]).toEqual([0, 4, 7]) // the chord, not the single voiced note
+	})
+
+	it("can still subtract a note from the chord while arpeggiating", () => {
+		const { p, ctx } = page()
+		tap(p, ctx, TOGGLE)
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, ARP(0))
+		stepArp(1)
+		// Press a chord member that the arp is NOT voicing right now.
+		const f = p.render(ctx)
+		const quiet = [0, 4, 7].find((x) => at(f, x, H - 1) !== 15)!
+		tap(p, ctx, { x: quiet, y: H - 1 })
+		stepArp(2)
+		const after = p.render(ctx)
+		expect(at(after, quiet, H - 1)).toBeLessThan(9) // no longer part of the chord
+	})
+
 	it("the arp setting and the buttons are the same control", () => {
 		const { p, ctx, sent } = page()
 		tap(p, ctx, ARP(2)) // palindrome
