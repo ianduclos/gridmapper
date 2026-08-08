@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-07-31
+updated: 2026-08-08
 entries: 0
 ---
 
@@ -64,11 +64,21 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   inactivity (4h with a grid, 15min without; both persisted + OSC-settable). Activity =
   INPUT only, never "the frame changed". `core/appRuntime.ts` assembles clock + idle +
   settings once for BOTH entry points so they can't drift.
-- **Next / open:** Max OSC **handshake** (`systemConfig` + `presetStore`) — prioritize
-  **Max → daemon** (state snapshot on request, not on connect); a single-page preset blob
-  is ~732 B and fits one datagram, so `serialize()` ⇄ `restore()` is the cheap first step.
-  Plus: single-instance guard; the twistermapper clock bridge (~20 lines now that lane
-  IDs match). 164 tests green.
+- **Isometric is now a performance instrument (2026-08-08).** Beyond the keyboard:
+  col 13 = 8 **chord presets** (store pitches; armed by the sustain toggle, re-press to
+  release, shift-clear), col 14 = 4 **output tracks** + 4 **arpeggiators**, col 15 = 4
+  free-time **loopers** + sustain toggle / pedal / shift 2 / shift 1. The note pipeline is
+  the load-bearing part: notes are keyed **(track, step)** and reconciled against what Max
+  was last told, through
+  `keys+chords → LIVE → [record tap] → +playback → INTENT → [sustain] → [arp] → out`.
+  Read the header of `src/pages/isometric.ts` before changing any of it — every rule there
+  was paid for by a bug.
+- **Next / open:** **play it on the grid** — very little of 2026-08-08 is hardware-verified
+  (traces over the WebSocket only). Then Max OSC **handshake** (`systemConfig` +
+  `presetStore`) — prioritize **Max → daemon** (state snapshot on request, not on connect);
+  a single-page preset blob fits one datagram, so `serialize()` ⇄ `restore()` is the cheap
+  first step. Plus: single-instance guard; the twistermapper clock bridge (~20 lines now
+  that lane IDs match). 287 tests green.
 - **Background agent:** launchd `com.ianduclos.gridmapper` runs the **sim** always-on
   (OSC↔Max + hotplug + web UI on 57191, served, not auto-opened). Template + manage cmds
   in `deploy/`. Holds 57131 + the grid → `launchctl bootout gui/$(id -u)/com.ianduclos.gridmapper`
@@ -83,6 +93,46 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-08-08 — Claude
+Long session, all on `pages/isometric.ts`, which grew from a keyboard into an
+instrument. **Layout** (see the header comment for the taxonomy): col 13 CHORDS,
+col 14 TRACKS + ARPS, col 15 LOOPERS + sustain toggle/pedal/shift2/shift1.
+**Built:** `orientation` (standard | horizontal); 8 chord presets storing pitches;
+4 free-time loopers (`util/patternRecorder.ts`, the ONE deliberate `setInterval` —
+cleared in `dispose`, never `onBlur`, so a loop survives a slot switch); 4 output
+tracks with per-looper routing and shift-2 multi-select; 4 arpeggiators
+(`util/arpeggiator.ts`). `DEFAULT_SCALE` → ionian.
+
+**The through-line was one thing: what a note IS.** It went step → (track, step) →
+"chord vs output", and every bug this session was a place still asking the old
+question. Lighting compared a bare step against packed keys, so notes only lit on
+track 0. Chord-save and the subtract gesture read the post-arp output, so they saw one
+note. The arp gated the whole output, so it cut a sustained pad going in and re-attacked
+going out. Rule of thumb now: **chord questions use `litSteps`, only the reconciler
+touches `lastSounding`.** If a fourth instance appears, rename `lastSounding` →
+`lastEmitted`.
+
+**Two LED lessons, same shape, learned twice:** a highlight needs headroom BELOW it, not
+more brightness above — 9-vs-8 and 12-vs-15 are both invisible on varibright. The arp now
+steps the whole palette down instead.
+
+**Regression I introduced and fixed:** splitting the sustain pedal off shift 2 also took
+it off `ShiftInput`'s debounce, so contact bounce read as a double tap and latched sustain
+— the "stuck button". Now has its own leading-edge lockout + a 60 ms floor on the double
+tap.
+
+**Ops:** a USB dropout (device node vanished, no sleep/wake to explain it) — and I broke
+key routing chasing it by running `grid:list` against a *connected* agent, the exact
+gotcha `CLAUDE.md` warns about. The note now spells out the safe debug order, because the
+obvious move is the destructive one. Also: I restarted the agent ~10× mid-session, which
+blanks the grid; batch that.
+
+**Verified:** 287 tests, `tsc` clean, and every feature walked end-to-end over
+`ws://localhost:57191` against the live agent. **Not verified: the actual feel on
+hardware** — that's the top of `next`. **Open decision:** the arp deliberately does not
+gate looper playback (loops keep their recorded rhythm), which is my reading rather than
+Ian's stated one — see `4273bda`.
+
 ### 2026-07-31 — Claude
 Big session, three parts. **(1) Meadowphysics** — faithful port of tehn's iii
 `grid/mp.lua` (`src/pages/meadowphysics.ts` + 40 tests): 8 cascading counters, all 8
