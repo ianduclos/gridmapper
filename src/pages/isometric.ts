@@ -885,6 +885,15 @@ export class IsometricPage implements Page {
 				if (!tracks) {
 					tracks = s === 0 ? [...this.selected] : tracksForLooper(s - 1, this.routes, this.selected)
 					started.set(step, tracks)
+					// A source newly claiming a note that is ALREADY sounding has to
+					// RE-ARTICULATE it. Without this, sustain turns a loop into a drone: the
+					// pedal swallows the note-off, so when the loop comes round again the note
+					// is still in lastSounding, the diff sees no change, and nothing fires.
+					// Same reasoning as pressing a ringing key — a bare repeat is inaudible.
+					for (const track of tracks) {
+						const key = noteKey(track, step)
+						if (this.lastSounding.has(key)) this.retrigger.add(key)
+					}
 				}
 				for (const track of tracks) intent.add(noteKey(track, step))
 			}

@@ -688,6 +688,19 @@ describe("isometric pattern recorders", () => {
 		expect(soundingFrom(notes).size).toBe(0)
 	})
 
+	it("a sustained loop keeps RE-ARTICULATING instead of becoming a drone", () => {
+		const { p, ctx, notes } = page()
+		recordLoop(p, ctx) // 300ms loop, note-on at 0, note-off at 50
+		tap(p, ctx, TOGGLE) // sustain on: the loop's note-off gets swallowed
+		vi.advanceTimersByTime(320) // just past one full lap
+		const before = notes().length
+		vi.advanceTimersByTime(300) // exactly one more lap
+		const lap = notes().slice(before).map((m) => m.args)
+		// The pedal holds the tail, so no bare note-off — but the note must fire again.
+		expect(lap).toEqual([[3, 0, 0], [3, 1, 0]])
+		expect(soundingFrom(notes)).toEqual(new Set([3])) // still ringing after the lap
+	})
+
 	it("playing over a loop retriggers rather than joining the note", () => {
 		const { p, ctx, notes } = page()
 		recordLoop(p, ctx)
