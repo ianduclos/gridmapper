@@ -2,14 +2,14 @@
  * ------------------------------------------------------------------------------
  * Summary : Isomorphic keyboard on the left 13×8 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
- * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> 1; release → 0.
- *           Column 15 (top→bottom): rows 0-3 = pattern RECORDERS, row 4 = sustain
- *           TOGGLE, row 6 = sustain pedal, row 7 = shift 1. Column 14 = eight chord
- *           presets, one per row.
+ * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> <1|0> <track>.
+ *           TAXONOMY — cols 0-12 KEYBOARD; col 13 rows 0-3 TRACKS (outputs);
+ *           col 14 CHORDS (8 presets); col 15 rows 0-3 LOOPERS, row 4 SUSTAIN
+ *           TOGGLE, row 6 SUSTAIN PEDAL (shift 2), row 7 SHIFT (shift 1).
  * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
- *           Presets: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
- *           Recorders: empty 1, blinking while armed, 6 stopped, 15 looping.
- *           Shift keys are faint markers. Column 13 stays dark.
+ *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
+ *           Loopers: empty 1, blinking while armed, 6 stopped, 15 looping.
+ *           Tracks: 3 idle, 12 active, blinking while being routed.
  * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4.
  *           Live, two-way over OSC.
  * Rules   : keyboard = columns 0..(keysW-1); the control columns only exist when
@@ -31,33 +31,49 @@
  * chord presets PLAYABLE, while the toggle sustains and ARMS them for saving. That is the
  * whole reason there are two of them.
  *
- * CHORD PRESETS (column 14, one slot per row) store PITCHES — a list of steps — so a
- * later change of root/scale/vertical/orientation doesn't move a saved chord. Armed, a
- * press saves whatever is ringing (saving silence clears the slot). Not armed, a press
- * PLAYS, momentarily: the chord sounds while the key is down and keeps ringing if a
- * sustain is active when you let go, which is what lets you latch the pedal and stack
- * chords up. Out: /grid/out/page/<slot>/chords <json> — a dense array, null = empty.
+ * CHORDS (column 14, one slot per row) store PITCHES — a list of steps — so a later change
+ * of root/scale/vertical/orientation doesn't move a saved chord. Armed (sustain toggle on),
+ * a press saves whatever is ringing; pressing the SAME slot again while that same chord is
+ * still ringing RELEASES it, which is the "right, next one" gesture that makes capturing a
+ * run of chords one-handed. Saving silence clears the slot, and SHIFT + press clears it
+ * outright. Not armed, a press PLAYS, momentarily: the chord sounds while the key is down
+ * and keeps ringing if a sustain is active when you let go, which is what lets you latch
+ * the pedal and stack chords up.
+ * Out: /grid/out/page/<slot>/chords <json> — a dense array, null = empty.
  *
- * PATTERN RECORDERS (column 15, rows 0-3) are free-time loopers — see util/patternRecorder.
+ * LOOPERS (column 15, rows 0-3) are free-time pattern recorders — see util/patternRecorder.
  * One key cycles empty → recording → playing → stopped → playing, shift 1 + press clears,
  * and a take longer than a minute closes itself. Loop length is exactly what you played;
  * the per-track `quant1..4` settings can round that length onto a grid of `lane` clock
  * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
  *
- * THE NOTE PIPELINE. Notes are tracked by STEP and reconciled against what Max was last
- * told, because four sources (fingers, held presets, the sustain buffer and the loopers)
- * can claim one note at once:
+ * TRACKS (column 13, rows 0-3) are output destinations — one instrument each at the Max
+ * end. Exactly one is ACTIVE; live notes always go there. A plain press selects. SHIFT +
+ * press LATCHES that track for routing-edit: let go of shift and the LOOPER keys stop
+ * recording and start meaning "does this looper feed this track" (bright = yes). Press the
+ * latched track to leave, or another to move the edit. A looper routed nowhere follows the
+ * active track; routing it anywhere pins it, and it may feed several tracks at once.
+ * SHIFT + all four tracks held together wipes every route, back to following.
+ * Out: /grid/out/page/<slot>/tracks <json> — { active, routes }.
  *
- *   keys + presets ──> LIVE ──> [record tap] ──┐
- *                                              ├──> INTENT ──> [sustain] ──> reconcile
- *   recorder playback ─────────────────────────┘
+ * THE NOTE PIPELINE. A note is identified by (TRACK, STEP), not step alone, and reconciled
+ * against what Max was last told — because five sources (fingers, held chords, the sustain
+ * buffer and four loopers) can claim one note at once:
  *
- * Recorders tap LIVE, so a pattern holds what you PLAYED, not what the pedal did with it.
+ *   keys + chords ──> LIVE ──> [record tap] ──┐
+ *                                             ├──> INTENT ──> [sustain] ──> reconcile
+ *   looper playback ──────────────────────────┘
+ *
+ * Each step's track is stamped WHEN IT STARTS and held until it ends, so switching the
+ * active track lands on the next note-on rather than re-attacking everything ringing.
+ * Loopers tap LIVE, so a pattern holds what you PLAYED, not what the pedal did with it.
  * Sustain sits downstream of INTENT, which includes playback — so holding the pedal smears
  * a running loop into a pad exactly as it smears your hands. Three consequences worth
  * knowing:
- *   · pressing a note that is ALREADY SOUNDING (a loop, a preset, another finger) emits an
- *     explicit note-off then note-on, because a bare second note-on is undefined in MIDI;
+ *   · pressing a note ALREADY SOUNDING ON THE ACTIVE TRACK (a loop, a chord, another
+ *     finger) emits an explicit note-off then note-on, because a bare second note-on is
+ *     undefined in MIDI. The same pitch on another track is a different instrument, and
+ *     is left alone;
  *   · except when it is ringing purely because sustain parked it — then the press SUBTRACTS
  *     it, which is how you take a note out of a held chord;
  *   · a note stops only when the LAST source lets go, so two unison twins are one note.
@@ -147,6 +163,42 @@ const TIMER_MS = 5
 /** Loop-length quantise choices, in ticks of the followed lane. "off" = free time. */
 const QUANTA = ["off", "1", "2", "4", "8", "16"] as const
 
+/** Output TRACKS: the first four buttons of the third-to-last column. */
+const TRACK_ROWS = 4
+const LVL_TRACK_OFF = 3
+const LVL_TRACK_ON = 12 // the active track
+const LVL_TRACK_EDIT = 15 // bright half of the routing-edit blink
+const LVL_TRACK_EDIT_LO = 6
+
+/**
+ * Notes are identified by (track, step), so they pack into one number for cheap Set diffs.
+ * Steps are bounded far below the stride: 12 columns + 7 rows of a 24-semitone `vertical`
+ * tops out around 180.
+ */
+const NOTE_STRIDE = 4096
+const noteKey = (track: number, step: number) => track * NOTE_STRIDE + step
+const trackOf = (key: number) => Math.floor(key / NOTE_STRIDE)
+const stepOf = (key: number) => key % NOTE_STRIDE
+
+/** Two chords are the same if they hold the same pitches. Both sides arrive sorted. */
+const sameChord = (a: readonly number[] | undefined, b: readonly number[]): boolean =>
+	!!a && a.length === b.length && a.every((v, i) => v === b[i])
+
+/**
+ * Which tracks a looper plays into: the tracks it has been explicitly routed to, or — if it
+ * has been routed nowhere — whichever track is currently active. Routing a looper anywhere
+ * is what stops it following the active track.
+ */
+export function tracksForLooper(
+	looper: number,
+	routes: ReadonlyArray<ReadonlySet<number>>,
+	activeTrack: number,
+): number[] {
+	const pinned: number[] = []
+	routes.forEach((set, track) => { if (set.has(looper)) pinned.push(track) })
+	return pinned.length ? pinned : [activeTrack]
+}
+
 /**
  * Which way the step field runs. Two modes, not four rotations — the rest read backwards
  * under the hand and aren't worth the setting. `horizontal` is the 90° turn mirrored
@@ -216,10 +268,26 @@ export class IsometricPage implements Page {
 	private held = new Set<number>() // ledIndex of cells physically under a finger
 	private sustained = new Set<number>() // STEPS parked by whichever sustain is active
 	private presetHeld = new Map<number, number[]>() // preset slot → its steps, while held
+	// These four hold PACKED (track, step) keys — see noteKey().
 	private lastSounding = new Set<number>() // what Max currently believes is on
 	private lastIntent = new Set<number>() // pre-sustain, so we can spot what just let go
-	private lastLive = new Set<number>() // keys+presets only — the stream recorders tap
-	private retrigger = new Set<number>() // steps to articulate again this commit
+	private retrigger = new Set<number>() // notes to articulate again this commit
+	private lastLive = new Set<number>() // STEPS only (pre-track): the stream loopers tap
+
+	/**
+	 * Per source (index 0 = live, 1..4 = loopers), the tracks each sounding step was given
+	 * WHEN IT STARTED. Held rather than recomputed, so switching the active track lands on
+	 * the next note-on instead of re-attacking everything currently ringing.
+	 */
+	private srcTracks: Array<Map<number, number[]>> = []
+
+	/** Output tracks. Exactly one is active; `routes[track]` holds the loopers pinned to it. */
+	private activeTrack = 0
+	private routes: Array<Set<number>> = Array.from({ length: TRACK_ROWS }, () => new Set<number>())
+	/** Latched routing-edit target, or null. Set by SHIFT + a track key. */
+	private editingTrack: number | null = null
+	/** Track keys physically down — only the all-four-at-once gesture needs this. */
+	private tracksDown = new Set<number>()
 
 	/** Four free-time loopers. They keep running when the page loses focus. */
 	private recorders = Array.from({ length: RECORDER_ROWS }, () => new PatternRecorder())
@@ -284,6 +352,9 @@ export class IsometricPage implements Page {
 		const rec = this.recorderIndexAt(ev.x, ev.y)
 		if (rec !== null) { this.recorderKey(rec, ev, ctx); return }
 
+		const track = this.trackIndexAt(ev.x, ev.y)
+		if (track !== null) { this.trackKey(track, ev, ctx); return }
+
 		const slot = this.presetSlotAt(ev.x, ev.y)
 		if (slot !== null) { this.presetKey(slot, ev, ctx); return }
 
@@ -301,17 +372,19 @@ export class IsometricPage implements Page {
 	 * holding is left alone — you stop that by releasing it, same as always.
 	 */
 	private pressKey(i: number, ctx: PageContext) {
-		const step = this.stepOfIndex(i)
+		// A press only ever concerns the ACTIVE track — the same note ringing on some other
+		// track belongs to another instrument and is none of this gesture's business.
+		const key = noteKey(this.activeTrack, this.stepOfIndex(i))
 		// Ringing PURELY because sustain parked it — nothing is actively asking for it.
 		// The press subtracts it from the held chord and starts nothing.
-		if (this.sustainOn(ctx) && this.lastSounding.has(step) && !this.lastIntent.has(step)) {
-			this.sustained.delete(step)
+		if (this.sustainOn(ctx) && this.lastSounding.has(key) && !this.lastIntent.has(key)) {
+			this.sustained.delete(key)
 			this.commit(ctx)
 			return
 		}
-		// Something is actively playing it — a loop, a preset, another finger. Articulate
+		// Something is actively playing it — a loop, a chord, another finger. Articulate
 		// over the top rather than silently joining the note already in progress.
-		if (this.lastSounding.has(step)) this.retrigger.add(step)
+		if (this.lastSounding.has(key)) this.retrigger.add(key)
 		this.held.add(i)
 		this.commit(ctx)
 	}
@@ -346,10 +419,24 @@ export class IsometricPage implements Page {
 			this.commit(ctx) // the sustain stage parks the chord if a sustain is on
 			return
 		}
+		if (ctx.modifiers.shift1) {
+			// Shift-clear, same gesture as clearing a looper. Beats saving to it.
+			this.chords.delete(slot)
+			this.emitChords(ctx)
+			return
+		}
 		if (this.sustainToggle) {
-			const chord = [...this.lastSounding].sort((a, b) => a - b)
+			const chord = this.soundingChord()
+			// Pressing the slot you JUST saved to, with that chord still ringing, releases
+			// it — the "right, next one" gesture. Saving is idempotent, so comparing the
+			// chord beats remembering which slot was last written.
+			if (chord.length && sameChord(this.chords.get(slot), chord)) {
+				this.sustained.clear()
+				this.commit(ctx)
+				return
+			}
 			if (chord.length) this.chords.set(slot, chord)
-			else this.chords.delete(slot)
+			else this.chords.delete(slot) // saving silence clears the slot
 			this.emitChords(ctx)
 			return
 		}
@@ -367,12 +454,59 @@ export class IsometricPage implements Page {
 	 */
 	private recorderKey(idx: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) return // the whole machine acts on press
+		// While a track is latched for routing, these keys mean "does this looper feed it"
+		// and nothing else — no recording, no clearing.
+		if (this.editingTrack !== null) {
+			const set = this.routes[this.editingTrack]
+			if (!set.delete(idx)) set.add(idx)
+			this.emitTracks(ctx)
+			this.commit(ctx)
+			return
+		}
 		const r = this.recorders[idx]
 		if (ctx.modifiers.shift1) r.clear()
 		else r.press(Date.now(), this.quantumMs(idx))
 		this.emitPatterns(ctx)
 		this.commit(ctx)
 		this.syncTimer()
+	}
+
+	/**
+	 * A TRACK key — an output, i.e. an instrument at the Max end.
+	 *
+	 * Plain press selects it. SHIFT latches it for routing-edit (let go of shift; the looper
+	 * keys take over until you press a track again). SHIFT with all four held at once wipes
+	 * every route, which is the way back to "everything follows the active track".
+	 */
+	private trackKey(idx: number, ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) {
+			this.tracksDown.delete(idx)
+			return
+		}
+		this.tracksDown.add(idx)
+
+		if (ctx.modifiers.shift1) {
+			if (this.tracksDown.size >= TRACK_ROWS) {
+				for (const set of this.routes) set.clear()
+				this.editingTrack = null
+			} else {
+				this.editingTrack = this.editingTrack === idx ? null : idx
+			}
+			this.emitTracks(ctx)
+			this.commit(ctx)
+			return
+		}
+		if (this.editingTrack !== null) {
+			// Same track closes the edit; a different one moves it. You leave edit mode
+			// before you can change which track is active — one mode at a time.
+			this.editingTrack = this.editingTrack === idx ? null : idx
+			this.emitTracks(ctx)
+			return
+		}
+		if (this.activeTrack === idx) return
+		this.activeTrack = idx
+		this.emitTracks(ctx)
+		this.commit(ctx) // sounding notes keep their old track; the next note-on moves
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
@@ -422,18 +556,36 @@ export class IsometricPage implements Page {
 			f[ledIndex(this.size, this.size.width - 1, SUSTAIN_TOGGLE_ROW)] =
 				this.sustainToggle ? LVL_HELD : LVL_SHIFT
 		}
-		// Recorders: blink while armed, full while looping, mid when stopped with content.
+		const blinkOn = Date.now() % (BLINK_MS * 2) < BLINK_MS
+		// Loopers: blink while armed, full while looping, mid when stopped with content —
+		// unless a track is latched, when the whole column switches to showing ITS routing.
 		if (this.hasRecorders()) {
 			const rx = this.size.width - 1
-			const blinkOn = Date.now() % (BLINK_MS * 2) < BLINK_MS
+			const editing = this.editingTrack
 			for (let idx = 0; idx < RECORDER_ROWS; idx++) {
-				const st = this.recorders[idx].state
-				const lvl =
-					st === "recording" ? (blinkOn ? LVL_REC_ARMED : LVL_REC_EMPTY)
-					: st === "playing" ? LVL_HELD
-					: st === "stopped" ? LVL_REC_STOPPED
-					: LVL_REC_EMPTY
+				let lvl: number
+				if (editing !== null) {
+					lvl = this.routes[editing].has(idx) ? LVL_HELD : LVL_NORMAL
+				} else {
+					const st = this.recorders[idx].state
+					lvl =
+						st === "recording" ? (blinkOn ? LVL_REC_ARMED : LVL_REC_EMPTY)
+						: st === "playing" ? LVL_HELD
+						: st === "stopped" ? LVL_REC_STOPPED
+						: LVL_REC_EMPTY
+				}
 				f[ledIndex(this.size, rx, idx)] = lvl
+			}
+		}
+		// Tracks: the active one stands out, and the one being routed blinks.
+		if (this.hasTracks()) {
+			const tx = this.size.width - 3
+			for (let idx = 0; idx < TRACK_ROWS; idx++) {
+				const lvl =
+					this.editingTrack === idx ? (blinkOn ? LVL_TRACK_EDIT : LVL_TRACK_EDIT_LO)
+					: this.activeTrack === idx ? LVL_TRACK_ON
+					: LVL_TRACK_OFF
+				f[ledIndex(this.size, tx, idx)] = lvl
 			}
 		}
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
@@ -459,6 +611,7 @@ export class IsometricPage implements Page {
 			...this.settings(),
 			chords: this.chordArray(),
 			patterns: this.recorders.map((r) => r.snapshot()),
+			...this.trackState(),
 		}
 	}
 
@@ -541,48 +694,67 @@ export class IsometricPage implements Page {
 	private commit(ctx: PageContext) {
 		const nowMs = Date.now()
 
-		// 1. LIVE — what your hands and the chord presets are asking for.
+		// 1. LIVE — what your hands and the chord presets are asking for, as plain steps.
 		const live = new Set<number>()
 		for (const i of this.held) live.add(this.stepOfIndex(i))
 		for (const steps of this.presetHeld.values()) for (const step of steps) live.add(step)
 
-		// 2. RECORD TAP — the transitions of that stream, before sustain touches them.
+		// 2. RECORD TAP — the transitions of that stream, before sustain or tracks touch it.
 		this.tapRecorders(live, nowMs)
 
-		// 3. INTENT — plus whatever the recorders are playing. Recorders never tap each
-		//    other, so a loop can't record itself into a feedback pile.
-		const intent = new Set(live)
-		for (const r of this.recorders) for (const step of r.sounding) intent.add(step)
+		// 3. INTENT — live plus loop playback, each step stamped with the track(s) it began
+		//    on. Loopers never tap each other, so a loop can't record itself into a pile.
+		const sources = [live, ...this.recorders.map((r) => r.sounding)]
+		const intent = new Set<number>()
+		for (let s = 0; s < sources.length; s++) {
+			const steps = sources[s]
+			const started = (this.srcTracks[s] ??= new Map())
+			for (const step of started.keys()) if (!steps.has(step)) started.delete(step)
+			for (const step of steps) {
+				let tracks = started.get(step)
+				if (!tracks) {
+					tracks = s === 0 ? [this.activeTrack] : tracksForLooper(s - 1, this.routes, this.activeTrack)
+					started.set(step, tracks)
+				}
+				for (const track of tracks) intent.add(noteKey(track, step))
+			}
+		}
 
-		// 4. SUSTAIN — park anything that just LEFT the intent. One rule covering fingers,
-		//    presets and loops alike, instead of each source remembering to sustain itself.
+		// 4. SUSTAIN — park anything that just LEFT the intent, track and all. One rule
+		//    covering fingers, chords and loops instead of each source sustaining itself.
 		if (this.sustainOn(ctx)) {
-			for (const step of this.lastIntent) if (!intent.has(step)) this.sustained.add(step)
+			for (const key of this.lastIntent) if (!intent.has(key)) this.sustained.add(key)
 		} else this.sustained.clear()
 		this.lastIntent = intent
 
 		// 5. RECONCILE against what Max was last told.
 		const out = new Set(intent)
-		for (const step of this.sustained) out.add(step)
-		// A retrigger is an articulation of a note that is staying on, so it needs an
-		// explicit off/on pair — a bare second note-on is undefined in MIDI.
-		for (const step of this.retrigger) {
-			if (this.lastSounding.has(step) && out.has(step)) {
-				this.note(ctx, step, false)
-				this.note(ctx, step, true)
+		for (const key of this.sustained) out.add(key)
+		// A retrigger articulates a note that is staying on, so it needs an explicit off/on
+		// pair — a bare second note-on is undefined in MIDI.
+		for (const key of this.retrigger) {
+			if (this.lastSounding.has(key) && out.has(key)) {
+				this.note(ctx, key, false)
+				this.note(ctx, key, true)
 			}
 		}
 		this.retrigger.clear()
-		for (const step of out) if (!this.lastSounding.has(step)) this.note(ctx, step, true)
-		for (const step of this.lastSounding) if (!out.has(step)) this.note(ctx, step, false)
+		for (const key of out) if (!this.lastSounding.has(key)) this.note(ctx, key, true)
+		for (const key of this.lastSounding) if (!out.has(key)) this.note(ctx, key, false)
 		this.lastSounding = out
+	}
+
+	/** The pitches currently sounding, deduped across tracks — what a chord preset saves. */
+	private soundingChord(): number[] {
+		return [...new Set([...this.lastSounding].map(stepOf))].sort((a, b) => a - b)
 	}
 
 	/** Feed the live stream's transitions to every armed recorder. */
 	private tapRecorders(live: Set<number>, nowMs: number) {
 		if (this.recorders.some((r) => r.state === "recording")) {
 			for (const step of this.lastLive) if (!live.has(step)) this.recordAll(step, false, nowMs)
-			for (const step of this.retrigger) {
+			for (const key of this.retrigger) {
+				const step = stepOf(key)
 				if (live.has(step) && this.lastLive.has(step)) {
 					this.recordAll(step, false, nowMs)
 					this.recordAll(step, true, nowMs)
@@ -597,8 +769,8 @@ export class IsometricPage implements Page {
 		for (const r of this.recorders) r.record(step, on, nowMs)
 	}
 
-	private note(ctx: PageContext, step: number, on: boolean) {
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, step, on ? 1 : 0)
+	private note(ctx: PageContext, key: number, on: boolean) {
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, stepOf(key), on ? 1 : 0, trackOf(key))
 	}
 
 	/** Drop everything the hands own. Recorders are deliberately untouched. */
@@ -692,9 +864,26 @@ export class IsometricPage implements Page {
 		return y >= 0 && y < RECORDER_ROWS ? y : null
 	}
 
+	/** Tracks need a THIRD dead column; a narrower grid simply doesn't get them. */
+	private hasTracks(): boolean {
+		return this.size.width - 3 >= this.keysW && this.size.height >= TRACK_ROWS
+	}
+	private trackIndexAt(x: number, y: number): number | null {
+		if (!this.hasTracks() || x !== this.size.width - 3) return null
+		return y >= 0 && y < TRACK_ROWS ? y : null
+	}
+
 	/** Chords as a dense array (null = empty slot) — the shape Max and the web UI get. */
 	private chordArray(): (number[] | null)[] {
 		return Array.from({ length: this.size.height }, (_, slot) => this.chords.get(slot) ?? null)
+	}
+
+	private trackState() {
+		return { active: this.activeTrack, routes: this.routes.map((set) => [...set].sort((a, b) => a - b)) }
+	}
+
+	private emitTracks(ctx: PageContext) {
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tracks`, JSON.stringify(this.trackState()))
 	}
 
 	/** Summary only — the full event lists would be a big message on every press. */
@@ -750,6 +939,7 @@ export class IsometricPage implements Page {
 		this.emitSettings(ctx)
 		this.emitChords(ctx)
 		this.emitPatterns(ctx)
+		this.emitTracks(ctx)
 	}
 
 	private settings() {

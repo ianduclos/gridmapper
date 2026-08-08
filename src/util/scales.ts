@@ -8,7 +8,10 @@
  * just owns the table.
  *
  * `chromatic` is the identity entry: every pitch class, so selecting it is the same as
- * having no scale at all. It's first so it can be the default.
+ * having no scale at all. It's first in the table, but it is NOT the default — a keyboard
+ * that highlights nothing is harder to play than one that does, so `ionian` is. Pages that
+ * care about microtonal tunings still get the old behaviour by selecting `chromatic`
+ * explicitly (see `baseLevel()` in pages/isometric.ts).
  */
 
 export const SCALES = {
@@ -36,7 +39,7 @@ export const SCALES = {
 export type ScaleName = keyof typeof SCALES
 
 export const SCALE_NAMES = Object.keys(SCALES) as ScaleName[]
-export const DEFAULT_SCALE: ScaleName = "chromatic"
+export const DEFAULT_SCALE: ScaleName = "ionian"
 export const OCTAVE = 12
 
 export const isScaleName = (v: unknown): v is ScaleName =>

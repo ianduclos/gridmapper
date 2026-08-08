@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { stepAt, isRootStep, IsometricPage } from "../src/pages/isometric.js"
+import { stepAt, isRootStep, tracksForLooper, IsometricPage } from "../src/pages/isometric.js"
 import { ledIndex, type GridSize, type PageContext } from "../src/core/types.js"
 
 const H = 8 // grid 128 height
@@ -106,7 +106,7 @@ describe("isometric scales", () => {
 	})
 
 	it("chromatic scale keeps the original npo-based root marking (microtonal intact)", () => {
-		const { p, ctx } = page({ npo: 7 })
+		const { p, ctx } = page({ scale: "chromatic", npo: 7 }) // must be chosen now, not the default
 		const f = p.render(ctx)
 		const y = H - 1
 		expect(at(f, 0, y)).toBe(at(f, 7, y)) // both roots at npo 7
@@ -117,7 +117,7 @@ describe("isometric scales", () => {
 		const { p, ctx } = page()
 		p.onOsc("/setting/scale", ["klingon"], ctx)
 		p.onOsc("/setting/layout", ["sideways"], ctx)
-		expect(p.serialize()).toMatchObject({ scale: "chromatic", layout: "chromatic" })
+		expect(p.serialize()).toMatchObject({ scale: "ionian", layout: "chromatic" })
 	})
 
 	it("round-trips every setting through serialize()", () => {
@@ -292,6 +292,16 @@ const soundingFrom = (notes: () => Array<{ args: any[] }>) => {
 	return on
 }
 
+/** Sounding notes as "step@track" — for anything that cares where a note went. */
+const soundingTracked = (notes: () => Array<{ args: any[] }>) => {
+	const on = new Set<string>()
+	for (const m of notes()) {
+		const k = `${m.args[0]}@${m.args[2]}`
+		m.args[1] === 1 ? on.add(k) : on.delete(k)
+	}
+	return on
+}
+
 const tap = (p: IsometricPage, ctx: PageContext, k: { x: number; y: number }) => {
 	p.onKey({ ...k, s: 1 }, ctx)
 	p.onKey({ ...k, s: 0 }, ctx)
@@ -437,7 +447,7 @@ describe("isometric note reconciliation", () => {
 		p.onKey({ x: 0, y: H - 2, s: 1 }, ctx)
 		// Pressing a note that is already playing articulates it again — off then on, so
 		// MIDI hears a fresh attack rather than an undefined repeated note-on.
-		expect(notes().map((m) => m.args)).toEqual([[5, 1], [5, 0], [5, 1]])
+		expect(notes().map((m) => m.args)).toEqual([[5, 1, 0], [5, 0, 0], [5, 1, 0]])
 		p.onKey({ x: 5, y: H - 1, s: 0 }, ctx)
 		expect(soundingFrom(notes)).toEqual(new Set([5])) // other finger still down
 		p.onKey({ x: 0, y: H - 2, s: 0 }, ctx)
@@ -535,9 +545,9 @@ describe("isometric pattern recorders", () => {
 		const before = notes().length
 		vi.advanceTimersByTime(400) // one full lap
 		const lap1 = notes().slice(before).map((m) => m.args)
-		expect(lap1).toEqual([[3, 1], [3, 0]])
+		expect(lap1).toEqual([[3, 1, 0], [3, 0, 0]])
 		vi.advanceTimersByTime(400) // and again — it's a loop
-		expect(notes().slice(before + 2).map((m) => m.args)).toEqual([[3, 1], [3, 0]])
+		expect(notes().slice(before + 2).map((m) => m.args)).toEqual([[3, 1, 0], [3, 0, 0]])
 	})
 
 	it("cycles arm -> play -> stop, and the LED follows", () => {
@@ -586,7 +596,7 @@ describe("isometric pattern recorders", () => {
 		p.onBlur(ctx) // a slot switch must NOT stop a running loop
 		const before = notes().length
 		vi.advanceTimersByTime(400)
-		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 1], [3, 0]])
+		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 1, 0], [3, 0, 0]])
 	})
 
 	it("dispose really does stop it", () => {
@@ -616,7 +626,7 @@ describe("isometric pattern recorders", () => {
 		vi.advanceTimersByTime(120) // loop is sounding step 3
 		const before = notes().length
 		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx) // same step, live
-		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0], [3, 1]])
+		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0, 0], [3, 1, 0]])
 	})
 
 	it("a recorder does not record another recorder", () => {
@@ -651,5 +661,220 @@ describe("isometric pattern recorders", () => {
 		const pat = JSON.parse(sent.filter((m) => m.path.endsWith("/patterns")).pop()!.args[0])
 		expect(pat[0]).toEqual({ state: "playing", ms: 400 })
 		expect(pat[1]).toEqual({ state: "empty", ms: 0 })
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Chord preset gestures added after the first pass
+// ---------------------------------------------------------------------------------
+describe("isometric chord preset gestures", () => {
+	it("re-pressing the slot you just saved releases the chord, ready for the next", () => {
+		const { p, ctx, notes, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(2)) // save — still ringing
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		tap(p, ctx, preset(2)) // same slot, same chord -> let go of it
+		expect(soundingFrom(notes).size).toBe(0)
+		// and it did NOT wipe the slot on the way out
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[2]).toEqual([0, 4, 7])
+	})
+
+	it("a DIFFERENT slot still saves while the chord rings", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(2))
+		tap(p, ctx, preset(5)) // same chord, different slot -> save, don't release
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[5]).toEqual([0, 4, 7])
+	})
+
+	it("shift + press clears a preset", () => {
+		const { p, ctx, modifiers, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4, 7])
+		tap(p, ctx, preset(1))
+		modifiers.shift1 = true
+		tap(p, ctx, preset(1))
+		modifiers.shift1 = false
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[1]).toBeNull()
+	})
+
+	it("saving silence still clears the slot", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, TOGGLE)
+		ringing(p, ctx, [0, 4])
+		tap(p, ctx, preset(3))
+		tap(p, ctx, preset(3)) // release the chord
+		tap(p, ctx, preset(3)) // nothing ringing now -> clears
+		const chords = JSON.parse(sent.filter((m) => m.path.endsWith("/chords")).pop()!.args[0])
+		expect(chords[3]).toBeNull()
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Output tracks + looper routing
+// ---------------------------------------------------------------------------------
+const TRACK = (n: number) => ({ x: SIZE.width - 3, y: n })
+
+describe("isometric tracks", () => {
+	it("track 0 is active at boot and live notes carry it", () => {
+		const { p, ctx, notes } = page()
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		expect(notes()[0].args).toEqual([3, 1, 0])
+	})
+
+	it("selecting a track moves the NEXT note, not the one already ringing", () => {
+		const { p, ctx, notes } = page()
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx) // step 3 on track 0
+		tap(p, ctx, TRACK(2))
+		expect(soundingTracked(notes)).toEqual(new Set(["3@0"])) // no re-attack
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx) // played again -> new track
+		expect(soundingTracked(notes)).toEqual(new Set(["3@2"]))
+	})
+
+	it("lights the active track and reports it over OSC", () => {
+		const { p, ctx, sent } = page()
+		expect(at(p.render(ctx), TRACK(0).x, 0)).toBe(12)
+		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(3)
+		tap(p, ctx, TRACK(1))
+		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(12)
+		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st).toEqual({ active: 1, routes: [[], [], [], []] })
+	})
+
+	it("a press on a ringing note only concerns the ACTIVE track", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE) // sustain on
+		tap(p, ctx, { x: 5, y: H - 1 }) // step 5 sustained on track 0
+		tap(p, ctx, TRACK(1)) // switch
+		tap(p, ctx, { x: 5, y: H - 1 }) // same step, different track -> a NEW note
+		expect(soundingTracked(notes)).toEqual(new Set(["5@0", "5@1"]))
+	})
+})
+
+describe("isometric looper routing", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
+	const recordOn = (p: IsometricPage, ctx: PageContext, slot: number) => {
+		tap(p, ctx, REC(slot))
+		vi.advanceTimersByTime(100)
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		vi.advanceTimersByTime(50)
+		p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+		vi.advanceTimersByTime(250)
+		tap(p, ctx, REC(slot))
+	}
+
+	/** Enter routing-edit for a track, toggle some loopers in, leave. */
+	const route = (p: IsometricPage, ctx: PageContext, modifiers: any, track: number, loopers: number[]) => {
+		modifiers.shift1 = true
+		tap(p, ctx, TRACK(track))
+		modifiers.shift1 = false
+		for (const l of loopers) tap(p, ctx, REC(l))
+		tap(p, ctx, TRACK(track)) // exit
+	}
+
+	it("an unrouted looper follows the active track", () => {
+		const { p, ctx, notes } = page()
+		recordOn(p, ctx, 0)
+		tap(p, ctx, TRACK(3))
+		const before = notes().length
+		vi.advanceTimersByTime(400)
+		expect(notes().slice(before).every((m) => m.args[2] === 3)).toBe(true)
+	})
+
+	it("routing a looper pins it off the active track", () => {
+		const { p, ctx, notes, modifiers } = page()
+		recordOn(p, ctx, 0)
+		route(p, ctx, modifiers, 1, [0]) // looper 0 -> track 1
+		tap(p, ctx, TRACK(3)) // active track is now 3
+		const before = notes().length
+		vi.advanceTimersByTime(400)
+		expect(notes().slice(before).every((m) => m.args[2] === 1)).toBe(true)
+	})
+
+	it("one looper can feed several tracks at once", () => {
+		const { p, ctx, notes, modifiers } = page()
+		recordOn(p, ctx, 0)
+		route(p, ctx, modifiers, 1, [0])
+		route(p, ctx, modifiers, 2, [0])
+		const before = notes().length
+		vi.advanceTimersByTime(400)
+		const ons = notes().slice(before).filter((m) => m.args[1] === 1).map((m) => m.args[2])
+		expect(new Set(ons)).toEqual(new Set([1, 2]))
+	})
+
+	it("while routing-edit is latched the looper keys do not record or clear", () => {
+		const { p, ctx, modifiers, sent } = page()
+		recordOn(p, ctx, 0) // looper 0 is playing
+		modifiers.shift1 = true
+		tap(p, ctx, TRACK(1))
+		modifiers.shift1 = false
+		tap(p, ctx, REC(0)) // would normally STOP the loop; here it routes
+		let pat = JSON.parse(sent.filter((m) => m.path.endsWith("/patterns")).pop()!.args[0])
+		expect(pat[0].state).toBe("playing") // untouched
+		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st.routes[1]).toEqual([0])
+	})
+
+	it("the looper column shows routing while a track is latched", () => {
+		const { p, ctx, modifiers } = page()
+		modifiers.shift1 = true
+		tap(p, ctx, TRACK(1))
+		modifiers.shift1 = false
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(3) // not routed
+		tap(p, ctx, REC(0))
+		expect(at(p.render(ctx), REC(0).x, 0)).toBe(15) // routed here
+	})
+
+	it("pressing the latched track again exits, and a plain press then selects", () => {
+		const { p, ctx, modifiers, sent } = page()
+		modifiers.shift1 = true
+		tap(p, ctx, TRACK(1))
+		modifiers.shift1 = false
+		tap(p, ctx, TRACK(1)) // exit edit — must NOT change the active track
+		let st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st.active).toBe(0)
+		tap(p, ctx, TRACK(1)) // now a plain press selects it
+		st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st.active).toBe(1)
+	})
+
+	it("shift + all four tracks at once wipes every route", () => {
+		const { p, ctx, modifiers, sent } = page()
+		recordOn(p, ctx, 0)
+		route(p, ctx, modifiers, 1, [0])
+		modifiers.shift1 = true
+		for (let t = 0; t < 4; t++) p.onKey({ ...TRACK(t), s: 1 }, ctx) // all held together
+		for (let t = 0; t < 4; t++) p.onKey({ ...TRACK(t), s: 0 }, ctx)
+		modifiers.shift1 = false
+		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st.routes).toEqual([[], [], [], []])
+	})
+})
+
+describe("tracksForLooper", () => {
+	const sets = (...arrs: number[][]) => arrs.map((a) => new Set(a))
+
+	it("falls back to the active track when the looper is routed nowhere", () => {
+		expect(tracksForLooper(0, sets([], [], [], []), 2)).toEqual([2])
+	})
+
+	it("uses the explicit routes instead, ignoring the active track", () => {
+		expect(tracksForLooper(0, sets([], [0], [], []), 3)).toEqual([1])
+	})
+
+	it("returns every track a looper is routed to", () => {
+		expect(tracksForLooper(1, sets([1], [0, 1], [], [1]), 0)).toEqual([0, 1, 3])
+	})
+
+	it("routing a DIFFERENT looper doesn't pin this one", () => {
+		expect(tracksForLooper(2, sets([0], [1], [], []), 3)).toEqual([3])
 	})
 })

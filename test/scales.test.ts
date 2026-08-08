@@ -23,9 +23,11 @@ describe("the scale table", () => {
 		expect(SCALE_NAMES).toHaveLength(16)
 	})
 
-	it("defaults to chromatic — i.e. to no scale at all", () => {
-		expect(DEFAULT_SCALE).toBe("chromatic")
-		expect(stepsPerOctave("chromatic")).toBe(OCTAVE)
+	it("defaults to ionian, not to the identity scale", () => {
+		// A keyboard that highlights nothing is harder to play than one that does.
+		expect(DEFAULT_SCALE).toBe("ionian")
+		expect(stepsPerOctave(DEFAULT_SCALE)).toBe(7)
+		expect(stepsPerOctave("chromatic")).toBe(OCTAVE) // still the identity when chosen
 	})
 
 	it("has the expected note counts", () => {

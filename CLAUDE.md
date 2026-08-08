@@ -225,7 +225,22 @@ src/
                          RETRIGGERS (explicit off+on, MIDI-safe) unless it is ringing purely
                          from sustain, where the press subtracts it.
                          Out: /grid/out/page/<slot>/patterns <json>.
-  util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure)
+                         TAXONOMY (cols): 0-12 KEYBOARD · 13 rows0-3 TRACKS · 14 CHORDS ·
+                         15 rows0-3 LOOPERS, row4 SUSTAIN TOGGLE, row6 PEDAL, row7 SHIFT.
+                         TRACKS = 4 outputs (instruments). Notes now carry one:
+                         /grid/out/page/<slot>/note <step> <1|0> <track>. Press selects;
+                         SHIFT+press LATCHES routing-edit (release shift; LOOPER keys then
+                         toggle "feeds this track" and do NOT record/clear; press the track
+                         to exit). Unrouted looper follows the active track, routing pins
+                         it, and one looper may feed several tracks. SHIFT + all four
+                         tracks at once wipes all routes. A note is keyed (TRACK, STEP) and
+                         its track is stamped AT NOTE START, so switching tracks lands on
+                         the next note-on, never re-attacking what is ringing.
+                         Out: /grid/out/page/<slot>/tracks <json> {active, routes}.
+                         CHORDS also: re-press the slot you just saved (same chord still
+                         ringing) to RELEASE it; SHIFT+press clears the slot.
+  util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure).
+                         DEFAULT_SCALE = ionian (chromatic is the identity, not the default)
   util/patternRecorder.ts free-time note looper: eventsInWindow/quantiseLength (pure) +
                          PatternRecorder state machine. Used by isometric; owns the ONE
                          deliberate setInterval in the codebase (see PAGE_PROTOCOL §6).
