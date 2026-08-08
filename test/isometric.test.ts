@@ -244,37 +244,47 @@ describe("isometric unison lighting", () => {
 })
 
 describe("isometric sustain latch", () => {
-	const SHIFT2 = { x: SIZE.width - 1, y: H - 2 }
+	// Sustain is no longer observable as a shift flag — it has its own state now — so these
+	// watch what it actually does to notes.
+	const playAndRelease = (p: IsometricPage, ctx: PageContext, x = 4) => {
+		p.onKey({ x, y: H - 1, s: 1 }, ctx)
+		p.onKey({ x, y: H - 1, s: 0 }, ctx)
+	}
 
 	it("a single press is momentary", () => {
-		const { p, ctx, modifiers } = page()
-		p.onKey({ ...SHIFT2, s: 1 }, ctx)
-		expect(modifiers.shift2).toBe(true)
-		p.onKey({ ...SHIFT2, s: 0 }, ctx)
-		expect(modifiers.shift2).toBe(false)
+		const { p, ctx, notes } = page()
+		p.onKey({ ...PEDAL, s: 1 }, ctx)
+		playAndRelease(p, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([4])) // held by the pedal
+		p.onKey({ ...PEDAL, s: 0 }, ctx)
+		expect(soundingFrom(notes).size).toBe(0) // and released with it
 	})
 
 	it("a double tap latches it on, and the next tap releases", () => {
-		const { p, ctx, modifiers } = page()
-		p.onKey({ ...SHIFT2, s: 1 }, ctx)
-		p.onKey({ ...SHIFT2, s: 0 }, ctx)
-		p.onKey({ ...SHIFT2, s: 1 }, ctx) // second tap, well inside the window
-		p.onKey({ ...SHIFT2, s: 0 }, ctx)
-		expect(modifiers.shift2).toBe(true) // still held after release — latched
-		p.onKey({ ...SHIFT2, s: 1 }, ctx)
-		expect(modifiers.shift2).toBe(false)
+		const { p, ctx, notes } = page()
+		tap(p, ctx, PEDAL)
+		tap(p, ctx, PEDAL) // second tap, well inside the window
+		playAndRelease(p, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([4])) // still held — latched
+		p.onKey({ ...PEDAL, s: 1 }, ctx)
+		expect(soundingFrom(notes).size).toBe(0)
 	})
 
 	it("a latched pedal actually sustains notes", () => {
 		const { p, ctx, notes } = page()
-		p.onKey({ ...SHIFT2, s: 1 }, ctx)
-		p.onKey({ ...SHIFT2, s: 0 }, ctx)
-		p.onKey({ ...SHIFT2, s: 1 }, ctx)
-		p.onKey({ ...SHIFT2, s: 0 }, ctx) // latched on
-		p.onKey({ x: 4, y: H - 1, s: 1 }, ctx)
-		p.onKey({ x: 4, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, PEDAL)
+		tap(p, ctx, PEDAL) // latched on
+		playAndRelease(p, ctx)
 		// The release must NOT have sent a note-off — it's parked in `sustained`.
 		expect(notes().filter((m) => m.args[1] === 0)).toHaveLength(0)
+	})
+
+	it("shift 2 is a plain modifier now — it does NOT sustain", () => {
+		const { p, ctx, notes, modifiers } = page()
+		p.onKey({ x: SIZE.width - 1, y: 6, s: 1 }, ctx)
+		expect(modifiers.shift2).toBe(true)
+		playAndRelease(p, ctx)
+		expect(soundingFrom(notes).size).toBe(0) // nothing held
 	})
 })
 
@@ -282,7 +292,7 @@ describe("isometric sustain latch", () => {
 // Sustain toggle + chord presets
 // ---------------------------------------------------------------------------------
 const TOGGLE = { x: SIZE.width - 1, y: 4 } // 5th button down the last column
-const PEDAL = { x: SIZE.width - 1, y: H - 2 } // the momentary shift-2 pedal
+const PEDAL = { x: SIZE.width - 1, y: 5 } // the momentary sustain pedal
 const preset = (slot: number) => ({ x: SIZE.width - 3, y: slot })
 
 /** Steps Max currently believes are sounding, from the note stream. */
@@ -737,14 +747,14 @@ describe("isometric tracks", () => {
 		expect(soundingTracked(notes)).toEqual(new Set(["3@2"]))
 	})
 
-	it("lights the active track and reports it over OSC", () => {
+	it("lights the selected track and reports it over OSC", () => {
 		const { p, ctx, sent } = page()
 		expect(at(p.render(ctx), TRACK(0).x, 0)).toBe(12)
 		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(3)
 		tap(p, ctx, TRACK(1))
 		expect(at(p.render(ctx), TRACK(1).x, 1)).toBe(12)
 		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
-		expect(st).toEqual({ active: 1, routes: [[], [], [], []] })
+		expect(st).toEqual({ selected: [1], routes: [[], [], [], []] })
 	})
 
 	it("a press on a ringing note only concerns the ACTIVE track", () => {
@@ -840,10 +850,10 @@ describe("isometric looper routing", () => {
 		modifiers.shift1 = false
 		tap(p, ctx, TRACK(1)) // exit edit — must NOT change the active track
 		let st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
-		expect(st.active).toBe(0)
+		expect(st.selected).toEqual([0])
 		tap(p, ctx, TRACK(1)) // now a plain press selects it
 		st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
-		expect(st.active).toBe(1)
+		expect(st.selected).toEqual([1])
 	})
 
 	it("shift + all four tracks at once wipes every route", () => {
@@ -862,19 +872,227 @@ describe("isometric looper routing", () => {
 describe("tracksForLooper", () => {
 	const sets = (...arrs: number[][]) => arrs.map((a) => new Set(a))
 
-	it("falls back to the active track when the looper is routed nowhere", () => {
-		expect(tracksForLooper(0, sets([], [], [], []), 2)).toEqual([2])
+	it("falls back to the SELECTED tracks when the looper is routed nowhere", () => {
+		expect(tracksForLooper(0, sets([], [], [], []), new Set([2]))).toEqual([2])
 	})
 
 	it("uses the explicit routes instead, ignoring the active track", () => {
-		expect(tracksForLooper(0, sets([], [0], [], []), 3)).toEqual([1])
+		expect(tracksForLooper(0, sets([], [0], [], []), new Set([3]))).toEqual([1])
 	})
 
 	it("returns every track a looper is routed to", () => {
-		expect(tracksForLooper(1, sets([1], [0, 1], [], [1]), 0)).toEqual([0, 1, 3])
+		expect(tracksForLooper(1, sets([1], [0, 1], [], [1]), new Set([0]))).toEqual([0, 1, 3])
 	})
 
 	it("routing a DIFFERENT looper doesn't pin this one", () => {
-		expect(tracksForLooper(2, sets([0], [1], [], []), 3)).toEqual([3])
+		expect(tracksForLooper(2, sets([0], [1], [], []), new Set([3]))).toEqual([3])
+	})
+
+	it("an unrouted looper follows EVERY selected track", () => {
+		expect(tracksForLooper(0, sets([], [], [], []), new Set([2, 0]))).toEqual([0, 2])
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Boot defaults — pinned so they can't drift
+// ---------------------------------------------------------------------------------
+describe("isometric defaults", () => {
+	it("boots with empty chords and loopers, track 1 selected, sustain off, arp off", () => {
+		const { p, ctx, sent, notes } = page()
+		const st = p.serialize() as any
+		expect(st.chords).toEqual(Array(H).fill(null)) // no chords
+		expect(st.patterns).toEqual(Array(4).fill({ lengthMs: 0, events: [] })) // no loops
+		expect(st.selected).toEqual([0]) // uppermost track
+		expect(st.arp).toBe("off")
+		// Sustain toggle off: a played note stops when you let go.
+		tap(p, ctx, { x: 3, y: H - 1 })
+		expect(soundingFrom(notes).size).toBe(0)
+		const tracks = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(tracks).toEqual({ selected: [0], routes: [[], [], [], []] })
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Multi-select (shift 2 + track)
+// ---------------------------------------------------------------------------------
+describe("isometric track multi-select", () => {
+	it("shift 2 adds a track, and live notes fan out to both", () => {
+		const { p, ctx, notes, modifiers } = page()
+		modifiers.shift2 = true
+		tap(p, ctx, TRACK(2))
+		modifiers.shift2 = false
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		expect(soundingTracked(notes)).toEqual(new Set(["3@0", "3@2"]))
+	})
+
+	it("a plain press collapses the selection back to one", () => {
+		const { p, ctx, notes, modifiers } = page()
+		modifiers.shift2 = true
+		tap(p, ctx, TRACK(2))
+		modifiers.shift2 = false
+		tap(p, ctx, TRACK(1)) // plain -> replaces
+		p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+		expect(soundingTracked(notes)).toEqual(new Set(["3@1"]))
+	})
+
+	it("refuses to empty the selection", () => {
+		const { p, ctx, sent, modifiers } = page()
+		modifiers.shift2 = true
+		tap(p, ctx, TRACK(0)) // the only selected one — must be ignored
+		modifiers.shift2 = false
+		const st = JSON.parse(sent.filter((m) => m.path.endsWith("/tracks")).pop()!.args[0])
+		expect(st.selected).toEqual([0])
+	})
+
+	it("an unrouted looper follows every selected track", () => {
+		vi.useFakeTimers()
+		try {
+			const { p, ctx, notes, modifiers } = page()
+			tap(p, ctx, REC(0))
+			vi.advanceTimersByTime(100)
+			p.onKey({ x: 3, y: H - 1, s: 1 }, ctx)
+			vi.advanceTimersByTime(50)
+			p.onKey({ x: 3, y: H - 1, s: 0 }, ctx)
+			vi.advanceTimersByTime(250)
+			tap(p, ctx, REC(0)) // looping
+			modifiers.shift2 = true
+			tap(p, ctx, TRACK(3))
+			modifiers.shift2 = false
+			const before = notes().length
+			vi.advanceTimersByTime(400)
+			const ons = notes().slice(before).filter((m) => m.args[1] === 1).map((m) => m.args[2])
+			expect(new Set(ons)).toEqual(new Set([0, 3]))
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+})
+
+// ---------------------------------------------------------------------------------
+// Arpeggiators (col 14, rows 4-7)
+// ---------------------------------------------------------------------------------
+const ARP = (n: number) => ({ x: SIZE.width - 2, y: 4 + n }) // 0 asc, 1 desc, 2 palin, 3 urn
+
+describe("isometric arpeggiator", () => {
+	beforeEach(() => vi.useFakeTimers())
+	afterEach(() => vi.useRealTimers())
+
+	/** Hold a chord down and let the free-run arp take `n` steps at the default 125ms. */
+	const holdChord = (p: IsometricPage, ctx: PageContext, xs: number[]) => {
+		for (const x of xs) p.onKey({ x, y: H - 1, s: 1 }, ctx)
+	}
+	const stepArp = (n: number) => vi.advanceTimersByTime(130 * n)
+
+	it("plays one note at a time instead of the whole chord", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0)) // ascending
+		holdChord(p, ctx, [0, 4, 7])
+		stepArp(1)
+		expect(soundingFrom(notes).size).toBe(1)
+	})
+
+	it("sounds the moment a chord starts, without waiting for the next step", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0))
+		p.onKey({ x: 0, y: H - 1, s: 1 }, ctx) // no timer advance at all
+		expect(soundingFrom(notes)).toEqual(new Set([0]))
+	})
+
+	it("ascends through the chord and wraps", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0))
+		holdChord(p, ctx, [0, 4, 7])
+		const seen: number[] = []
+		for (let i = 0; i < 4; i++) {
+			stepArp(1)
+			seen.push([...soundingFrom(notes)][0])
+		}
+		// The first note sounded on the press; laying the rest of the chord down grew the
+		// pool, which restarts the walk from the lowest note — so 0 is heard twice.
+		expect(seen).toEqual([0, 4, 7, 0])
+	})
+
+	it("descending runs the other way", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(1))
+		holdChord(p, ctx, [0, 4, 7])
+		const seen: number[] = []
+		for (let i = 0; i < 3; i++) {
+			stepArp(1)
+			seen.push([...soundingFrom(notes)][0])
+		}
+		expect(seen).toEqual([7, 4, 0])
+	})
+
+	it("turning it off returns the whole chord", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0))
+		holdChord(p, ctx, [0, 4, 7])
+		stepArp(1)
+		expect(soundingFrom(notes).size).toBe(1)
+		tap(p, ctx, ARP(0)) // same button -> off
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+	})
+
+	it("a one-note chord retriggers rather than sitting on", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0))
+		holdChord(p, ctx, [3])
+		const before = notes().length
+		stepArp(1)
+		// same note again -> explicit off/on so MIDI hears a fresh attack
+		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0, 0], [3, 1, 0]])
+	})
+
+	it("only touches SELECTED tracks — a routed looper keeps its own rhythm", () => {
+		const { p, ctx, notes, modifiers } = page()
+		// Record a loop and pin it to track 1, then select only track 0 and arp.
+		tap(p, ctx, REC(0))
+		vi.advanceTimersByTime(100)
+		p.onKey({ x: 9, y: H - 1, s: 1 }, ctx)
+		vi.advanceTimersByTime(50)
+		p.onKey({ x: 9, y: H - 1, s: 0 }, ctx)
+		vi.advanceTimersByTime(250)
+		tap(p, ctx, REC(0))
+		modifiers.shift1 = true
+		tap(p, ctx, TRACK(1))
+		modifiers.shift1 = false
+		tap(p, ctx, REC(0)) // route looper 0 -> track 1
+		tap(p, ctx, TRACK(1)) // exit edit
+		tap(p, ctx, ARP(0)) // arp on, selection is still {0}
+		holdChord(p, ctx, [0, 4, 7])
+		stepArp(1)
+		const sounding = soundingTracked(notes)
+		// exactly one arpeggiated note on track 0 ...
+		expect([...sounding].filter((k) => k.endsWith("@0"))).toHaveLength(1)
+		// ... while the routed loop on track 1 is untouched by the arp
+		expect([...sounding].some((k) => k.endsWith("@1"))).toBe(true)
+	})
+
+	it("the arp setting and the buttons are the same control", () => {
+		const { p, ctx, sent } = page()
+		tap(p, ctx, ARP(2)) // palindrome
+		let st = JSON.parse(sent.filter((m) => m.path.endsWith("/settings")).pop()!.args[0])
+		expect(st.arp).toBe("palindrome")
+		p.onOsc("/setting/arp", ["urn"], ctx)
+		expect((p.serialize() as any).arp).toBe("urn")
+		expect(at(p.render(ctx), ARP(3).x, ARP(3).y)).toBe(15) // urn button lit
+		expect(at(p.render(ctx), ARP(2).x, ARP(2).y)).toBe(3)
+	})
+
+	it("follows the clock when the transport is running, not the free rate", () => {
+		const { p, ctx, notes } = page()
+		;(ctx.clock as any).running = true
+		tap(p, ctx, ARP(0))
+		holdChord(p, ctx, [0, 4, 7])
+		const before = notes().length
+		vi.advanceTimersByTime(2000) // the free rate would have stepped ~16 times
+		expect(notes().length).toBe(before) // it stepped none
+		const seen: number[] = []
+		for (let t = 1; t <= 3; t++) {
+			p.onTick!(t, 0, ctx)
+			seen.push([...soundingFrom(notes)][0])
+		}
+		expect(seen).toEqual([0, 4, 7]) // ticks drive it instead
 	})
 })

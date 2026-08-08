@@ -225,8 +225,11 @@ src/
                          RETRIGGERS (explicit off+on, MIDI-safe) unless it is ringing purely
                          from sustain, where the press subtracts it.
                          Out: /grid/out/page/<slot>/patterns <json>.
-                         TAXONOMY (cols): 0-12 KEYBOARD · 13 CHORDS · 14 rows0-3 TRACKS ·
-                         15 rows0-3 LOOPERS, row4 SUSTAIN TOGGLE, row6 PEDAL, row7 SHIFT.
+                         TAXONOMY (cols): 0-12 KEYBOARD · 13 CHORDS · 14 rows0-3 TRACKS +
+                         rows4-7 ARPS · 15 rows0-3 LOOPERS, row4 SUSTAIN TOGGLE, row5
+                         PEDAL, row6 SHIFT 2, row7 SHIFT 1. The pedal is NO LONGER shift 2
+                         (it owns its state), so /grid/in/shift 2 does not sustain and
+                         nothing else does either — sustain is grid-only by choice.
                          TRACKS = 4 outputs (instruments). Notes now carry one:
                          /grid/out/page/<slot>/note <step> <1|0> <track>. Press selects;
                          SHIFT+press LATCHES routing-edit (release shift; LOOPER keys then
@@ -236,9 +239,20 @@ src/
                          tracks at once wipes all routes. A note is keyed (TRACK, STEP) and
                          its track is stamped AT NOTE START, so switching tracks lands on
                          the next note-on, never re-attacking what is ringing.
-                         Out: /grid/out/page/<slot>/tracks <json> {active, routes}.
+                         Out: /grid/out/page/<slot>/tracks <json> {selected, routes}.
+                         SELECTION (not one active track): plain press selects one, SHIFT 2
+                         + press adds/drops, never empty. Live notes AND unrouted loopers
+                         fan out to every selected track.
+                         ARPS (col 14 rows 4-7: ascending/descending/palindrome/urn, one at
+                         a time, press the lit one to stop) sit AFTER sustain and act only
+                         on SELECTED tracks — a looper routed elsewhere keeps its rhythm.
+                         The record tap is upstream, so loopers capture what you PLAYED.
+                         Timing is HYBRID: the `lane` clock ÷ arpDiv while the transport
+                         runs, free arpRate ms while it is stopped (expect a tempo jump on
+                         start/stop). First note of a new chord fires immediately.
                          CHORDS also: re-press the slot you just saved (same chord still
                          ringing) to RELEASE it; SHIFT+press clears the slot.
+  util/arpeggiator.ts    arpSequence (pure) + Arpeggiator cursor; urn takes an injected RNG
   util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure).
                          DEFAULT_SCALE = ionian (chromatic is the identity, not the default)
   util/patternRecorder.ts free-time note looper: eventsInWindow/quantiseLength (pure) +

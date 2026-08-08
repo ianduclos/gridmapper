@@ -4,14 +4,15 @@
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
  * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> <1|0> <track>.
  *           TAXONOMY — cols 0-12 KEYBOARD; col 13 CHORDS (8 presets); col 14
- *           rows 0-3 TRACKS (outputs); col 15 rows 0-3 LOOPERS, row 4 SUSTAIN
- *           TOGGLE, row 6 SUSTAIN PEDAL (shift 2), row 7 SHIFT (shift 1).
+ *           rows 0-3 TRACKS (outputs) + rows 4-7 ARPS; col 15 rows 0-3 LOOPERS,
+ *           row 4 SUSTAIN TOGGLE, row 5 SUSTAIN PEDAL, row 6 SHIFT 2, row 7 SHIFT 1.
  * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
  *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
  *           Loopers: empty 1, blinking while armed, 6 stopped, 15 looping.
- *           Tracks: 3 idle, 12 active, blinking while being routed.
- * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4.
- *           Live, two-way over OSC.
+ *           Tracks: 3 idle, 12 selected, blinking while being routed. Arps: 3 / 15.
+ *           Shifts and both sustains light while they are holding.
+ * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4 ·
+ *           arp · arpRate · arpDiv. Live, two-way over OSC.
  * Rules   : keyboard = columns 0..(keysW-1); the control columns only exist when
  *           there's a dead zone. Releases everything on blur so a page switch never
  *           strands a note in Max; SAVED CHORDS survive (stored content, not state).
@@ -21,11 +22,14 @@
  * `npo` does NOT change the step we emit; it sets the octave size for root highlighting
  * and is shared with Max (in: /grid/in/page/<slot>/setting/npo <n>; out: /settings).
  *
- * SUSTAIN is a two-input OR — the momentary pedal (shift 2) OR the latching toggle —
- * so either alone holds notes. While it's on, a keyboard release parks the note in
- * `sustained` instead of sending a note-off; when sustain falls, every parked note is
- * released. The pedal reads ctx.modifiers.shift2, so it works whether it's the local
- * control key or an external OSC shift, and a DOUBLE-TAP latches it hands-free.
+ * SUSTAIN is a two-input OR — the momentary pedal OR the latching toggle — so either alone
+ * holds notes. While it's on, a keyboard release parks the note in `sustained` instead of
+ * sending a note-off; when sustain falls, every parked note is released. A DOUBLE-TAP on
+ * the pedal latches it hands-free.
+ *
+ * The pedal used to BE shift 2 and no longer is: it owns its state so shift 2 can be a real
+ * modifier (it multi-selects tracks). The cost, deliberately accepted, is that
+ * `/grid/in/shift 2` no longer sustains and there is no OSC route to sustain at all.
  *
  * The two latches are not the same: the pedal's double-tap latch sustains and leaves the
  * chord presets PLAYABLE, while the toggle sustains and ARMS them for saving. That is the
@@ -48,20 +52,32 @@
  * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
  *
  * TRACKS (column 14, rows 0-3) are output destinations — one instrument each at the Max
- * end. Exactly one is ACTIVE; live notes always go there. A plain press selects. SHIFT +
- * press LATCHES that track for routing-edit: let go of shift and the LOOPER keys stop
- * recording and start meaning "does this looper feed this track" (bright = yes). Press the
- * latched track to leave, or another to move the edit. A looper routed nowhere follows the
- * active track; routing it anywhere pins it, and it may feed several tracks at once.
- * SHIFT + all four tracks held together wipes every route, back to following.
- * Out: /grid/out/page/<slot>/tracks <json> — { active, routes }.
+ * end. The SELECTION is where live notes and unrouted loopers go, and what the arpeggiator
+ * acts on: normally one track, never empty. A plain press selects just that one; SHIFT 2 +
+ * press adds or drops one, so several instruments can be live together. SHIFT 1 + press
+ * LATCHES a track for routing-edit: let go of shift and the LOOPER keys stop recording and
+ * start meaning "does this looper feed this track" (bright = yes). Press the latched track
+ * to leave, or another to move the edit. A looper routed nowhere follows the selection;
+ * routing it anywhere pins it, and it may feed several tracks at once. SHIFT 1 + all four
+ * tracks held together wipes every route, back to following.
+ * Out: /grid/out/page/<slot>/tracks <json> — { selected, routes }.
+ *
+ * ARPEGGIATORS (column 14, rows 4-7: ascending · descending · palindrome · urn) turn the
+ * held chord into one note at a time — see util/arpeggiator.ts. One at a time; pressing the
+ * lit one turns it off. It sits AFTER sustain, and acts only on the SELECTED tracks, so a
+ * looper routed elsewhere keeps its own rhythm while your hands get arpeggiated. The record
+ * tap is upstream of it, so loopers still capture what you PLAYED. Timing is hybrid: the
+ * `lane` clock (divided by `arpDiv`) while the transport runs, and a free `arpRate` in ms
+ * while it is stopped — so it always makes a sound, at the cost of a tempo jump when you
+ * start or stop the clock. The first note of a new chord fires immediately rather than
+ * waiting out a step, or starting a chord would be silent for up to a whole arpRate.
  *
  * THE NOTE PIPELINE. A note is identified by (TRACK, STEP), not step alone, and reconciled
  * against what Max was last told — because five sources (fingers, held chords, the sustain
  * buffer and four loopers) can claim one note at once:
  *
  *   keys + chords ──> LIVE ──> [record tap] ──┐
- *                                             ├──> INTENT ──> [sustain] ──> reconcile
+ *                                             ├──> INTENT ──> [sustain] ──> [arp] ──> out
  *   looper playback ──────────────────────────┘
  *
  * Each step's track is stamped WHEN IT STARTS and held until it ends, so switching the
@@ -111,9 +127,11 @@ import {
 	makeFrame,
 	ledIndex,
 } from "../core/types.js"
+import type { ClockState } from "../core/clock.js"
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
 import { clamp } from "../util/scale.js"
 import { PatternRecorder } from "../util/patternRecorder.js"
+import { Arpeggiator, ARP_MODES, ARP_BUTTONS, isArpMode, type ArpMode } from "../util/arpeggiator.js"
 import {
 	SCALE_NAMES,
 	DEFAULT_SCALE,
@@ -147,8 +165,16 @@ const LVL_PRESET_FULL_ARMED = 9
 /** Two taps inside this window on the shift-2 key latch sustain on. */
 const DOUBLE_TAP_MS = 350
 
-/** The sustain TOGGLE: 5th button down the last column. */
+/**
+ * The last column is now full, so its rows are absolute (top-down) rather than counted from
+ * the bottom edge — see `hasControls()` for the height guard that goes with that.
+ *   0-3 loopers · 4 sustain toggle · 5 sustain pedal · 6 shift 2 · 7 shift 1
+ */
 const SUSTAIN_TOGGLE_ROW = 4
+const SUSTAIN_PEDAL_ROW = 5
+const SHIFT2_ROW = 6
+const SHIFT1_ROW = 7
+const CONTROL_ROWS = 8 // the last column needs this many rows to hold everything
 
 /** Pattern recorders: the first four buttons of the last column. */
 const RECORDER_ROWS = 4
@@ -170,8 +196,11 @@ const QUANTA = ["off", "1", "2", "4", "8", "16"] as const
 const TRACK_COL_FROM_RIGHT = 2
 const CHORD_COL_FROM_RIGHT = 3
 
-/** Output TRACKS: the first four buttons of their column. */
+/** Output TRACKS: the first four buttons of their column, ARPEGGIATORS the four below. */
 const TRACK_ROWS = 4
+const ARP_ROW_START = TRACK_ROWS
+const LVL_ARP_OFF = 3
+const LVL_ARP_ON = 15
 const LVL_TRACK_OFF = 3
 const LVL_TRACK_ON = 12 // the active track
 const LVL_TRACK_EDIT = 15 // bright half of the routing-edit blink
@@ -193,17 +222,17 @@ const sameChord = (a: readonly number[] | undefined, b: readonly number[]): bool
 
 /**
  * Which tracks a looper plays into: the tracks it has been explicitly routed to, or — if it
- * has been routed nowhere — whichever track is currently active. Routing a looper anywhere
- * is what stops it following the active track.
+ * has been routed nowhere — every currently SELECTED track. Routing a looper anywhere is
+ * what stops it following the selection.
  */
 export function tracksForLooper(
 	looper: number,
 	routes: ReadonlyArray<ReadonlySet<number>>,
-	activeTrack: number,
+	selected: ReadonlySet<number>,
 ): number[] {
 	const pinned: number[] = []
 	routes.forEach((set, track) => { if (set.has(looper)) pinned.push(track) })
-	return pinned.length ? pinned : [activeTrack]
+	return pinned.length ? pinned : [...selected].sort((a, b) => a - b)
 }
 
 /**
@@ -227,6 +256,9 @@ const SPECS: SettingSpec[] = [
 	{ key: "layout", label: "layout", type: "enum", options: ["chromatic", "folded"], default: "chromatic" },
 	{ key: "orientation", label: "orientation", type: "enum", options: [...ORIENTATIONS], default: "standard" },
 	{ key: "lane", label: "clock lane (quantise)", type: "number", min: 0, max: 3, step: 1, default: 0 },
+	{ key: "arp", label: "arpeggiator", type: "enum", options: [...ARP_MODES], default: "off" },
+	{ key: "arpRate", label: "arp rate (ms, clock off)", type: "number", min: 20, max: 2000, step: 5, default: 125 },
+	{ key: "arpDiv", label: "arp divide (clock on)", type: "number", min: 1, max: 16, step: 1, default: 1 },
 	...Array.from({ length: RECORDER_ROWS }, (_, i): SettingSpec => ({
 		key: `quant${i + 1}`,
 		label: `rec ${i + 1} quantise`,
@@ -288,13 +320,24 @@ export class IsometricPage implements Page {
 	 */
 	private srcTracks: Array<Map<number, number[]>> = []
 
-	/** Output tracks. Exactly one is active; `routes[track]` holds the loopers pinned to it. */
-	private activeTrack = 0
+	/**
+	 * Output tracks. The SELECTION is where live notes and unrouted loopers go, and what the
+	 * arpeggiator acts on — normally one track, several while you shift-2 them together, and
+	 * never empty. `routes[track]` holds the loopers pinned to it.
+	 */
+	private selected = new Set<number>([0])
 	private routes: Array<Set<number>> = Array.from({ length: TRACK_ROWS }, () => new Set<number>())
 	/** Latched routing-edit target, or null. Set by SHIFT + a track key. */
 	private editingTrack: number | null = null
 	/** Track keys physically down — only the all-four-at-once gesture needs this. */
 	private tracksDown = new Set<number>()
+
+	/** One arpeggiator, applied to the selected tracks. Off at boot. */
+	private arp = new Arpeggiator()
+	private arpPool: number[] = [] // distinct steps sounding on selected tracks, ascending
+	private arpNote: number | null = null // the step it is currently letting through
+	private arpAccMs = 0 // free-run accumulator, used only while the transport is stopped
+	private inArpKick = false // guards the "first note of a new chord" re-entry below
 
 	/** Four free-time loopers. They keep running when the page loses focus. */
 	private recorders = Array.from({ length: RECORDER_ROWS }, () => new PatternRecorder())
@@ -307,6 +350,8 @@ export class IsometricPage implements Page {
 	private chords = new Map<number, number[]>()
 	/** The latching half of sustain — OR'd with the momentary pedal. */
 	private sustainToggle = false
+	/** The momentary half. Its own state now, not shift 2. */
+	private sustainPedal = false
 
 	// Live settings (defaults from SPECS).
 	private npo = SPEC_BY_KEY.get("npo")!.default as number
@@ -316,6 +361,8 @@ export class IsometricPage implements Page {
 	private layout = SPEC_BY_KEY.get("layout")!.default as "chromatic" | "folded"
 	private orientation = SPEC_BY_KEY.get("orientation")!.default as Orientation
 	private lane = SPEC_BY_KEY.get("lane")!.default as number
+	private arpRate = SPEC_BY_KEY.get("arpRate")!.default as number
+	private arpDiv = SPEC_BY_KEY.get("arpDiv")!.default as number
 	/** Per-recorder loop quantum, in lane ticks. 0 = off (the default). */
 	private quant = new Array<number>(RECORDER_ROWS).fill(0)
 
@@ -351,9 +398,11 @@ export class IsometricPage implements Page {
 	}
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
-		// Right-edge control keys → local shifts (route through the shared ShiftInput).
+		// Right-edge control keys. Both shifts route through the shared ShiftInput, so a
+		// local shift behaves exactly like one sent over OSC.
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
-		if (this.isShift2(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
+		if (this.isShift2(ev.x, ev.y)) { ctx.setShift(2, !!ev.s); return }
+		if (this.isSustainPedal(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
 		if (this.isSustainToggle(ev.x, ev.y)) { this.toggleKey(ev, ctx); return }
 
 		const rec = this.recorderIndexAt(ev.x, ev.y)
@@ -361,6 +410,9 @@ export class IsometricPage implements Page {
 
 		const track = this.trackIndexAt(ev.x, ev.y)
 		if (track !== null) { this.trackKey(track, ev, ctx); return }
+
+		const arp = this.arpIndexAt(ev.x, ev.y)
+		if (arp !== null) { this.arpKey(arp, ev, ctx); return }
 
 		const slot = this.presetSlotAt(ev.x, ev.y)
 		if (slot !== null) { this.presetKey(slot, ev, ctx); return }
@@ -379,20 +431,23 @@ export class IsometricPage implements Page {
 	 * holding is left alone — you stop that by releasing it, same as always.
 	 */
 	private pressKey(i: number, ctx: PageContext) {
-		// A press only ever concerns the ACTIVE track — the same note ringing on some other
-		// track belongs to another instrument and is none of this gesture's business.
-		const key = noteKey(this.activeTrack, this.stepOfIndex(i))
-		// Ringing PURELY because sustain parked it — nothing is actively asking for it.
-		// The press subtracts it from the held chord and starts nothing.
-		if (this.sustainOn(ctx) && this.lastSounding.has(key) && !this.lastIntent.has(key)) {
-			this.sustained.delete(key)
-			this.commit(ctx)
-			return
+		// A press only concerns the SELECTED tracks — the same note ringing on an unselected
+		// one belongs to another instrument and is none of this gesture's business. The rule
+		// is applied per selected track, which collapses to the old behaviour when one is
+		// selected: subtract it if sustain is merely holding it, else articulate over it.
+		const step = this.stepOfIndex(i)
+		let subtractedEverywhere = true
+		for (const track of this.selected) {
+			const key = noteKey(track, step)
+			const parkedOnly = this.lastSounding.has(key) && !this.lastIntent.has(key)
+			if (this.sustainOn(ctx) && parkedOnly) {
+				this.sustained.delete(key)
+				continue
+			}
+			subtractedEverywhere = false
+			if (this.lastSounding.has(key)) this.retrigger.add(key)
 		}
-		// Something is actively playing it — a loop, a chord, another finger. Articulate
-		// over the top rather than silently joining the note already in progress.
-		if (this.lastSounding.has(key)) this.retrigger.add(key)
-		this.held.add(i)
+		if (!subtractedEverywhere) this.held.add(i)
 		this.commit(ctx)
 	}
 
@@ -505,15 +560,65 @@ export class IsometricPage implements Page {
 		}
 		if (this.editingTrack !== null) {
 			// Same track closes the edit; a different one moves it. You leave edit mode
-			// before you can change which track is active — one mode at a time.
+			// before you can change the selection — one mode at a time.
 			this.editingTrack = this.editingTrack === idx ? null : idx
 			this.emitTracks(ctx)
 			return
 		}
-		if (this.activeTrack === idx) return
-		this.activeTrack = idx
+		if (ctx.modifiers.shift2) {
+			// Multi-select: add or drop this track. Something must always be selected, so a
+			// toggle that would empty the set is simply ignored.
+			if (this.selected.has(idx)) {
+				if (this.selected.size === 1) return
+				this.selected.delete(idx)
+			} else this.selected.add(idx)
+		} else {
+			if (this.selected.size === 1 && this.selected.has(idx)) return
+			this.selected = new Set([idx])
+		}
 		this.emitTracks(ctx)
 		this.commit(ctx) // sounding notes keep their old track; the next note-on moves
+	}
+
+	/** An ARP key: pick that mode, or turn the arp off by pressing the mode already lit. */
+	private arpKey(idx: number, ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) return
+		this.arp.toggle(ARP_BUTTONS[idx])
+		this.arpNote = null
+		this.arpAccMs = 0
+		this.commit(ctx) // recompute the pool before taking the first step
+		if (this.arp.isOn) this.arpStep(ctx)
+		this.emitSettings(ctx) // the button and the setting are the same control
+		this.syncTimer()
+	}
+
+	/**
+	 * One arpeggiator step. Moves the cursor over the pool built by the last commit; when
+	 * the same note comes round twice in a row (a one-note "chord", or urn drawing a repeat
+	 * across bags) it needs an explicit re-articulation, which the retrigger set provides.
+	 */
+	private arpStep(ctx: PageContext) {
+		if (!this.arp.isOn) return
+		const idx = this.arp.next(this.arpPool.length)
+		const next = idx === null ? null : this.arpPool[idx]
+		if (next !== null && next === this.arpNote) {
+			for (const track of this.selected) this.retrigger.add(noteKey(track, next))
+		}
+		this.arpNote = next
+		this.commit(ctx)
+	}
+
+	/** Musical time when the transport is running — the arp follows the same lane setting. */
+	onTick(tick: number, lane: number, ctx: PageContext) {
+		if (!this.arp.isOn || lane !== this.lane) return
+		if (this.arpDiv > 1 && tick % this.arpDiv !== 0) return
+		this.arpStep(ctx)
+	}
+
+	/** Transport start/stop flips the arp between clock and free-run; reset the phase. */
+	onClock(_state: Readonly<ClockState>, _ctx: PageContext) {
+		this.arpAccMs = 0
+		this.syncTimer()
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
@@ -553,15 +658,17 @@ export class IsometricPage implements Page {
 				f[i] = lvl
 			}
 		}
-		// Control keys on the right edge (only when a dead zone exists): faint markers.
+		// Control keys down the right edge. Shifts are faint markers that light while held;
+		// both halves of sustain light while they are holding notes.
 		if (this.hasControls()) {
-			const w = this.size.width, h = this.size.height
-			f[ledIndex(this.size, w - 1, h - 1)] = LVL_SHIFT
-			f[ledIndex(this.size, w - 1, h - 2)] = LVL_SHIFT
-		}
-		if (this.hasSustainToggle()) {
-			f[ledIndex(this.size, this.size.width - 1, SUSTAIN_TOGGLE_ROW)] =
-				this.sustainToggle ? LVL_HELD : LVL_SHIFT
+			const cx = this.size.width - 1
+			const mark = (row: number, on: boolean) => {
+				f[ledIndex(this.size, cx, row)] = on ? LVL_HELD : LVL_SHIFT
+			}
+			mark(SHIFT1_ROW, ctx.modifiers.shift1)
+			mark(SHIFT2_ROW, ctx.modifiers.shift2)
+			mark(SUSTAIN_PEDAL_ROW, this.sustainPedal)
+			mark(SUSTAIN_TOGGLE_ROW, this.sustainToggle)
 		}
 		const blinkOn = Date.now() % (BLINK_MS * 2) < BLINK_MS
 		// Loopers: blink while armed, full while looping, mid when stopped with content —
@@ -590,9 +697,14 @@ export class IsometricPage implements Page {
 			for (let idx = 0; idx < TRACK_ROWS; idx++) {
 				const lvl =
 					this.editingTrack === idx ? (blinkOn ? LVL_TRACK_EDIT : LVL_TRACK_EDIT_LO)
-					: this.activeTrack === idx ? LVL_TRACK_ON
+					: this.selected.has(idx) ? LVL_TRACK_ON
 					: LVL_TRACK_OFF
 				f[ledIndex(this.size, tx, idx)] = lvl
+			}
+			// Arpeggiators sit under the tracks: only the running mode is lit.
+			for (let idx = 0; idx < ARP_BUTTONS.length; idx++) {
+				f[ledIndex(this.size, tx, ARP_ROW_START + idx)] =
+					this.arp.mode === ARP_BUTTONS[idx] ? LVL_ARP_ON : LVL_ARP_OFF
 			}
 		}
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
@@ -639,7 +751,7 @@ export class IsometricPage implements Page {
 	 */
 	private sustainKey(ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) {
-			if (!this.sustainLatched) ctx.setShift(2, false) // plain momentary release
+			if (!this.sustainLatched) this.sustainPedal = false // plain momentary release
 			this.commit(ctx)
 			return
 		}
@@ -647,13 +759,13 @@ export class IsometricPage implements Page {
 		if (this.sustainLatched) {
 			this.sustainLatched = false
 			this.lastSustainTapAt = 0
-			ctx.setShift(2, false)
+			this.sustainPedal = false
 			this.commit(ctx)
 			return
 		}
 		if (now - this.lastSustainTapAt < DOUBLE_TAP_MS) this.sustainLatched = true
 		this.lastSustainTapAt = now
-		ctx.setShift(2, true)
+		this.sustainPedal = true
 		this.commit(ctx)
 	}
 
@@ -681,9 +793,13 @@ export class IsometricPage implements Page {
 		return this.step(i % this.size.width, Math.floor(i / this.size.width))
 	}
 
-	/** Sustain is a two-input OR: the latching toggle, or the momentary pedal. */
-	private sustainOn(ctx: PageContext): boolean {
-		return this.sustainToggle || ctx.modifiers.shift2
+	/**
+	 * Sustain is a two-input OR: the latching toggle, or the momentary pedal. The pedal used
+	 * to BE shift 2; it now has its own state so shift 2 can be a modifier (it selects
+	 * multiple tracks). One consequence: `/grid/in/shift 2` no longer sustains.
+	 */
+	private sustainOn(_ctx: PageContext): boolean {
+		return this.sustainToggle || this.sustainPedal
 	}
 
 	/**
@@ -720,7 +836,7 @@ export class IsometricPage implements Page {
 			for (const step of steps) {
 				let tracks = started.get(step)
 				if (!tracks) {
-					tracks = s === 0 ? [this.activeTrack] : tracksForLooper(s - 1, this.routes, this.activeTrack)
+					tracks = s === 0 ? [...this.selected] : tracksForLooper(s - 1, this.routes, this.selected)
 					started.set(step, tracks)
 				}
 				for (const track of tracks) intent.add(noteKey(track, step))
@@ -734,9 +850,24 @@ export class IsometricPage implements Page {
 		} else this.sustained.clear()
 		this.lastIntent = intent
 
-		// 5. RECONCILE against what Max was last told.
-		const out = new Set(intent)
+		// 5. ARP — on the SELECTED tracks only, let through the one note the arpeggiator is
+		//    currently pointing at. Everything on an unselected track passes by untouched,
+		//    so a routed looper keeps its own rhythm while your hands get arpeggiated.
+		let out = new Set(intent)
 		for (const key of this.sustained) out.add(key)
+		if (this.arp.isOn) {
+			const pool = new Set<number>()
+			for (const key of out) if (this.selected.has(trackOf(key))) pool.add(stepOf(key))
+			this.arpPool = [...pool].sort((a, b) => a - b)
+			const chosen = this.arpNote
+			const kept = new Set<number>()
+			for (const key of out) {
+				if (!this.selected.has(trackOf(key)) || stepOf(key) === chosen) kept.add(key)
+			}
+			out = kept
+		} else this.arpPool = []
+
+		// 6. RECONCILE against what Max was last told.
 		// A retrigger articulates a note that is staying on, so it needs an explicit off/on
 		// pair — a bare second note-on is undefined in MIDI.
 		for (const key of this.retrigger) {
@@ -749,6 +880,19 @@ export class IsometricPage implements Page {
 		for (const key of out) if (!this.lastSounding.has(key)) this.note(ctx, key, true)
 		for (const key of this.lastSounding) if (!out.has(key)) this.note(ctx, key, false)
 		this.lastSounding = out
+
+		// Starting a chord must not be silent while the arp waits for its next step — up to
+		// a whole arpRate of dead air, which reads as a broken keyboard. So the first note
+		// of a new pool fires immediately. arpStep() re-enters commit(), hence the guard.
+		if (!this.inArpKick && this.arp.isOn && this.arpNote === null && this.arpPool.length) {
+			this.inArpKick = true
+			try {
+				this.arpAccMs = 0
+				this.arpStep(ctx)
+			} finally {
+				this.inArpKick = false
+			}
+		}
 	}
 
 	/** The pitches currently sounding, deduped across tracks — what a chord preset saves. */
@@ -787,6 +931,7 @@ export class IsometricPage implements Page {
 		this.presetHeld.clear()
 		this.retrigger.clear()
 		this.sustainToggle = false
+		this.sustainPedal = false
 		this.commit(ctx)
 	}
 
@@ -798,7 +943,9 @@ export class IsometricPage implements Page {
 	// has to keep playing when you switch slots, the same guarantee onTick sequencers get.
 
 	private syncTimer() {
-		const needed = this.recorders.some((r) => r.isRunning)
+		// The interval also has to run for a free-running arp, not just for loopers.
+		const needed =
+			this.recorders.some((r) => r.isRunning) || (this.arp.isOn && !this.ctx?.clock.running)
 		if (needed && !this.timer) {
 			this.lastTickMs = Date.now()
 			this.timer = setInterval(() => this.onTimer(), TIMER_MS)
@@ -816,6 +963,14 @@ export class IsometricPage implements Page {
 		this.lastTickMs = nowMs
 		for (let i = 0; i < this.recorders.length; i++) {
 			this.recorders[i].advance(nowMs, dt, this.quantumMs(i))
+		}
+		// Free-run the arp only while the transport is stopped; otherwise onTick owns it.
+		if (this.arp.isOn && !ctx.clock.running) {
+			this.arpAccMs += dt
+			if (this.arpAccMs >= this.arpRate) {
+				this.arpAccMs = 0
+				this.arpStep(ctx)
+			}
 		}
 		this.commit(ctx)
 		this.syncTimer() // a recording may have hit the cap, or a loop been stopped
@@ -836,21 +991,16 @@ export class IsometricPage implements Page {
 	// Control keys live on the right edge, but only when there's a dead zone right of
 	// the keyboard (so we never steal a playing cell on a narrow grid).
 	private hasControls(): boolean {
-		return this.size.width - 1 >= this.keysW
+		return this.size.width - 1 >= this.keysW && this.size.height >= CONTROL_ROWS
 	}
-	private isShift1(x: number, y: number): boolean {
-		return this.hasControls() && x === this.size.width - 1 && y === this.size.height - 1
+	/** Any control key in the last column, by its absolute row. */
+	private isControl(x: number, y: number, row: number): boolean {
+		return this.hasControls() && x === this.size.width - 1 && y === row
 	}
-	private isShift2(x: number, y: number): boolean {
-		return this.hasControls() && x === this.size.width - 1 && y === this.size.height - 2
-	}
-	/** The toggle needs a last column tall enough to have a 5th row, and no key clash. */
-	private hasSustainToggle(): boolean {
-		return this.hasControls() && this.size.height > SUSTAIN_TOGGLE_ROW + 2
-	}
-	private isSustainToggle(x: number, y: number): boolean {
-		return this.hasSustainToggle() && x === this.size.width - 1 && y === SUSTAIN_TOGGLE_ROW
-	}
+	private isShift1 = (x: number, y: number) => this.isControl(x, y, SHIFT1_ROW)
+	private isShift2 = (x: number, y: number) => this.isControl(x, y, SHIFT2_ROW)
+	private isSustainPedal = (x: number, y: number) => this.isControl(x, y, SUSTAIN_PEDAL_ROW)
+	private isSustainToggle = (x: number, y: number) => this.isControl(x, y, SUSTAIN_TOGGLE_ROW)
 	/** Presets need a SECOND dead column, so a narrow grid simply doesn't get them. */
 	private hasPresets(): boolean {
 		return this.size.width - CHORD_COL_FROM_RIGHT >= this.keysW
@@ -873,11 +1023,20 @@ export class IsometricPage implements Page {
 
 	/** Tracks need a THIRD dead column; a narrower grid simply doesn't get them. */
 	private hasTracks(): boolean {
-		return this.size.width - TRACK_COL_FROM_RIGHT >= this.keysW && this.size.height >= TRACK_ROWS
+		return (
+			this.size.width - TRACK_COL_FROM_RIGHT >= this.keysW &&
+			this.size.height >= ARP_ROW_START + ARP_BUTTONS.length
+		)
 	}
 	private trackIndexAt(x: number, y: number): number | null {
 		if (!this.hasTracks() || x !== this.size.width - TRACK_COL_FROM_RIGHT) return null
 		return y >= 0 && y < TRACK_ROWS ? y : null
+	}
+
+	private arpIndexAt(x: number, y: number): number | null {
+		if (!this.hasTracks() || x !== this.size.width - TRACK_COL_FROM_RIGHT) return null
+		const row = y - ARP_ROW_START
+		return row >= 0 && row < ARP_BUTTONS.length && y < this.size.height ? row : null
 	}
 
 	/** Chords as a dense array (null = empty slot) — the shape Max and the web UI get. */
@@ -886,7 +1045,7 @@ export class IsometricPage implements Page {
 	}
 
 	private trackState() {
-		return { active: this.activeTrack, routes: this.routes.map((set) => [...set].sort((a, b) => a - b)) }
+		return { selected: [...this.selected].sort((a, b) => a - b), routes: this.routes.map((set) => [...set].sort((a, b) => a - b)) }
 	}
 
 	private emitTracks(ctx: PageContext) {
@@ -926,6 +1085,13 @@ export class IsometricPage implements Page {
 			this.quant[idx] = raw2 === "off" ? 0 : Number(raw2)
 			return true
 		}
+		if (key === "arp") {
+			if (!isArpMode(raw)) return false
+			this.arp.set(raw)
+			this.arpNote = null
+			this.syncTimer()
+			return true
+		}
 		if (key === "orientation") {
 			if (!isOrientation(raw)) return false
 			this.orientation = raw
@@ -938,6 +1104,8 @@ export class IsometricPage implements Page {
 		else if (key === "vertical") this.vertical = v
 		else if (key === "root") this.root = v
 		else if (key === "lane") this.lane = v
+		else if (key === "arpRate") this.arpRate = v
+		else if (key === "arpDiv") this.arpDiv = v
 		return true
 	}
 
@@ -958,6 +1126,9 @@ export class IsometricPage implements Page {
 			layout: this.layout,
 			orientation: this.orientation,
 			lane: this.lane,
+			arp: this.arp.mode as ArpMode,
+			arpRate: this.arpRate,
+			arpDiv: this.arpDiv,
 			...Object.fromEntries(
 				this.quant.map((v, i) => [`quant${i + 1}`, v === 0 ? "off" : String(v)]),
 			),
