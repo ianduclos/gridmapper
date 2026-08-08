@@ -252,8 +252,14 @@ src/
                          + press adds/drops, never empty. Live notes AND unrouted loopers
                          fan out to every selected track.
                          ARPS (col 14 rows 4-7: ascending/descending/palindrome/urn, one at
-                         a time, press the lit one to stop) sit AFTER sustain and act only
-                         on SELECTED tracks — a looper routed elsewhere keeps its rhythm.
+                         a time, press the lit one to stop) sit AFTER sustain but GATE only
+                         notes from your HANDS that sustain isn't already holding. A
+                         SUSTAINED note wins over the arp: the pad keeps ringing and the arp
+                         ACCENTS within it (off/on pair), so toggling the arp over a held
+                         chord is silent. Looper playback is never gated (a loop keeps its
+                         rhythm), and the pool spans ALL tracks — selection deliberately does
+                         not scope it, or switching instrument mid-arpeggio would empty the
+                         pool and stop the arp.
                          The record tap is upstream, so loopers capture what you PLAYED. The
                          arp never plays the same note twice in a row, so growing a chord
                          doesn't replay the note underneath.

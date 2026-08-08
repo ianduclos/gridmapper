@@ -1145,7 +1145,7 @@ describe("isometric arpeggiator", () => {
 		expect(notes().slice(before).map((m) => m.args)).toEqual([[3, 0, 0], [3, 1, 0]])
 	})
 
-	it("only touches SELECTED tracks — a routed looper keeps its own rhythm", () => {
+	it("never gates looper playback — a loop keeps its own rhythm", () => {
 		const { p, ctx, notes, modifiers } = page()
 		// Record a loop and pin it to track 1, then select only track 0 and arp.
 		tap(p, ctx, REC(0))
@@ -1199,6 +1199,69 @@ describe("isometric arpeggiator", () => {
 		tap(p, ctx, ARP(0))
 		const rootAfter = at(p.render(ctx), 0, H - 1)
 		expect(rootAfter).toBeLessThan(rootBefore) // background stepped down
+	})
+
+	it("does not gate a SUSTAINED chord — the pad keeps ringing", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		tap(p, ctx, ARP(0)) // switching the arp ON must not cut the pad
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+		stepArp(2)
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7])) // still all three
+	})
+
+	it("accents the pad instead of thinning it — off/on pairs, not note-offs", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, ARP(0))
+		const before = notes().length
+		stepArp(1)
+		const msgs = notes().slice(before).map((m) => m.args)
+		// One note re-articulated: an off immediately followed by its on.
+		expect(msgs).toHaveLength(2)
+		expect(msgs[0][1]).toBe(0)
+		expect(msgs[1][1]).toBe(1)
+		expect(msgs[0][0]).toBe(msgs[1][0])
+	})
+
+	it("turning the arp OFF under sustain is silent — no re-attack", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, ARP(0))
+		stepArp(2)
+		const before = notes().length
+		tap(p, ctx, ARP(0)) // off
+		expect(notes().length).toBe(before) // nothing fired
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+	})
+
+	it("switching tracks mid-arpeggio does not stop it", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, TOGGLE)
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx)
+		tap(p, ctx, ARP(0))
+		stepArp(1)
+		tap(p, ctx, TRACK(2)) // the chord lives on track 0; the pool must not empty
+		const before = notes().length
+		stepArp(2)
+		expect(notes().length).toBeGreaterThan(before) // still accenting
+		expect(soundingFrom(notes)).toEqual(new Set([0, 4, 7]))
+	})
+
+	it("still thins normally when sustain is OFF", () => {
+		const { p, ctx, notes } = page()
+		tap(p, ctx, ARP(0))
+		holdChord(p, ctx, [0, 4, 7]) // fingers down, no pedal
+		stepArp(1)
+		expect(soundingFrom(notes).size).toBe(1)
 	})
 
 	it("saves the WHOLE chord to a preset while arpeggiating", () => {

@@ -75,8 +75,15 @@
  * ARPEGGIATORS (column 14, rows 4-7: ascending · descending · palindrome · urn) turn the
  * held chord into one note at a time — see util/arpeggiator.ts. One at a time; pressing the
  * lit one turns it off; it never plays the same note twice in a row, so building a chord
- * finger by finger doesn't replay the note underneath. It sits AFTER sustain, and acts only
- * on the SELECTED tracks, so a
+ * finger by finger doesn't replay the note underneath.
+ *
+ * What it GATES is narrow, and deliberately so: only notes coming from your HANDS that
+ * sustain is not already holding. A SUSTAINED note wins over the arp — the pad keeps
+ * ringing and the arp ACCENTS within it (an off/on pair on the chosen note), which is why
+ * switching the arp on or off over a held chord makes no sound at all. Looper playback is
+ * never gated either, so a loop keeps the rhythm it recorded. And the pool spans every
+ * track rather than the selected ones, so changing instrument mid-arpeggio doesn't empty
+ * it and stop the arp dead. So a
  * looper routed elsewhere keeps its own rhythm while your hands get arpeggiated. The record
  * tap is upstream of it, so loopers still capture what you PLAYED. Timing is hybrid: the
  * `lane` clock (divided by `arpDiv`) while the transport runs, and a free `arpRate` in ms
@@ -662,8 +669,11 @@ export class IsometricPage implements Page {
 	private arpStep(ctx: PageContext) {
 		if (!this.arp.isOn) return
 		const next = this.arp.next(this.arpPool)
-		if (next !== null && next === this.arpNote) {
-			for (const track of this.selected) this.retrigger.add(noteKey(track, next))
+		// Anything already ringing at that pitch has to be ARTICULATED again, wherever it is
+		// sounding: under sustain the note never stopped, so without this the arp would be
+		// silent over a pad. Also covers a one-note pool repeating itself.
+		if (next !== null) {
+			for (const key of this.lastSounding) if (stepOf(key) === next) this.retrigger.add(key)
 		}
 		this.arpNote = next
 		this.commit(ctx)
@@ -912,6 +922,7 @@ export class IsometricPage implements Page {
 		//    on. Loopers never tap each other, so a loop can't record itself into a pile.
 		const sources = [live, ...this.recorders.map((r) => r.sounding)]
 		const intent = new Set<number>()
+		const liveKeys = new Set<number>() // intent from your HANDS — the only thing the arp gates
 		for (let s = 0; s < sources.length; s++) {
 			const steps = sources[s]
 			const started = (this.srcTracks[s] ??= new Map())
@@ -931,7 +942,10 @@ export class IsometricPage implements Page {
 						if (this.lastSounding.has(key)) this.retrigger.add(key)
 					}
 				}
-				for (const track of tracks) intent.add(noteKey(track, step))
+				for (const track of tracks) {
+					intent.add(noteKey(track, step))
+					if (s === 0) liveKeys.add(noteKey(track, step))
+				}
 			}
 		}
 
@@ -950,17 +964,30 @@ export class IsometricPage implements Page {
 		// Snapshot the chord for the display BEFORE the arp thins it to one note.
 		this.litSteps = new Set([...out].map(stepOf))
 		if (this.arp.isOn) {
+			// The pool is the chord you are playing or holding, on WHATEVER track those notes
+			// live — selection deliberately does not scope it, so switching instruments
+			// mid-arpeggio doesn't empty the pool and stop the arp dead.
 			const pool = new Set<number>()
-			for (const key of out) if (this.selected.has(trackOf(key))) pool.add(stepOf(key))
+			for (const key of out) if (liveKeys.has(key) || this.sustained.has(key)) pool.add(stepOf(key))
 			this.arpPool = [...pool].sort((a, b) => a - b)
+
+			// Only LIVE, un-sustained notes are gated down to one at a time. A sustained note
+			// is the pedal's tail and wins over the arp, so the pad keeps ringing and the arp
+			// ACCENTS within it (see arpStep) — which is why switching the arp on or off is
+			// audibly seamless. Looper playback is never gated either: a loop keeps the
+			// rhythm it recorded.
 			const chosen = this.arpNote
 			const kept = new Set<number>()
 			for (const key of out) {
-				if (!this.selected.has(trackOf(key)) || stepOf(key) === chosen) kept.add(key)
+				const gated = liveKeys.has(key) && !this.sustained.has(key)
+				if (!gated || stepOf(key) === chosen) kept.add(key)
 			}
 			out = kept
-		} else this.arpPool = []
-		this.voicedSteps = new Set([...out].map(stepOf))
+			this.voicedSteps = this.arpNote === null ? new Set() : new Set([this.arpNote])
+		} else {
+			this.arpPool = []
+			this.voicedSteps = new Set([...out].map(stepOf))
+		}
 
 		// 6. RECONCILE against what Max was last told.
 		// A retrigger articulates a note that is staying on, so it needs an explicit off/on
