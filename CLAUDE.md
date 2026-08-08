@@ -201,7 +201,11 @@ src/
                          layout=chromatic highlights the scale;
                          layout=folded makes one key = one SCALE DEGREE but still emits a
                          chromatic step, so Max's map never changes. Unison lighting shows
-                         every cell playing a SOUNDING note. Notes are tracked by STEP and
+                         every cell in the sounding CHORD (held + sustained, pooled across
+                         ALL tracks — the display works in bare steps, never packed keys);
+                         while the arp runs the note it is voicing overlays BRIGHTER, so a
+                         sustained chord stays readable and you can see what a chord preset
+                         would capture mid-arpeggio. Notes are tracked by STEP and
                          reconciled, so twins send ONE note-on and a note lasts until the
                          last source lets go. Col 15: row 4 = sustain TOGGLE (latching),
                          row 6 = shift 2 = sustain pedal (DOUBLE-TAP to latch), row 7 =

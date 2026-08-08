@@ -6,7 +6,9 @@
  *           TAXONOMY — cols 0-12 KEYBOARD; col 13 CHORDS (8 presets); col 14
  *           rows 0-3 TRACKS (outputs) + rows 4-7 ARPS; col 15 rows 0-3 LOOPERS,
  *           row 4 SUSTAIN TOGGLE, row 5 SUSTAIN PEDAL, row 6 SHIFT 2, row 7 SHIFT 1.
- * Display : out-of-scale 1, in-scale 3, root 8, SOUNDING 12, finger-down 15.
+ * Display : out-of-scale 1, in-scale 3, root 8, in the CHORD 12, finger-down 15, and —
+ *           while the arp runs — the note it is voicing right now 15 on top, so the
+ *           sustained chord stays readable underneath it.
  *           Chords: empty 1, loaded 6, playing 15 (+2/+3 while armed to save).
  *           Loopers: empty 1, blinking while armed, 6 stopped, 15 looping.
  *           Tracks + arps: idle levels RAMP down each group (1,2,3,4) so a row of options
@@ -162,6 +164,7 @@ const LVL_NORMAL = 3 // in scale
 const LVL_ROOT = 8 // octave / scale root
 const LVL_UNISON = 12 // the note is SOUNDING — lit at every cell that plays it
 const LVL_HELD = 15 // this exact cell is under a finger
+const LVL_ARP_VOICE = 15 // the note the arpeggiator is voicing this step
 const LVL_SHIFT = 1 // control keys are faint markers
 
 // Chord preset column. "armed" = the sustain toggle is on, so a press SAVES rather
@@ -367,6 +370,16 @@ export class IsometricPage implements Page {
 	private arpPool: number[] = [] // distinct steps sounding on selected tracks, ascending
 	private arpNote: number | null = null // the step it is currently letting through
 	private arpAccMs = 0 // free-run accumulator, used only while the transport is stopped
+	/**
+	 * Display sets, as bare STEPS (not packed keys) and pooled across every track, because
+	 * a cell lights if ANY track is playing its note.
+	 *   litSteps    — the whole chord: held + sustained, BEFORE the arp thins it.
+	 *   voicedSteps — what is actually sounding right now, after the arp.
+	 * Keeping both is what lets a sustained chord stay visible while the arp walks it, so
+	 * you can still see what a chord preset would capture.
+	 */
+	private litSteps = new Set<number>()
+	private voicedSteps = new Set<number>()
 	/** When each track last received a note-on, for the activity pulse in render(). */
 	private trackPulseAt = new Array<number>(TRACK_ROWS).fill(0)
 	private inArpKick = false // guards the "first note of a new chord" re-entry below
@@ -676,18 +689,20 @@ export class IsometricPage implements Page {
 		// Sustain can also fall because an OSC shift dropped, which never reaches onKey.
 		this.commit(ctx)
 
-		// A note is lit at EVERY cell that plays it — on an isomorphic layout that shows
-		// the shape you're playing — and the cells actually under a finger burn brighter.
-		const sounding = this.lastSounding
-
+		// A note is lit at EVERY cell that plays it — on an isomorphic layout that shows the
+		// shape you're playing. Three tiers: the chord you are holding or sustaining, the
+		// cells under a finger, and — while the arp runs — the note it is voicing right now
+		// on top. The chord staying visible under the arp is what lets you see what a chord
+		// preset would capture while it plays.
 		const f = makeFrame(this.size)
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = 0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
 				const step = this.step(x, y)
 				let lvl = this.baseLevel(step)
-				if (sounding.has(step)) lvl = LVL_UNISON
+				if (this.litSteps.has(step)) lvl = LVL_UNISON
 				if (this.held.has(i)) lvl = LVL_HELD
+				if (this.arp.isOn && this.voicedSteps.has(step)) lvl = LVL_ARP_VOICE
 				f[i] = lvl
 			}
 		}
@@ -911,6 +926,8 @@ export class IsometricPage implements Page {
 		//    so a routed looper keeps its own rhythm while your hands get arpeggiated.
 		let out = new Set(intent)
 		for (const key of this.sustained) out.add(key)
+		// Snapshot the chord for the display BEFORE the arp thins it to one note.
+		this.litSteps = new Set([...out].map(stepOf))
 		if (this.arp.isOn) {
 			const pool = new Set<number>()
 			for (const key of out) if (this.selected.has(trackOf(key))) pool.add(stepOf(key))
@@ -922,6 +939,7 @@ export class IsometricPage implements Page {
 			}
 			out = kept
 		} else this.arpPool = []
+		this.voicedSteps = new Set([...out].map(stepOf))
 
 		// 6. RECONCILE against what Max was last told.
 		// A retrigger articulates a note that is staying on, so it needs an explicit off/on

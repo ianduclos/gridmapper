@@ -830,6 +830,17 @@ describe("isometric tracks", () => {
 		expect(st).toEqual({ selected: [1], routes: [[], [], [], []] })
 	})
 
+	it("notes light up on ANY track, not just track 0", () => {
+		// The display compared a bare step against packed (track, step) keys. noteKey(0, s)
+		// happens to equal s, so this only ever worked on the first track.
+		const { p, ctx } = page()
+		tap(p, ctx, TRACK(2))
+		p.onKey({ x: 5, y: H - 1, s: 1 }, ctx) // step 5
+		const f = p.render(ctx)
+		expect(at(f, 5, H - 1)).toBe(15) // the cell under the finger
+		expect(at(f, 0, H - 2)).toBe(12) // step 5's twin, one row up at vertical 5
+	})
+
 	it("a note-on pulses its track's LED briefly", () => {
 		vi.useFakeTimers()
 		try {
@@ -1160,6 +1171,21 @@ describe("isometric arpeggiator", () => {
 		expect(after.filter((m) => m.args[2] === 0).length).toBeGreaterThan(1)
 		// And only ever one note at a time on the arpeggiated track.
 		expect([...soundingTracked(notes)].filter((k) => k.endsWith("@0"))).toHaveLength(1)
+	})
+
+	it("the sustained chord stays lit while the arp walks it", () => {
+		const { p, ctx } = page()
+		tap(p, ctx, TOGGLE) // sustain toggle on
+		holdChord(p, ctx, [0, 4, 7])
+		for (const x of [0, 4, 7]) p.onKey({ x, y: H - 1, s: 0 }, ctx) // hands off, still ringing
+		tap(p, ctx, ARP(0))
+		stepArp(1)
+		const f = p.render(ctx)
+		const levels = [0, 4, 7].map((x) => at(f, x, H - 1))
+		// Every chord member is visible ...
+		expect(levels.every((l) => l >= 12)).toBe(true)
+		// ... and exactly one of them is the brighter note the arp is voicing.
+		expect(levels.filter((l) => l === 15)).toHaveLength(1)
 	})
 
 	it("the arp setting and the buttons are the same control", () => {
