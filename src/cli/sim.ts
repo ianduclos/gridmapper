@@ -17,10 +17,12 @@ import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
-import { createOscRouter } from "../core/oscRouter.js"
+import { createOscRouter, type ControlOrigin } from "../core/oscRouter.js"
+import { createPresetStore } from "../core/presetStore.js"
+import { applySystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
-import { pageFactory, PAGE_TYPES, DEFAULT_PAGE, pageSettings } from "../pages/registry.js"
+import { PAGE_TYPES, DEFAULT_PAGE, pageSettings } from "../pages/registry.js"
 import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel } from "../core/types.js"
 
 const PORT = Number(process.env.GRID_UI_PORT ?? 57191) // 57190 is twistermapper's UI
@@ -58,8 +60,10 @@ const conn = new GridConnection({
 const grid = conn.grid
 const { width: w, height: h } = grid.size
 
-// --- 8 page slots, all Base by default ---
+// --- 8 page slots. The layout comes from configs/slots.json (the last preset loaded or
+// saved); with no such file every slot is the default page, as before. ---
 const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
+const presets = createPresetStore()
 
 // Static settings specs per page type (for the web panel to render controls).
 const SPECS_MAP = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageSettings(n)]))
@@ -68,11 +72,12 @@ const SPECS_MAP = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageSettings(n)])
 let broadcastLeds: (levels: Uint8Array) => void = () => {}
 // routeControl is wired up below, once pm/shift/emitOut exist; both the web socket and
 // the Max OSC link call through this indirection so setup order doesn't matter.
-let routeControl: (path: string, args: any[]) => void = () => {}
+let routeControl: (path: string, args: any[], origin?: ControlOrigin) => void = () => {}
 const server = createGridServer({
 	port: PORT,
 	staticFile: UI_INDEX,
-	onMessage: (path, args) => routeControl(path, args),
+	// origin "ui": a settings write from the panel is NOT echo-suppressed, so Max hears it.
+	onMessage: (path, args) => routeControl(path, args, "ui"),
 	onConnect: (send) => {
 		rt?.idle.activity() // someone opened the UI
 		send("/grid/out/device", [grid.id, w, h])
@@ -81,8 +86,9 @@ const server = createGridServer({
 		send("/grid/out/pagespecs", [JSON.stringify(SPECS_MAP)])
 		send("/grid/out/focus/page", [slotLabel(pm.focusedSlot)])
 		send("/grid/out/slots", slotPages)
-		// Transport + power + persisted settings, so a late-joining panel is in sync.
+		// Transport + power + persisted settings + presets, so a late-joining panel is in sync.
 		for (const m of rt?.snapshot() ?? []) send(m.path, m.args)
+		for (const m of presets.state()) send(m.path, m.args)
 		// Per-slot current settings, so a late-joining panel reflects live state.
 		for (const slot of SLOT_INDICES) {
 			const s = pm.serialize(slot)
@@ -100,12 +106,21 @@ const broadcastDevice = () => server.broadcast("/grid/out/device", [grid.id, w, 
 // Ports come from configs/settings.json → osc (read once at boot; see core/settings.ts).
 const settings = loadSettings()
 const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc.outPort })
+// Echo discipline: while an OSC-originated settings write is dispatched, the page's
+// /settings reply is kept off the UDP wire so a patch that sends and listens can't feed
+// back on itself — but the web UI still gets it, because it isn't what sent the message.
+// The router decides when; this decides how (see core/oscRouter.ts).
+let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
-	osc.send(path, ...args)
+	if (!suppressOscEcho) osc.send(path, ...args)
 	server.broadcast(path, args)
 }
+const withOscEchoSuppressed = (fn: () => void) => {
+	suppressOscEcho = true
+	try { fn() } finally { suppressOscEcho = false }
+}
 osc.send("/grid/out/hello")
-osc.onMessage((path, args) => routeControl(path, args))
+osc.onMessage((path, args) => routeControl(path, args, "osc"))
 
 // --- App stack ---
 const rec = new LedReconciler(grid)
@@ -178,9 +193,13 @@ routeControl = createOscRouter({
 	clock: rt.clock,
 	idle: rt.idle,
 	settings: rt.settings,
+	presets,
+	withOscEchoSuppressed,
 })
 
-for (const slot of SLOT_INDICES) pm.load(slot, pageFactory(slotPages[slot])!)
+// Boot into the persisted layout through the SAME sanitize→factory path a live preset
+// load uses (core/systemConfig.ts), so an unknown page name degrades identically.
+applySystemConfig(presets.active(), { pm, slotPages })
 pm.focus(0 as Slot)
 needsFullPaint = true
 renderLoop.start()

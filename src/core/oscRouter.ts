@@ -17,7 +17,32 @@ import type { ShiftInput } from "./shiftInput.js"
 import { type AppClock, isLane } from "./clock.js"
 import type { IdleManager } from "./idleManager.js"
 import type { SettingsStore } from "./settings.js"
-import { isPageType, pageFactory } from "../pages/registry.js"
+import type { PresetStore } from "./presetStore.js"
+import { isValidPresetName } from "./presetStore.js"
+import {
+	applySystemConfig,
+	captureSystemConfig,
+	withSlotPage,
+	type SystemConfigTarget,
+} from "./systemConfig.js"
+import { isPageType } from "../pages/registry.js"
+
+/**
+ * Where a control message came from. The two differ in exactly one way: an OSC-originated
+ * SETTINGS WRITE has its reply kept off the OSC wire (see withOscEchoSuppressed).
+ */
+export type ControlOrigin = "osc" | "ui"
+
+/**
+ * A page-relative settings WRITE: /setting/<key> <value> or /setting/<key>/<value>
+ * (plural tolerated, as the pages themselves do). `/settings/get` is excluded — it is a
+ * request FOR a reply, so suppressing that one would break the re-sync path.
+ *
+ * Deliberately narrow. Pages also tolerate a terse `/<key> <value>`, but blanket-matching
+ * one path segment would swallow every other page route a patch might send; the canonical
+ * form above is the one with echo discipline, and the handshake doc says so.
+ */
+const SETTING_WRITE_PATTERN = /^\/settings?\/(?!get$)[^/]+(?:\/[^/]+)?$/
 
 export interface OscRouterOpts {
 	pm: PageManager
@@ -36,17 +61,50 @@ export interface OscRouterOpts {
 	idle?: IdleManager
 	/** Live, persisted app settings (/grid/in/settings/<section>/<key>). */
 	settings?: SettingsStore
+	/** Named presets + the persisted live layout. Omit and /grid/in/preset/* is inert. */
+	presets?: PresetStore
+	/**
+	 * Run `fn` with page output kept OFF the OSC wire — the web UI (if any) must still
+	 * receive it. Only the caller knows how its transports are wired, so only the caller
+	 * can do this; the router just says when. Default: no suppression.
+	 */
+	withOscEchoSuppressed?: (fn: () => void) => void
 }
 
-/** Build the `(path, args) => void` router. Unknown paths are ignored, not thrown. */
-export function createOscRouter(opts: OscRouterOpts): (path: string, args: any[]) => void {
-	const { pm, shift, reconnect, onKey, emit, slotPages, clock, idle, settings } = opts
+/**
+ * Build the `(path, args, origin?) => void` router. Unknown paths are ignored, not thrown.
+ * `origin` defaults to "osc", which is the conservative choice: it is the only origin that
+ * gets its settings echo suppressed, so a caller that forgets to pass one can't feed back.
+ */
+export function createOscRouter(
+	opts: OscRouterOpts
+): (path: string, args: any[], origin?: ControlOrigin) => void {
+	const { pm, shift, reconnect, onKey, emit, slotPages, clock, idle, settings, presets } = opts
+	const withOscEchoSuppressed = opts.withOscEchoSuppressed ?? ((fn: () => void) => fn())
+
+	// What systemConfig needs to load pages and read them back. slotPages is shared by
+	// reference with the caller (the web UI's slot chips read the same array).
+	const target: SystemConfigTarget = { pm, slotPages }
+
+	const emitPresetState = () => {
+		if (!presets) return
+		for (const m of presets.state()) emit(m.path, ...m.args)
+	}
 
 	const truthy = (v: unknown) => v === true || v === "true" || Number(v) > 0
 
-	return function routeControl(path: string, args: any[]) {
+	return function routeControl(path: string, args: any[], origin: ControlOrigin = "osc") {
 		// Anything arriving here is input: it keeps the app awake / wakes it up.
 		idle?.activity()
+
+		// /grid/in/ping <token> → /grid/out/pong <token>, echoed verbatim. The liveness
+		// check a Max patch opens with: gridmapper announces /grid/out/hello once at boot
+		// and nothing after, so a patch opened later has no broadcast to wait on and must
+		// initiate. Distinct from /grid/in/heartbeat below, which answers nothing.
+		if (path === "/grid/in/ping") {
+			emit("/grid/out/pong", ...args)
+			return
+		}
 
 		if (path === "/grid/in/key") {
 			const [x, y, s] = args.map((n: any) => Number(n))
@@ -129,19 +187,88 @@ export function createOscRouter(opts: OscRouterOpts): (path: string, args: any[]
 		if (slotPageMatch) {
 			const slot = slotFromLabel(slotPageMatch[1])
 			const name = args[0]
-			const factory = isPageType(name) ? pageFactory(name) : undefined
-			if (slot !== undefined && factory) {
-				slotPages[slot] = name
-				pm.load(slot, factory) // load() into the focused slot also fires onFrame(..., "focus")
+			if (slot !== undefined && isPageType(name)) {
+				// Rebuild ONLY this slot, so the other seven keep their live runtime state.
+				// load() into the focused slot also fires onFrame(..., "focus").
+				applySystemConfig(withSlotPage(captureSystemConfig(target), slot, name), target, [slot])
 				emit("/grid/out/slots", ...slotPages)
+				// The layout no longer matches any saved preset, so the marker is cleared
+				// (and the new layout persisted) — the rule twistermapper follows for a
+				// single-slot edit. Only announce the clear if there was a name to lose.
+				if (presets) {
+					const hadName = presets.activeName() !== null
+					presets.setActive(captureSystemConfig(target), null)
+					if (hadName) emit("/grid/out/preset/active", "")
+				}
 			}
 			return
 		}
+
+		// --- presets (core/presetStore.ts) ---------------------------------------------
+		// /grid/out/preset/active is the boot handshake's COMPLETION SIGNAL: it is emitted
+		// only after every slot's page has been built and has announced itself, so a patch
+		// that waits for it knows the whole interface exists. "" means no preset is active
+		// — a failed load, or a layout edited since it was loaded.
+		if (path === "/grid/in/preset/list") {
+			emitPresetState()
+			return
+		}
+		if (path === "/grid/in/preset/load") {
+			if (!presets) return
+			const name = args[0]
+			const cfg = isValidPresetName(name) ? presets.read(name) : null
+			if (!cfg) {
+				console.warn(`[Presets] Load failed: "${String(name)}"`)
+				emit("/grid/out/preset/active", "")
+				return
+			}
+			applySystemConfig(cfg, target) // every slot; pages announce from init()
+			emit("/grid/out/slots", ...slotPages)
+			presets.setActive(cfg, name)
+			emit("/grid/out/preset/active", name)
+			return
+		}
+		if (path === "/grid/in/preset/save") {
+			if (!presets) return
+			const name = args[0]
+			if (!isValidPresetName(name)) return
+			// Capture the LIVE layout, not the last-loaded one: save means "keep what I've
+			// got". The saved file becomes the active preset.
+			const cfg = captureSystemConfig(target)
+			if (!presets.write(name, cfg)) return
+			presets.setActive(cfg, name)
+			emitPresetState()
+			return
+		}
+		if (path === "/grid/in/preset/delete") {
+			if (!presets) return
+			const name = args[0]
+			if (!isValidPresetName(name) || !presets.remove(name)) return
+			// Deleting the preset you are running doesn't change the running layout, only
+			// where it came from.
+			if (presets.activeName() === name) presets.setActive(presets.active(), null)
+			emitPresetState()
+			return
+		}
+
 		// /grid/in/page/<a..h>/<rest> → page.onOsc. e.g. /grid/in/page/a/setting/npo 7.
 		const pageMatch = path.match(/^\/grid\/in\/page\/([a-hA-H])\/(.+)$/)
 		if (pageMatch) {
 			const slot = slotFromLabel(pageMatch[1])
-			if (slot !== undefined) pm.routeOscToPage(slot, `/${pageMatch[2]}`, args)
+			if (slot === undefined) return
+			const sub = `/${pageMatch[2]}`
+			// A settings write that arrived over OSC must not echo back to OSC: the page
+			// re-emits /grid/out/page/<slot>/settings on every accepted write, and a patch
+			// that both sends settings and listens for them would feed back on itself. The
+			// web UI still sees it (it isn't what sent the message), and a write from the
+			// web UI still reaches Max. Only this one route is treated this way — the
+			// notes, chords and patterns a page emits during the same dispatch are real
+			// output and go out normally.
+			if (origin === "osc" && SETTING_WRITE_PATTERN.test(sub)) {
+				withOscEchoSuppressed(() => pm.routeOscToPage(slot, sub, args))
+			} else {
+				pm.routeOscToPage(slot, sub, args)
+			}
 			return
 		}
 	}

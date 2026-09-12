@@ -89,6 +89,14 @@ twister's `/twister/...` vocabulary:
   from Max or `0..7` from the web panel); the page's `onOsc` also tolerates the terse
   `/<key> <value>` and value-in-path `/<key>/<value>`, plus `/settings/get`. The page
   clamps via its specs, stores, and re-echoes. `serialize()` returns the same values.
+  **Echo discipline:** a settings write that arrived over **OSC** does NOT get its
+  `/settings` reply on the OSC wire — a patch that both sends and listens would feed back
+  on itself. The web UI still sees it (it isn't the sender), and a write FROM the web UI
+  still reaches Max. `createOscRouter` takes an `origin: "osc" | "ui"` and the host owns
+  the mute (`withOscEchoSuppressed` in both entry points). Only the canonical
+  `/setting/<key>` form (plus `/setting/<key>/<value>` and the plural) is treated this
+  way — `/settings/get` always replies, and so does the terse `/<key> <value>` form.
+  Note the asymmetry with twistermapper, where the suppressed route is a value set.
 - **Shifts (implemented, receive-only).** Two app-defined shift buttons live OUTSIDE the
   pages. In: `/grid/in/shift <which:1|2> <state:1|0>`. The grid does **not** echo shift —
   it only alters internal behavior. Debounce = **leading-edge lockout** (`core/shiftInput.ts`,
@@ -99,8 +107,27 @@ twister's `/twister/...` vocabulary:
   getters over the one `ShiftInput`); "both held" is the page's call (potential third
   shift). Wired in both the sim and the daemon; a future LOCAL source calls `shift.set()`
   for identical behavior.
-- `/grid/in/focus/page <a..h>`; `/grid/in/slot/<a..h>/page <PageName>`;
-  preset save/load/list/delete.
+- `/grid/in/focus/page <a..h>`; `/grid/in/slot/<a..h>/page <PageName>` (rebuilds ONE
+  slot; the other seven keep their live state) → `/grid/out/slots <8 names>`.
+- **Liveness (implemented).** `/grid/in/ping <token>` → `/grid/out/pong <token>`, echoed
+  verbatim. gridmapper announces `/grid/out/hello` + a snapshot once at ITS boot and
+  nothing after, so a patch opened later must initiate. Distinct from the inert
+  `/grid/in/heartbeat` (below) — that one deliberately answers nothing.
+- **Presets (implemented).** `core/systemConfig.ts` (sanitize → page factory, shared by
+  boot and live apply, over `pages/registry.ts` — an unknown page name degrades to
+  `DEFAULT_PAGE` instead of throwing) + `core/presetStore.ts` (one JSON file per preset
+  under `configs/presets/`, names `[A-Za-z0-9 _-]{1,48}`, write+rename like
+  `settings.ts`). In: `/grid/in/preset/{list,save,load,delete} [name]`. Out:
+  `/grid/out/preset/list <names…>` · `/grid/out/preset/active <name|"">`.
+  A preset holds the LAYOUT (slot→page) plus each page's `serialize()`; the config is
+  written and carried but **not yet replayed** — `Page.restore?()` is the next pass.
+  `configs/slots.json` is the LIVE layout + an `activePreset` marker, written on load /
+  save / slot change and booted into next start (no file → every slot `DEFAULT_PAGE`, as
+  before). A slot change clears the marker and emits `/grid/out/preset/active ""`.
+- **`/grid/out/preset/active` is the boot handshake's COMPLETION SIGNAL** — emitted only
+  after every slot's page is built and has announced. `""` = no preset active (a failed
+  load, or a layout edited since). See `docs/max-handshake.md` for the phase-by-phase
+  contract a Max patch follows.
 - **Transport (implemented).** One app clock, **off at boot**, ticking every loaded page
   (not just the focused one) — see `core/clock.ts`.
   In: `/grid/in/clock/run <0|1>` · `/grid/in/clock/tick [lane]` (one manual step; drives an
@@ -124,10 +151,12 @@ twister's `/twister/...` vocabulary:
   atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`
   and `idle.*` are live; `osc.*` stays **boot-only** (the UDP socket binds once). The
   clock's RUN state is deliberately not persisted — it always boots stopped.
-- The **handshake**: on connect the daemon emits a state snapshot (focus, each
-  slot's page type, presets, settings); Max sends a SystemConfig to set the
-  interface per patch. (This is the twister's `systemConfig`/`presetStore` channel,
-  ported.)
+- The **handshake (implemented)**: at boot the daemon emits `/grid/out/hello` + a
+  snapshot (clock, idle, settings, preset list + active); on web connect the sim sends
+  the same plus focus, slots, pagetypes/specs and each slot's settings. A patch opened
+  later gets none of that and drives the sequence itself: ping → preset load → wait for
+  `/grid/out/preset/active` → push settings. Written up in `docs/max-handshake.md`
+  (mirrors `../twistermapper/docs/max-handshake.md`).
 
 The web visualizer uses the same `{ path, args }` JSON shape over WebSocket, so the
 UI and OSC share one vocabulary (see `io/gridServer.ts`).
@@ -165,7 +194,13 @@ src/
                          the serialosc gotchas live here. Used by sim AND daemon.
   core/shiftInput.ts     two shift buttons, leading-edge lockout debounce (ctx.modifiers)
   core/oscRouter.ts      the ONE control-routing dialect (key/connect/shift/focus/slot/
-                         page-osc/clock/settings/wake), shared by sim.ts and index.ts
+                         page-osc/clock/settings/presets/ping/wake), shared by sim.ts and
+                         index.ts. Takes an `origin` ("osc" | "ui") — see echo discipline.
+  core/systemConfig.ts   the layout as DATA: sanitize raw JSON → SystemConfig, and one
+                         slot config → a page factory. Shared by boot and live preset
+                         apply, so both validate identically. No I/O, no emission.
+  core/presetStore.ts    configs/presets/<name>.json + configs/slots.json (the live
+                         layout + activePreset marker). Atomic write+rename, safe names.
   core/clock.ts          AppClock — the ONE transport, in FOUR LANES (0-3). Each lane is
                          internal (a divisor of the drift-compensated master timer) or
                          external (one step per OSC message). OFF at boot. Every lane ticks
@@ -347,7 +382,7 @@ page's `render()` every frame, so pages animate by reading a clock — no timers
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
 are skipped by the loader. **Sequencers take musical time from the app clock**
 (`onTick`/`onClock`), never from frames — that's what lets them run in an unfocused slot.
-164 unit tests pass.
+331 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
@@ -361,13 +396,23 @@ duplicated this logic by hand.
   Screensaver animates the physical grid (≈30fps through the quadrant reconciler);
   device id + slot/page state reflected in the web UI.
 - Note: `PageManager.load()` calls `onFocus()` when loading into the focused slot, so
-  focus-driven timers (animations) start on a live page swap.
+  focus-driven timers (animations) start on a live page swap. (Pages announce from both
+  `init()` and `onFocus()`, so a load into the focused slot announces twice — harmless,
+  and `docs/max-handshake.md` tells a patch to expect it.)
+- Max boot handshake: `/grid/in/ping` → `/grid/out/pong`, the preset layer
+  (`core/systemConfig.ts` + `core/presetStore.ts`, `/grid/in/preset/{list,save,load,
+  delete}`), `/grid/out/preset/active` as the completion signal, and OSC-echo suppression
+  on settings writes. Smoke-tested end-to-end over real UDP against a NullGrid daemon;
+  **not yet exercised from a Max patch on hardware.**
 
 **Not yet built (continuing toward the full multimodal interface):**
 - More page prototypes (grid equivalents of StepSeq / XY / etc.) + a Main-style
   overlay for page focus.
-- `systemConfig` + `presetStore` and the full `/grid/in` ↔ `/grid/out` Max handshake
-  (state snapshot on connect, per-patch interface config).
+- `Page.restore?(config)` — the inverse of `serialize()`, so a preset load puts each
+  page's own state back instead of only its slot→page layout. The `systemConfig` /
+  `presetStore` / ping / completion-signal half is BUILT (`docs/max-handshake.md`); this
+  is the remaining, more interesting half. Must be defensive about shape (a preset
+  written by an older build can't throw) and must not resurrect transient runtime state.
 - Single-instance guard. (**Hotplug now lives in `io/gridConnection.ts` and is used by
   BOTH the sim and the daemon** — start on a NullGrid, swap in the real grid via
   `MirrorGrid` when serialosc reports one, poll discovery **only while disconnected**,

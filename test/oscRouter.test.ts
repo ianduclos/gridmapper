@@ -7,6 +7,7 @@ import { PageManager } from "../src/core/pageManager.js"
 import { ShiftInput } from "../src/core/shiftInput.js"
 import { AppClock } from "../src/core/clock.js"
 import { SettingsStore, DEFAULT_SETTINGS } from "../src/core/settings.js"
+import { createPresetStore } from "../src/core/presetStore.js"
 import { DEFAULT_PAGE } from "../src/pages/registry.js"
 import {
 	type GridSize,
@@ -356,5 +357,233 @@ describe("createOscRouter — transport + settings", () => {
 		})
 		expect(() => router("/grid/in/clock/run", [1])).not.toThrow()
 		expect(() => router("/grid/in/settings/clock/rate", [30])).not.toThrow()
+	})
+})
+
+describe("createOscRouter — liveness + presets", () => {
+	let dir: string
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "gridmapper-routes-"))
+	})
+	afterEach(() => vi.restoreAllMocks())
+
+	function makeRouter(withPresets = true) {
+		const pm = makePm()
+		const emit = vi.fn()
+		const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
+		const presets = createPresetStore(dir)
+		const router = createOscRouter({
+			pm,
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit,
+			slotPages,
+			presets: withPresets ? presets : undefined,
+		})
+		return { router, emit, slotPages, presets, pm }
+	}
+
+	it("echoes /grid/in/ping back as /grid/out/pong, verbatim", () => {
+		const { router, emit } = makeRouter()
+		router("/grid/in/ping", [42])
+		expect(emit).toHaveBeenCalledWith("/grid/out/pong", 42)
+		router("/grid/in/ping", ["boot-1", 7])
+		expect(emit).toHaveBeenLastCalledWith("/grid/out/pong", "boot-1", 7)
+		router("/grid/in/ping", [])
+		expect(emit).toHaveBeenLastCalledWith("/grid/out/pong")
+	})
+
+	it("keeps /grid/in/heartbeat inert — it is not a ping", () => {
+		const { router, emit } = makeRouter()
+		router("/grid/in/heartbeat", ["anything"])
+		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("saves the live layout, lists it, and marks it active", () => {
+		const { router, emit, slotPages, presets } = makeRouter()
+		router("/grid/in/slot/a/page", ["isometric"])
+		emit.mockClear()
+		router("/grid/in/preset/save", ["keys"])
+		expect(presets.list()).toEqual(["keys"])
+		// A saved slot carries the page's own serialize() alongside its name.
+		expect(presets.read("keys")?.slots.a.page).toBe("isometric")
+		expect(presets.activeName()).toBe("keys")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list", "keys")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "keys")
+		expect(slotPages[0]).toBe("isometric")
+	})
+
+	it("loads a preset, rebuilding every slot, and signals completion LAST", () => {
+		const { router, emit, slotPages, presets } = makeRouter()
+		router("/grid/in/slot/b/page", ["meadowphysics"])
+		router("/grid/in/preset/save", ["two"])
+		router("/grid/in/slot/b/page", [DEFAULT_PAGE])
+		expect(slotPages[1]).toBe(DEFAULT_PAGE)
+
+		emit.mockClear()
+		router("/grid/in/preset/load", ["two"])
+		expect(slotPages[1]).toBe("meadowphysics")
+		expect(presets.activeName()).toBe("two")
+
+		const paths = emit.mock.calls.map((c) => c[0])
+		// /grid/out/preset/active is the completion signal: nothing the load emits may
+		// follow it, and the layout must already be announced before it.
+		expect(paths[paths.length - 1]).toBe("/grid/out/preset/active")
+		expect(paths).toContain("/grid/out/slots")
+		expect(paths.indexOf("/grid/out/slots")).toBeLessThan(paths.length - 1)
+		expect(emit).toHaveBeenLastCalledWith("/grid/out/preset/active", "two")
+	})
+
+	it("reports an empty active name when a load fails", () => {
+		const { router, emit, presets } = makeRouter()
+		vi.spyOn(console, "warn").mockImplementation(() => {})
+		router("/grid/in/preset/load", ["nosuchpreset"])
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "")
+		router("/grid/in/preset/load", ["../escape"])
+		expect(emit).toHaveBeenLastCalledWith("/grid/out/preset/active", "")
+		expect(presets.activeName()).toBeNull()
+	})
+
+	it("re-emits list + active on /grid/in/preset/list", () => {
+		const { router, emit } = makeRouter()
+		router("/grid/in/preset/save", ["one"])
+		emit.mockClear()
+		router("/grid/in/preset/list", [])
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list", "one")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "one")
+	})
+
+	it("deletes a preset and clears the marker if it was the active one", () => {
+		const { router, emit, presets } = makeRouter()
+		router("/grid/in/preset/save", ["doomed"])
+		emit.mockClear()
+		router("/grid/in/preset/delete", ["doomed"])
+		expect(presets.list()).toEqual([])
+		expect(presets.activeName()).toBeNull()
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "")
+	})
+
+	it("ignores a delete of an unsafe or missing name", () => {
+		const { router, emit } = makeRouter()
+		vi.spyOn(console, "warn").mockImplementation(() => {})
+		router("/grid/in/preset/delete", ["../escape"])
+		router("/grid/in/preset/delete", ["ghost"])
+		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("clears the active marker when a single slot diverges from the preset", () => {
+		const { router, emit, presets } = makeRouter()
+		router("/grid/in/preset/save", ["clean"])
+		emit.mockClear()
+		router("/grid/in/slot/c/page", ["isometric"])
+		expect(presets.activeName()).toBeNull()
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "")
+		// ...and says so only once: the layout has already diverged.
+		emit.mockClear()
+		router("/grid/in/slot/d/page", ["isometric"])
+		expect(emit.mock.calls.map((c) => c[0])).toEqual(["/grid/out/slots"])
+	})
+
+	it("persists the live layout so the next boot comes up in it", () => {
+		const { router } = makeRouter()
+		router("/grid/in/slot/a/page", ["meadowphysics"])
+		expect(createPresetStore(dir).active().slots.a.page).toBe("meadowphysics")
+	})
+
+	it("ignores an unknown page name on /grid/in/slot/<x>/page", () => {
+		const { router, emit, slotPages } = makeRouter()
+		router("/grid/in/slot/a/page", ["nosuchpage"])
+		expect(slotPages[0]).toBe(DEFAULT_PAGE)
+		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("leaves preset routes inert when no store is wired (test hosts)", () => {
+		const { router, emit } = makeRouter(false)
+		for (const p of ["list", "save", "load", "delete"]) {
+			expect(() => router(`/grid/in/preset/${p}`, ["x"])).not.toThrow()
+		}
+		expect(emit).not.toHaveBeenCalled()
+	})
+})
+
+describe("createOscRouter — echo discipline", () => {
+	// Mirrors the host wiring (cli/sim.ts): the router says WHEN to keep a page's reply
+	// off the OSC wire, the host says HOW. `suppressed` here stands in for the host's
+	// flag, recorded at the moment the page emits.
+	function makeHarness() {
+		let suppressed = false
+		const sent: Array<{ path: string; suppressed: boolean }> = []
+		const modifiers: Modifiers = { held: new Set(), shift1: false, shift2: false }
+		const pm = new PageManager({
+			size: SIZE,
+			modifiers,
+			clock: { running: false, rate: 20, tick: 0, lanes: [] },
+			osc: { send: (path) => sent.push({ path, suppressed }) },
+			setShift: () => {},
+		})
+		// A page that answers every onOsc with its settings — the reply that would feed
+		// back into a patch that both sends settings and listens for them.
+		for (const slot of SLOT_INDICES) {
+			pm.load(slot, () => ({
+				...stubPage(),
+				onOsc(_path: string, _args: any[], ctx: PageContext) {
+					ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, "{}")
+				},
+			}))
+		}
+		const router = createOscRouter({
+			pm,
+			shift: new ShiftInput(),
+			reconnect: () => {},
+			onKey: () => {},
+			emit: () => {},
+			slotPages: Array.from(SLOT_INDICES, () => DEFAULT_PAGE),
+			withOscEchoSuppressed: (fn) => {
+				suppressed = true
+				try { fn() } finally { suppressed = false }
+			},
+		})
+		return { router, sent }
+	}
+
+	it("suppresses the OSC echo of a settings write that came from OSC", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/setting/npo", [7], "osc")
+		expect(sent).toEqual([{ path: "/grid/out/page/a/settings", suppressed: true }])
+	})
+
+	it("suppresses the value-in-path and plural spellings too", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/setting/npo/7", [], "osc")
+		router("/grid/in/page/a/settings/npo", [7], "osc")
+		expect(sent.map((s) => s.suppressed)).toEqual([true, true])
+	})
+
+	it("still emits a settings write that came from the web UI", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/setting/npo", [7], "ui")
+		expect(sent).toEqual([{ path: "/grid/out/page/a/settings", suppressed: false }])
+	})
+
+	it("never suppresses /settings/get — it is a request FOR a reply", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/settings/get", [], "osc")
+		router("/grid/in/page/a/setting/get", [], "osc")
+		expect(sent.map((s) => s.suppressed)).toEqual([false, false])
+	})
+
+	it("never suppresses anything else a page emits during OSC dispatch", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/note", [60, 1], "osc")
+		router("/grid/in/page/a/chords/save", [2], "osc")
+		expect(sent.map((s) => s.suppressed)).toEqual([false, false])
+	})
+
+	it("defaults an origin-less call to osc, the conservative side", () => {
+		const { router, sent } = makeHarness()
+		router("/grid/in/page/a/setting/npo", [7])
+		expect(sent[0].suppressed).toBe(true)
 	})
 })

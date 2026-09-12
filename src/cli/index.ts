@@ -2,8 +2,8 @@
 //
 // Wires the proven driver to the page stack: connect the grid, run one render loop
 // (the single output path) through the quadrant-aware reconciler, route key events
-// to the focused page, and bridge OSC to/from Max. Minimal for now — one page in
-// slot a. Preset/handshake + multi-page routing come next (see CLAUDE.md roadmap).
+// to the focused page, and bridge OSC to/from Max. All eight slots run; the layout comes
+// from configs/slots.json and the Max boot handshake is docs/max-handshake.md.
 //
 //   npm run dev            (real hardware)
 //   npm run dev -- --null  (no hardware; NullGrid)
@@ -16,9 +16,11 @@ import { createRenderLoop } from "../render/renderLoop.js"
 import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
+import { createPresetStore } from "../core/presetStore.js"
+import { applySystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
-import { pageFactory, DEFAULT_PAGE } from "../pages/registry.js"
+import { DEFAULT_PAGE } from "../pages/registry.js"
 import {
 	type PageContext,
 	type Slot,
@@ -60,8 +62,10 @@ const conn = new GridConnection({
 const grid = conn.grid
 const { width: w } = grid.size
 
-// --- 8 page slots, all Base by default (mirrors sim.ts) ---
+// --- 8 page slots. The layout comes from configs/slots.json (the last preset loaded or
+// saved); with no such file every slot is the default page, as before. Mirrors sim.ts. ---
 const slotPages: string[] = Array.from(SLOT_INDICES, () => DEFAULT_PAGE)
+const presets = createPresetStore()
 
 console.log(
 	`[grid] ${useNull ? "NullGrid (forced)" : "starting on NullGrid — hot-connects when a grid appears"} ${grid.size.width}×${grid.size.height}`
@@ -71,7 +75,18 @@ console.log(
 // Ports come from configs/settings.json → osc (read once at boot; see core/settings.ts).
 const settings = loadSettings()
 const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc.outPort })
-const emitOut = (path: string, ...args: Array<number | string | boolean>) => osc.send(path, ...args)
+// Echo discipline: while an OSC-originated settings write is dispatched, the page's
+// /settings reply is kept off the wire so a patch that sends and listens can't feed back
+// on itself. Headless, there is no second listener, so the reply simply goes nowhere —
+// the sim keeps its web UI fed (see cli/sim.ts). The router decides when; this is how.
+let suppressOscEcho = false
+const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	if (!suppressOscEcho) osc.send(path, ...args)
+}
+const withOscEchoSuppressed = (fn: () => void) => {
+	suppressOscEcho = true
+	try { fn() } finally { suppressOscEcho = false }
+}
 osc.send("/grid/out/hello")
 
 // --- Reconciler + render loop (single output path) ---
@@ -132,8 +147,9 @@ rt = createAppRuntime({
 	onWake: () => { needsFullPaint = true; renderTick() },
 })
 
-// Load the default page into every slot; focus a.
-for (const slot of SLOT_INDICES) pm.load(slot, pageFactory(DEFAULT_PAGE)!)
+// Boot into the persisted layout through the SAME sanitize→factory path a live preset
+// load uses (core/systemConfig.ts), so an unknown page name degrades identically.
+applySystemConfig(presets.active(), { pm, slotPages })
 pm.focus(0 as Slot)
 needsFullPaint = true
 renderLoop.start()
@@ -154,10 +170,14 @@ osc.onMessage(
 		clock: rt.clock,
 		idle: rt.idle,
 		settings: rt.settings,
+		presets,
+		withOscEchoSuppressed,
 	})
 )
-// Announce transport + power + settings, so a patch that boots after us is in sync.
+// Announce transport + power + settings + presets, so a patch that boots after us is in
+// sync. A patch opened LATER misses this entirely — that's what /grid/in/ping is for.
 for (const m of rt.snapshot()) emitOut(m.path, ...m.args)
+for (const m of presets.state()) emitOut(m.path, ...m.args)
 
 console.log(`[daemon] up. OSC in ${settings.osc.inPort} / out ${settings.osc.outPort}. 8 slots (a–h), default Base — press the grid.`)
 
