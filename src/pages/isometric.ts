@@ -149,7 +149,8 @@ import {
 import type { ClockState } from "../core/clock.js"
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
 import { clamp } from "../util/scale.js"
-import { PatternRecorder } from "../util/patternRecorder.js"
+import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
+import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
 import { Arpeggiator, ARP_MODES, ARP_BUTTONS, isArpMode, type ArpMode } from "../util/arpeggiator.js"
 import {
 	SCALE_NAMES,
@@ -237,6 +238,13 @@ const CHORD_COL_FROM_RIGHT = 3
 
 /** Output TRACKS: the first four buttons of their column, ARPEGGIATORS the four below. */
 const TRACK_ROWS = 4
+
+/* Bounds used only when reading an untrusted preset back (restore()). A chord holds
+ * pitches Max maps as it likes, so the range is generous rather than musical; the caps
+ * exist so a corrupt or hostile file can't turn into an unbounded allocation. */
+const CHORD_PITCH_LIMIT = 4096
+const CHORD_MAX_NOTES = 64
+const MAX_PATTERN_EVENTS = 20_000
 const ARP_ROW_START = TRACK_ROWS
 
 /**
@@ -810,6 +818,75 @@ export class IsometricPage implements Page {
 			patterns: this.recorders.map((r) => r.snapshot()),
 			...this.trackState(),
 		}
+	}
+
+	/**
+	 * The inverse of serialize(). Everything here is read defensively (see
+	 * util/restoreGuards.ts): a preset written by an older build, missing half its keys or
+	 * hand-edited into nonsense must leave the page on its constructed defaults, not throw.
+	 *
+	 * Nothing restored makes a sound. Loops come back STOPPED with the playhead at the top,
+	 * the arp's own mode is a setting like any other but its voice starts empty, and
+	 * sustain, held keys and the ringing chord are simply not in the file.
+	 */
+	restore(config: unknown, ctx: PageContext) {
+		if (!isRecord(config)) return
+
+		// Settings go back through applySetting, so a preset gets exactly the same clamping
+		// and the same refusal of an unknown scale/layout/mode that a live OSC write does.
+		for (const spec of SPECS) {
+			if (config[spec.key] !== undefined) this.applySetting(spec.key, config[spec.key])
+		}
+
+		// Chords: one dense entry per grid row, null (or empty) = an empty slot. The values
+		// are whatever Max maps to pitch, so they are kept as-is — deduped, order preserved,
+		// and bounded so a corrupt file can't allocate a chord of a million notes.
+		if (config.chords !== undefined) {
+			const raw = Array.isArray(config.chords) ? config.chords : []
+			this.chords.clear()
+			for (let slot = 0; slot < this.size.height; slot++) {
+				const chord = [...intSet(raw[slot], -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT)]
+				if (chord.length) this.chords.set(slot, chord.slice(0, CHORD_MAX_NOTES))
+			}
+		}
+
+		// Recorded loops, take by take. An entry that doesn't add up to a loop restores as
+		// an empty recorder, which is also what an untouched looper looks like in the file.
+		if (config.patterns !== undefined) {
+			const raw = Array.isArray(config.patterns) ? config.patterns : []
+			for (let i = 0; i < RECORDER_ROWS; i++) {
+				const node = isRecord(raw[i]) ? raw[i] : {}
+				this.recorders[i].restore({
+					lengthMs: num(node.lengthMs, 0, 0, MAX_RECORD_MS),
+					events: records(node.events, MAX_PATTERN_EVENTS, (e) => {
+						if (typeof e.on !== "boolean" && typeof e.on !== "number") return undefined
+						const step = Number(e.step)
+						if (!Number.isFinite(step)) return undefined
+						return {
+							atMs: num(e.atMs, -1, 0, MAX_RECORD_MS),
+							step: Math.round(step),
+							on: bool(e.on, false),
+						}
+					}).filter((e) => e.atMs >= 0),
+				})
+			}
+		}
+
+		// Track selection must never be empty — that would leave live notes with nowhere to
+		// go — so a file that says otherwise falls back to track 0.
+		if (config.selected !== undefined) {
+			this.selected = intSet(config.selected, 0, TRACK_ROWS - 1, [0])
+		}
+		// routes[track] = the loopers pinned to it; both axes are 0..3.
+		if (config.routes !== undefined) {
+			const raw = Array.isArray(config.routes) ? config.routes : []
+			this.routes = Array.from({ length: TRACK_ROWS }, (_, t) =>
+				intSet(raw[t], 0, RECORDER_ROWS - 1)
+			)
+		}
+
+		this.syncTimer() // a restored arp mode may need the free-running timer
+		this.announce(ctx) // init() announced the defaults; they are stale now
 	}
 
 	dispose(ctx: PageContext) {

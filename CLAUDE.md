@@ -117,13 +117,20 @@ twister's `/twister/...` vocabulary:
   boot and live apply, over `pages/registry.ts` — an unknown page name degrades to
   `DEFAULT_PAGE` instead of throwing) + `core/presetStore.ts` (one JSON file per preset
   under `configs/presets/`, names `[A-Za-z0-9 _-]{1,48}`, write+rename like
-  `settings.ts`). In: `/grid/in/preset/{list,save,load,delete} [name]`. Out:
+  `settings.ts`). In: `/grid/in/preset/{list,load,delete} [name]`. Out:
   `/grid/out/preset/list <names…>` · `/grid/out/preset/active <name|"">`.
-  A preset holds the LAYOUT (slot→page) plus each page's `serialize()`; the config is
-  written and carried but **not yet replayed** — `Page.restore?()` is the next pass.
-  `configs/slots.json` is the LIVE layout + an `activePreset` marker, written on load /
-  save / slot change and booted into next start (no file → every slot `DEFAULT_PAGE`, as
-  before). A slot change clears the marker and emits `/grid/out/preset/active ""`.
+  **A preset is PAGES: slot→page plus each page's own state**, captured by `serialize()`
+  and replayed by `restore()`. Deliberately NOT in it: focus, the transport, the idle
+  policy (those are `configs/settings.json`, shared across presets), and anything
+  transient — loading a preset never makes a sound.
+  **There is deliberately NO save route.** Presets are authored, not captured over the
+  wire: a patch loads them, it never overwrites one mid-set. `PresetStore.write()` still
+  exists but nothing reaches it — so today a preset file is hand-written (or produced by
+  a script); the shape is `SystemConfig` and every field is optional.
+  `configs/slots.json` is the LIVE layout + an `activePreset` marker, written on preset
+  load and on slot change, and booted into next start (no file → every slot
+  `DEFAULT_PAGE`, as before). A slot change clears the marker and emits
+  `/grid/out/preset/active ""`.
 - **`/grid/out/preset/active` is the boot handshake's COMPLETION SIGNAL** — emitted only
   after every slot's page is built and has announced. `""` = no preset active (a failed
   load, or a layout edited since). See `docs/max-handshake.md` for the phase-by-phase
@@ -201,6 +208,9 @@ src/
                          apply, so both validate identically. No I/O, no emission.
   core/presetStore.ts    configs/presets/<name>.json + configs/slots.json (the live
                          layout + activePreset marker). Atomic write+rename, safe names.
+  util/restoreGuards.ts  reading an UNTRUSTED preset back: int/num/bool/intArray/
+                         intMatrix/intSet/records, each taking the default to land on.
+                         Every Page.restore() reads through these — it must never throw.
   core/clock.ts          AppClock — the ONE transport, in FOUR LANES (0-3). Each lane is
                          internal (a divisor of the drift-compensated master timer) or
                          external (one step per OSC message). OFF at boot. Every lane ticks
@@ -382,7 +392,7 @@ page's `render()` every frame, so pages animate by reading a clock — no timers
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
 are skipped by the loader. **Sequencers take musical time from the app clock**
 (`onTick`/`onClock`), never from frames — that's what lets them run in an unfocused slot.
-331 unit tests pass.
+349 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
@@ -400,19 +410,21 @@ duplicated this logic by hand.
   `init()` and `onFocus()`, so a load into the focused slot announces twice — harmless,
   and `docs/max-handshake.md` tells a patch to expect it.)
 - Max boot handshake: `/grid/in/ping` → `/grid/out/pong`, the preset layer
-  (`core/systemConfig.ts` + `core/presetStore.ts`, `/grid/in/preset/{list,save,load,
-  delete}`), `/grid/out/preset/active` as the completion signal, and OSC-echo suppression
-  on settings writes. Smoke-tested end-to-end over real UDP against a NullGrid daemon;
-  **not yet exercised from a Max patch on hardware.**
+  (`core/systemConfig.ts` + `core/presetStore.ts`, `/grid/in/preset/{list,load,delete}`),
+  `/grid/out/preset/active` as the completion signal, and OSC-echo suppression on settings
+  writes. **`serialize()` ↔ `restore()` round-trips**: a hand-authored preset brings
+  isometric back with its settings, chords, recorded loops and track routing, and
+  meadowphysics with its whole patch — verified end-to-end over real UDP against a
+  NullGrid daemon. **Not yet exercised from a Max patch on hardware.**
 
 **Not yet built (continuing toward the full multimodal interface):**
 - More page prototypes (grid equivalents of StepSeq / XY / etc.) + a Main-style
   overlay for page focus.
-- `Page.restore?(config)` — the inverse of `serialize()`, so a preset load puts each
-  page's own state back instead of only its slot→page layout. The `systemConfig` /
-  `presetStore` / ping / completion-signal half is BUILT (`docs/max-handshake.md`); this
-  is the remaining, more interesting half. Must be defensive about shape (a preset
-  written by an older build can't throw) and must not resurrect transient runtime state.
+- A way to CREATE a preset file. The save route was cut on purpose (see above), so the
+  only authors today are a text editor and a script. If that itches, the natural home is
+  a web-UI-only save gated on `origin === "ui"` — the router already knows the origin.
+- `restore()` on the other pages. Only `isometric` and `meadowphysics` carry state worth
+  keeping; `basic` (its toggle grid) is the obvious next one if it ever matters.
 - Single-instance guard. (**Hotplug now lives in `io/gridConnection.ts` and is used by
   BOTH the sim and the daemon** — start on a NullGrid, swap in the real grid via
   `MirrorGrid` when serialosc reports one, poll discovery **only while disconnected**,

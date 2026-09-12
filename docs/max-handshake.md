@@ -63,19 +63,35 @@ Notes on what you'll see along the way:
   emitted by pages that choose to announce (`isometric`, `meadowphysics`, `basic`);
   `base`, `blank` and `screensaver` say nothing. `/grid/out/slots` always lists all
   eight.
-- A page may announce **more than once** during a load — loading into the focused slot
-  fires both `init()` and `onFocus()`, and pages announce from both. Harmless: treat the
-  last one as current, and `/grid/out/preset/active` as the end of the burst.
+- A page may announce **more than once** during a load, and the first burst is its
+  DEFAULTS: a page announces from `init()`, again from `restore()` once its state is
+  back, and again from `onFocus()` if it is the focused slot. Harmless, but it means you
+  must treat the **last** value as current and `/grid/out/preset/active` as the end of the
+  burst — latching the first `/settings` you see will latch the wrong one.
 - A preset written against a page that no longer exists loads anyway: the unknown name
   degrades to the default page (`base`) with a warning in the log, rather than throwing.
 
 ### What a preset does and does not restore
 
-A preset is the **layout**: which page runs in which slot, plus whatever that page's
-`serialize()` returns. Today only the layout is replayed — the serialized page config is
-written into the file and carried through, but `Page.restore?()` is not built yet, so a
-freshly loaded page comes up at its defaults. **That is the next pass.** Until it lands,
-phase 2 is what puts the interface where the patch thinks it is.
+A preset is the **pages**: which page runs in which slot, and that page's own state. It
+is replayed in full — `isometric` comes back with its settings, its eight saved chords,
+its four recorded loops and its track routing; `meadowphysics` comes back with its whole
+patch (counters, ranges, speeds, the three target matrices, the rules).
+
+What a preset does **not** carry, by design:
+
+- **Anything the page is doing right now.** Held keys, sounding notes, the sustain
+  pedal, the arpeggiator's current voice, a take mid-record. Loading a preset never makes
+  a sound: restored loops come back *stopped* at the top of the loop, one press from
+  playing, and a restored chord bank is stored, not ringing.
+- **Focus.** Which slot you were looking at is not part of a preset — set it yourself
+  with `/grid/in/focus/page` after the load if the patch cares.
+- **The transport and the idle policy.** Clock rate, lane config, echo and the sleep
+  timeouts live in `configs/settings.json` and are shared across every preset. Set them
+  with `/grid/in/settings/...`; the clock always boots stopped regardless.
+
+So phase 2 is now only for what the patch genuinely owns and the preset doesn't — often
+nothing at all.
 
 ## Phase 2 — push the patch's values in
 
@@ -124,13 +140,21 @@ loaded page, not just the visible one.
 
     /grid/in/preset/list              → /grid/out/preset/list <names…>
                                         + /grid/out/preset/active <name|"">
-    /grid/in/preset/save <name>       create/overwrite from the LIVE layout; becomes
-                                        the active preset
     /grid/in/preset/delete <name>     remove the file (the running layout is untouched;
                                         the marker clears if it was the active one)
 
 Names must match `[A-Za-z0-9 _-]{1,48}` — no separators, no traversal. An invalid name
-is ignored silently on save and delete; on load it reports `/grid/out/preset/active ""`.
+is ignored silently on delete; on load it reports `/grid/out/preset/active ""`.
+
+**There is deliberately no `/grid/in/preset/save`.** Presets are authored, not captured
+over the wire: a patch loads them, it never overwrites one mid-set. A preset file is a
+plain `SystemConfig` JSON under `configs/presets/` — the shape is in
+`src/core/systemConfig.ts`, and every field is optional, so the smallest useful preset is
+
+    { "version": 1, "slots": { "a": { "page": "isometric" } } }
+
+Slots you leave out come up as the default page; a page name that no longer exists falls
+back to the default with a warning rather than failing the load.
 
 ### Layout
 
@@ -174,6 +198,7 @@ saved chords):
 |---|---|
 | No `/pong` | Daemon down, or the ports are held by a dev `npm run sim` |
 | `/preset/active ""` right after a load | Load failed — bad name or missing file; the old layout is still running |
+| A preset loads but a page is on its defaults | That page's captured config was unreadable, or the page doesn't implement `restore()` (only `isometric` and `meadowphysics` carry state). Check the daemon log |
 | `/preset/active ""` out of nowhere | A slot was re-assigned (from the web UI or your own patch); the layout diverged from the preset |
 | Nothing comes back from a settings write | Working as designed — OSC-originated settings writes don't echo. Use `/settings/get` to read back |
 | A settings write echoes anyway | You sent the terse `/grid/in/page/<slot>/<key>` form; send `/setting/<key>` |

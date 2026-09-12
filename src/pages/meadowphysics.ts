@@ -59,6 +59,7 @@ import {
 import type { PageModule, SettingSpec } from "../core/pageModule.js"
 import type { ClockState } from "../core/clock.js"
 import { clamp } from "../util/scale.js"
+import { isRecord, int, intArray, intMatrix } from "../util/restoreGuards.js"
 
 // --- layout (0-indexed columns; mp.lua's 1-indexed columns minus one) ------------
 
@@ -547,6 +548,53 @@ export class MeadowphysicsPage implements Page {
 				play: st.play,
 			},
 		}
+	}
+
+	/**
+	 * The inverse of serialize(). The patch — counters, ranges, speeds, the three target
+	 * matrices and the rules — comes back; everything the cascade builds while it runs
+	 * (falling positions, sounding notes, tick countdowns, which key you were holding)
+	 * does not. A restored page is a patch at rest: it starts cascading on the next tick.
+	 *
+	 * Every field is read against a freshly-constructed state, so a preset from a build
+	 * with different dimensions, or with fields missing entirely, lands on defaults
+	 * row by row instead of throwing (see util/restoreGuards.ts).
+	 */
+	restore(config: unknown, ctx: PageContext) {
+		if (!isRecord(config)) return
+		for (const spec of SPECS) {
+			if (config[spec.key] !== undefined) this.applySetting(spec.key, config[spec.key])
+		}
+		if (!isRecord(config.patch)) {
+			this.announce(ctx)
+			return
+		}
+
+		const p = config.patch
+		const fresh = createMeadowState(this.size)
+		const st = this.st
+		const countMax = st.width - 1
+		const rowMax = st.rows - 1
+
+		st.count = intArray(p.count, fresh.count, 0, countMax)
+		st.min = intArray(p.min, fresh.min, 0, countMax)
+		st.max = intArray(p.max, fresh.max, 0, countMax)
+		st.speed = intArray(p.speed, fresh.speed, 0, st.speedMax)
+		st.smin = intArray(p.smin, fresh.smin, 0, st.speedMax)
+		st.smax = intArray(p.smax, fresh.smax, 0, st.speedMax)
+		st.reset = intMatrix(p.reset, fresh.reset, 0, 1)
+		st.trig = intMatrix(p.trig, fresh.trig, 0, 1)
+		st.tog = intMatrix(p.tog, fresh.tog, 0, 1)
+		st.rule = intArray(p.rule, fresh.rule, 0, RULE_NAMES.length - 1)
+		st.rdest = intArray(p.rdest, fresh.rdest, 0, rowMax)
+		st.rtype = intArray(p.rtype, fresh.rtype, 1, 3)
+		st.play = int(p.play, fresh.play, 0, 1)
+
+		// Runtime, deliberately not restored: park every row where its counter says, which
+		// is where a patch that has never ticked sits.
+		st.pos = [...st.count]
+
+		this.announce(ctx) // init() announced the defaults; they are stale now
 	}
 
 	/** Slot unloaded/replaced — never strand a sounding note in Max. */

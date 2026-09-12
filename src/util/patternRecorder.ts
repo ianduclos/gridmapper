@@ -129,6 +129,21 @@ export class PatternRecorder {
 		return { lengthMs: this.lengthMs, events: this.events.map((e) => ({ ...e })) }
 	}
 
+	/**
+	 * Put a snapshot back. The loop lands in `stopped` with the playhead at the top, never
+	 * `playing`: loading a preset must not start making noise on its own — one press picks
+	 * it up. Content that doesn't add up to a loop (no events, or no length) restores as
+	 * `empty`, which is also what an untouched recorder in an old preset looks like.
+	 * Events are copied and sorted; the caller has already shape-checked them.
+	 */
+	restore(snapshot: { lengthMs: number; events: readonly PatternEvent[] }): void {
+		this.clear()
+		if (!snapshot.events.length || snapshot.lengthMs <= 0) return
+		this.events = snapshot.events.map((e) => ({ ...e })).sort((a, b) => a.atMs - b.atMs)
+		this.lengthMs = snapshot.lengthMs
+		this.state = "stopped"
+	}
+
 	/** Shift-press: throw the pattern away. */
 	clear(): void {
 		this.state = "empty"

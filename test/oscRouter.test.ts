@@ -8,6 +8,7 @@ import { ShiftInput } from "../src/core/shiftInput.js"
 import { AppClock } from "../src/core/clock.js"
 import { SettingsStore, DEFAULT_SETTINGS } from "../src/core/settings.js"
 import { createPresetStore } from "../src/core/presetStore.js"
+import { defaultSystemConfig } from "../src/core/systemConfig.js"
 import { DEFAULT_PAGE } from "../src/pages/registry.js"
 import {
 	type GridSize,
@@ -367,6 +368,13 @@ describe("createOscRouter — liveness + presets", () => {
 	})
 	afterEach(() => vi.restoreAllMocks())
 
+	// Presets are authored, not captured over the wire, so tests write the file directly.
+	const seedLayout = (overrides: Record<string, string> = {}) => {
+		const cfg = defaultSystemConfig()
+		for (const [label, page] of Object.entries(overrides)) cfg.slots[label as "a"] = { page }
+		return cfg
+	}
+
 	function makeRouter(withPresets = true) {
 		const pm = makePm()
 		const emit = vi.fn()
@@ -400,25 +408,18 @@ describe("createOscRouter — liveness + presets", () => {
 		expect(emit).not.toHaveBeenCalled()
 	})
 
-	it("saves the live layout, lists it, and marks it active", () => {
-		const { router, emit, slotPages, presets } = makeRouter()
+	it("has no save route — presets are authored, not captured over the wire", () => {
+		const { router, emit, presets } = makeRouter()
 		router("/grid/in/slot/a/page", ["isometric"])
 		emit.mockClear()
 		router("/grid/in/preset/save", ["keys"])
-		expect(presets.list()).toEqual(["keys"])
-		// A saved slot carries the page's own serialize() alongside its name.
-		expect(presets.read("keys")?.slots.a.page).toBe("isometric")
-		expect(presets.activeName()).toBe("keys")
-		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list", "keys")
-		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "keys")
-		expect(slotPages[0]).toBe("isometric")
+		expect(presets.list()).toEqual([])
+		expect(emit).not.toHaveBeenCalled()
 	})
 
 	it("loads a preset, rebuilding every slot, and signals completion LAST", () => {
 		const { router, emit, slotPages, presets } = makeRouter()
-		router("/grid/in/slot/b/page", ["meadowphysics"])
-		router("/grid/in/preset/save", ["two"])
-		router("/grid/in/slot/b/page", [DEFAULT_PAGE])
+		presets.write("two", seedLayout({ b: "meadowphysics" }))
 		expect(slotPages[1]).toBe(DEFAULT_PAGE)
 
 		emit.mockClear()
@@ -446,8 +447,9 @@ describe("createOscRouter — liveness + presets", () => {
 	})
 
 	it("re-emits list + active on /grid/in/preset/list", () => {
-		const { router, emit } = makeRouter()
-		router("/grid/in/preset/save", ["one"])
+		const { router, emit, presets } = makeRouter()
+		presets.write("one", seedLayout())
+		router("/grid/in/preset/load", ["one"])
 		emit.mockClear()
 		router("/grid/in/preset/list", [])
 		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list", "one")
@@ -456,7 +458,8 @@ describe("createOscRouter — liveness + presets", () => {
 
 	it("deletes a preset and clears the marker if it was the active one", () => {
 		const { router, emit, presets } = makeRouter()
-		router("/grid/in/preset/save", ["doomed"])
+		presets.write("doomed", seedLayout())
+		router("/grid/in/preset/load", ["doomed"])
 		emit.mockClear()
 		router("/grid/in/preset/delete", ["doomed"])
 		expect(presets.list()).toEqual([])
@@ -475,7 +478,8 @@ describe("createOscRouter — liveness + presets", () => {
 
 	it("clears the active marker when a single slot diverges from the preset", () => {
 		const { router, emit, presets } = makeRouter()
-		router("/grid/in/preset/save", ["clean"])
+		presets.write("clean", seedLayout())
+		router("/grid/in/preset/load", ["clean"])
 		emit.mockClear()
 		router("/grid/in/slot/c/page", ["isometric"])
 		expect(presets.activeName()).toBeNull()
@@ -501,7 +505,7 @@ describe("createOscRouter — liveness + presets", () => {
 
 	it("leaves preset routes inert when no store is wired (test hosts)", () => {
 		const { router, emit } = makeRouter(false)
-		for (const p of ["list", "save", "load", "delete"]) {
+		for (const p of ["list", "load", "delete"]) {
 			expect(() => router(`/grid/in/preset/${p}`, ["x"])).not.toThrow()
 		}
 		expect(emit).not.toHaveBeenCalled()

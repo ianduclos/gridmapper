@@ -15,9 +15,9 @@
 //
 // No filesystem here — that's presetStore.ts. No emission here — that's oscRouter.ts.
 //
-// NB: the per-slot `config` is carried through opaquely for now. Pages already
-// serialize() their state; the inverse (`Page.restore?()`) is the next pass, and until
-// it lands a preset records page config but only replays the slot→page layout.
+// NB: the per-slot `config` is opaque HERE — this module never looks inside it. It comes
+// from that page's serialize() and goes back to that page's restore() untouched, so the
+// page stays the only thing that knows its own shape.
 
 import {
 	type Page,
@@ -112,7 +112,7 @@ export const buildSlotDefinition = (slot: SlotConfig): SlotDefinition => {
 /** What applySystemConfig / captureSystemConfig need from the host. */
 export interface SystemConfigTarget {
 	pm: {
-		load(slot: Slot, factory: () => Page): void
+		load(slot: Slot, factory: () => Page, config?: unknown): void
 		serialize(slot: Slot): unknown
 	}
 	/** Live per-slot page-name array, mutated IN PLACE (the router/UI hold this ref). */
@@ -120,10 +120,10 @@ export interface SystemConfigTarget {
 }
 
 /**
- * Load `config` into the running machine. `slots` narrows which slots are rebuilt —
- * a single-slot edit passes just that one so the other seven keep their live state;
- * a preset load passes them all. Reloaded pages announce themselves from init(), so
- * by the time this returns every page has spoken.
+ * Load `config` into the running machine: each slot's page is built, restored from that
+ * slot's captured state, and announced. `slots` narrows which slots are rebuilt — a
+ * single-slot edit passes just that one so the other seven keep their live state; a preset
+ * load passes them all. By the time this returns every page has been restored and spoken.
  */
 export const applySystemConfig = (
 	config: SystemConfig,
@@ -133,7 +133,8 @@ export const applySystemConfig = (
 	for (const slot of slots) {
 		const def = buildSlotDefinition(config.slots[slotLabel(slot)])
 		target.slotPages[slot] = def.pageName
-		target.pm.load(slot, def.createPage)
+		// def.config is this page's own captured state; PageManager hands it to restore().
+		target.pm.load(slot, def.createPage, def.config)
 	}
 }
 

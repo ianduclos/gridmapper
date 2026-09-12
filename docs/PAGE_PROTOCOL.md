@@ -56,6 +56,7 @@ interface Page {
   onClock?(state: ClockState, ctx: PageContext): void         // optional, transport
   render(ctx: PageContext): LedFrame | undefined              // the current frame
   serialize?(): unknown                        // optional, structural config for presets
+  restore?(config: unknown, ctx: PageContext): void // optional, the inverse of serialize
   dispose(ctx: PageContext): void              // slot unloaded — clean up
 }
 ```
@@ -73,6 +74,7 @@ When each is called:
 | `onClock`   | When the transport starts/stops/changes rate or source, every slot (optional). |
 | `render`    | **Every frame** (~58fps) while focused. Return the frame for *now*. |
 | `serialize` | When a preset is captured (optional).                          |
+| `restore`   | Once, right after `init` and before `onFocus`, when the slot is loaded from a preset that has config for it (optional). |
 | `dispose`   | When the slot is unloaded/replaced. Release external state (sounding notes). |
 
 ---
@@ -247,7 +249,32 @@ The contract (see `src/pages/isometric.ts` for the worked example):
 
 Keep one `SPECS` const as the single source of truth — reference it from both the
 class (for clamping) and the `page.settings` descriptor. Settings are still optional:
-a page with none simply omits `settings`, `onOsc`, and `serialize`.
+a page with none simply omits `settings`, `onOsc`, `serialize` and `restore`.
+
+### `serialize()` / `restore()` — the preset pair
+
+If you implement one, implement both: a preset that saves state it can't put back is
+worse than no preset. They must be exact inverses, and the test that proves it is a
+round trip — `serialize` → `JSON.stringify`/`parse` → `restore` into a **fresh** page →
+`serialize`, asserting deep equality (see `test/restore.test.ts`).
+
+Two rules that are easy to get wrong:
+
+1. **Structural state only, both ways.** What a player *set* belongs in a preset: your
+   settings, a saved chord bank, a recorded loop, routing. What the page is *doing right
+   now* does not: held keys, sounding notes, a sustain pedal, an arpeggiator's current
+   voice, a take being recorded. Restoring must never make a sound or leave a note
+   stranded — `test/restore.test.ts` asserts exactly that for both pages that implement it.
+2. **`restore()` gets untrusted input and must not throw.** The argument came off disk:
+   written by an older build, hand-edited, or truncated by a crash. Never index into it
+   blind. Read every field through `src/util/restoreGuards.ts` (`isRecord`, `int`, `num`,
+   `bool`, `intArray`, `intMatrix`, `intSet`, `records`) — each one takes the raw value
+   *and* the default it should land on, so a missing or nonsensical field costs one line.
+   Route settings back through the same clamping path a live OSC write uses. A page that
+   throws anyway keeps its slot: `PageManager` catches it and you get the defaults.
+
+Call `announce(ctx)` (or whatever your page names it) at the end of `restore()` — the
+values you emitted from `init()` were the defaults and are now stale.
 
 ---
 

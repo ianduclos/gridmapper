@@ -45,11 +45,24 @@ export class PageManager {
 		}
 	}
 
-	load(slot: Slot, factory: () => Page) {
+	/**
+	 * Put a page in a slot. `config` (a preset's captured state for this slot) is handed
+	 * to the page's restore() between init() and onFocus(), so the page is already in its
+	 * restored state before it is focused, rendered or announced to anyone.
+	 * A page that throws while restoring keeps the slot — it just keeps its defaults.
+	 */
+	load(slot: Slot, factory: () => Page, config?: unknown) {
 		this.pages[slot]?.dispose(this.ctxPerSlot[slot])
 		const p = factory()
 		this.pages[slot] = p
 		p.init(this.ctxPerSlot[slot])
+		if (config !== undefined && p.restore) {
+			try {
+				p.restore(config, this.ctxPerSlot[slot])
+			} catch (err) {
+				console.error(`[PageManager] restore error in slot ${slotLabel(slot)}:`, err)
+			}
+		}
 		// Loading into the focused slot activates the new page (starts focus-driven
 		// timers, e.g. animations). The replaced page was disposed above.
 		if (slot === this.focused) p.onFocus(this.ctxPerSlot[slot])

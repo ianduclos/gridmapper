@@ -101,6 +101,21 @@ export interface Page {
 	/** Structural config for preset capture; MUST exclude transient runtime state. */
 	serialize?(): unknown
 	/**
+	 * The inverse of `serialize()`: put a captured config back. Called once, right after
+	 * `init()` and before `onFocus()`, so a restored page is already itself by the time
+	 * anyone looks at it.
+	 *
+	 * The argument is untrusted — it came off disk and may have been written by an older
+	 * build, hand-edited, or truncated. It MUST NOT throw: read it through
+	 * `util/restoreGuards.ts` and fall back to the constructed defaults field by field.
+	 * Whatever `serialize()` leaves out (held keys, sounding notes, a take in progress)
+	 * stays out; restoring must never make a sound on its own.
+	 *
+	 * `ctx` is passed so a page can re-announce its new state — the values it emitted from
+	 * `init()` were the defaults, and are now stale.
+	 */
+	restore?(config: unknown, ctx: PageContext): void
+	/**
 	 * The slot is being unloaded/replaced. `ctx` is passed so a page that owns external
 	 * state (a sequencer with sounding notes) can release it; implementations that don't
 	 * need it may keep the zero-arg form.

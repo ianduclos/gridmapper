@@ -228,18 +228,9 @@ export function createOscRouter(
 			emit("/grid/out/preset/active", name)
 			return
 		}
-		if (path === "/grid/in/preset/save") {
-			if (!presets) return
-			const name = args[0]
-			if (!isValidPresetName(name)) return
-			// Capture the LIVE layout, not the last-loaded one: save means "keep what I've
-			// got". The saved file becomes the active preset.
-			const cfg = captureSystemConfig(target)
-			if (!presets.write(name, cfg)) return
-			presets.setActive(cfg, name)
-			emitPresetState()
-			return
-		}
+		// There is deliberately no /grid/in/preset/save. Presets are authored, not captured
+		// over the wire: a patch loads them, it does not get to overwrite them mid-set.
+		// (PresetStore.write() still exists — it is just not reachable from OSC.)
 		if (path === "/grid/in/preset/delete") {
 			if (!presets) return
 			const name = args[0]
