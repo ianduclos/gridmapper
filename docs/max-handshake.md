@@ -146,10 +146,16 @@ loaded page, not just the visible one.
 Names must match `[A-Za-z0-9 _-]{1,48}` — no separators, no traversal. An invalid name
 is ignored silently on delete; on load it reports `/grid/out/preset/active ""`.
 
-**There is deliberately no `/grid/in/preset/save`.** Presets are authored, not captured
-over the wire: a patch loads them, it never overwrites one mid-set. A preset file is a
-plain `SystemConfig` JSON under `configs/presets/` — the shape is in
-`src/core/systemConfig.ts`, and every field is optional, so the smallest useful preset is
+**`/grid/in/preset/save <name>` exists but is refused over OSC.** Presets are made from
+the web panel (`http://localhost:57191` → the presets box), which captures the live
+machine — every slot's page and that page's own state. A patch loads and deletes; it
+deliberately cannot overwrite a preset mid-set, where one stray message would silently
+replace the thing you were about to recall. The router decides this by `origin`, so the
+same address works from the panel and is dropped from the wire.
+
+A preset file is a plain `SystemConfig` JSON under `configs/presets/` — the shape is in
+`src/core/systemConfig.ts` — so hand-writing or generating one is fine too. Every field
+is optional; the smallest useful preset is
 
     { "version": 1, "slots": { "a": { "page": "isometric" } } }
 

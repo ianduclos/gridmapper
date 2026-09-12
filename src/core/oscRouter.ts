@@ -228,9 +228,23 @@ export function createOscRouter(
 			emit("/grid/out/preset/active", name)
 			return
 		}
-		// There is deliberately no /grid/in/preset/save. Presets are authored, not captured
-		// over the wire: a patch loads them, it does not get to overwrite them mid-set.
-		// (PresetStore.write() still exists — it is just not reachable from OSC.)
+		// /grid/in/preset/save <name> — THE WEB PANEL ONLY, by design. Capturing the live
+		// machine is how a preset gets made, but a Max patch must not be able to overwrite
+		// one mid-set: a stray message would silently replace the thing you were about to
+		// recall. So this is the one route where the origin decides, and an OSC-borne save
+		// is dropped on the floor rather than answered.
+		if (path === "/grid/in/preset/save") {
+			if (!presets || origin !== "ui") return
+			const name = args[0]
+			if (!isValidPresetName(name)) return
+			// The LIVE machine, not the last-loaded file: save means "keep what I've got",
+			// including every page's own state via serialize().
+			const cfg = captureSystemConfig(target)
+			if (!presets.write(name, cfg)) return
+			presets.setActive(cfg, name)
+			emitPresetState()
+			return
+		}
 		if (path === "/grid/in/preset/delete") {
 			if (!presets) return
 			const name = args[0]

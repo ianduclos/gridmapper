@@ -123,10 +123,12 @@ twister's `/twister/...` vocabulary:
   and replayed by `restore()`. Deliberately NOT in it: focus, the transport, the idle
   policy (those are `configs/settings.json`, shared across presets), and anything
   transient — loading a preset never makes a sound.
-  **There is deliberately NO save route.** Presets are authored, not captured over the
-  wire: a patch loads them, it never overwrites one mid-set. `PresetStore.write()` still
-  exists but nothing reaches it — so today a preset file is hand-written (or produced by
-  a script); the shape is `SystemConfig` and every field is optional.
+  **`/grid/in/preset/save <name>` is WEB-PANEL ONLY** — the one route where `origin`
+  decides. Capturing the live machine is how a preset gets made (the presets box in the
+  web UI: list, load, save/overwrite, arm-then-confirm delete), but an OSC-borne save is
+  dropped on the floor: a stray message from a patch must not silently replace the preset
+  you were about to recall. Hand-writing a file works too — the shape is `SystemConfig`
+  and every field is optional.
   `configs/slots.json` is the LIVE layout + an `activePreset` marker, written on preset
   load and on slot change, and booted into next start (no file → every slot
   `DEFAULT_PAGE`, as before). A slot change clears the marker and emits
@@ -377,7 +379,7 @@ grid, so `bootout` it before a manual `npm run sim`. (Mirrors twistermapper's ag
   field. `BasicGridPage` (toggle ↔ OSC) remains as an alternate. `MeadowphysicsPage`
   (the mp.lua port — see the layout above; 40 unit tests, not yet hardware-verified).
 - Web UI: slot chips (a–h) + page **dropdown** (populated from auto-discovered page
-  types); a **transport strip** (run/stop · step · rate · source · tick pulse); a
+  types); a **transport strip** (run/stop · step · rate · source · tick pulse); a **presets box** (list, load, save/overwrite, arm-then-confirm delete — the only surface that can CREATE a preset); a
   **page-settings panel under the grid** and a right-hand **app-settings panel** (clock
   rate + echo, the four lane rows, sleep timeouts, caffeinate, live awake/asleep readout,
   read-only OSC ports). The rate field is drag-to-change (shift = fine). The UI is a
@@ -392,7 +394,7 @@ page's `render()` every frame, so pages animate by reading a clock — no timers
 `setDirty`. Visual logic lives in pure functions (unit-tested). `_`-prefixed files
 are skipped by the loader. **Sequencers take musical time from the app clock**
 (`onTick`/`onClock`), never from frames — that's what lets them run in an unfocused slot.
-349 unit tests pass.
+353 unit tests pass.
 
 **Control routing (implemented).** `core/oscRouter.ts` is the single `/grid/in/...`
 dispatcher — key, connect, shift, focus/page, slot/page (load), and page-scoped OSC —
@@ -412,7 +414,8 @@ duplicated this logic by hand.
 - Max boot handshake: `/grid/in/ping` → `/grid/out/pong`, the preset layer
   (`core/systemConfig.ts` + `core/presetStore.ts`, `/grid/in/preset/{list,load,delete}`),
   `/grid/out/preset/active` as the completion signal, and OSC-echo suppression on settings
-  writes. **`serialize()` ↔ `restore()` round-trips**: a hand-authored preset brings
+  writes, plus the web UI's presets box (save/overwrite/load/delete; save is UI-only).
+  **`serialize()` ↔ `restore()` round-trips**: a hand-authored preset brings
   isometric back with its settings, chords, recorded loops and track routing, and
   meadowphysics with its whole patch — verified end-to-end over real UDP against a
   NullGrid daemon. **Not yet exercised from a Max patch on hardware.**
@@ -420,9 +423,6 @@ duplicated this logic by hand.
 **Not yet built (continuing toward the full multimodal interface):**
 - More page prototypes (grid equivalents of StepSeq / XY / etc.) + a Main-style
   overlay for page focus.
-- A way to CREATE a preset file. The save route was cut on purpose (see above), so the
-  only authors today are a text editor and a script. If that itches, the natural home is
-  a web-UI-only save gated on `origin === "ui"` — the router already knows the origin.
 - `restore()` on the other pages. Only `isometric` and `meadowphysics` carry state worth
   keeping; `basic` (its toggle grid) is the obvious next one if it ever matters.
 - Single-instance guard. (**Hotplug now lives in `io/gridConnection.ts` and is used by

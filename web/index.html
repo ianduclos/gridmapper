@@ -100,6 +100,16 @@
 		.settings input:disabled, .settings select:disabled { opacity: .35; cursor: not-allowed; }
 		.settings .sub { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: .35; margin: 16px 0 6px; }
 		.settings .sub:first-child { margin-top: 0; }
+		/* Presets: one row per saved file, the active one filled in like a chip. */
+		.presets { display: flex; flex-direction: column; gap: 4px; }
+		.presets .row { display: flex; align-items: center; gap: 4px; }
+		.presets .row .chip.name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.presets .row .chip.del { padding: 5px 8px; opacity: .3; }
+		.presets .row .chip.del:hover { opacity: .9; }
+		.presets .row .chip.del.arm { background: var(--ink); color: var(--bg); opacity: 1; }
+		.presets .empty { font-size: 12px; letter-spacing: .3px; opacity: .4; padding: 2px 0 4px; }
+		.presetSave { display: flex; gap: 6px; margin-top: 12px; }
+		.presetSave input[type="text"] { flex: 1; width: auto; text-align: left; }
 		aside.col { display: flex; flex-direction: column; gap: 16px; }
 		/* Page settings live under the grid and are pinned to the grid's own width (set in
 		   buildGrid), so a page with many settings wraps onto more rows instead of pushing
@@ -156,6 +166,18 @@
 			</div>
 		</div>
 		<aside class="col">
+			<div class="settings">
+				<div class="title">presets</div>
+				<div class="presets" id="presetList"></div>
+				<!-- Saving captures the LIVE machine: every slot's page and that page's own
+				     state (settings, chords, recorded loops, routing). Max can load and
+				     delete presets but deliberately cannot save one — see oscRouter.ts. -->
+				<div class="presetSave">
+					<input id="presetName" type="text" placeholder="name" maxlength="48" spellcheck="false" />
+					<button class="chip" id="presetSave" title="capture the live machine into this preset">save</button>
+				</div>
+				<div class="note" id="presetNote">—</div>
+			</div>
 			<div class="settings">
 				<div class="title">app settings</div>
 				<div class="sub">clock</div>
@@ -379,6 +401,72 @@
 			el("setOscPorts").value = `${appSettings.osc.inPort} / ${appSettings.osc.outPort}`;
 		}
 
+		// --- presets ---------------------------------------------------------------
+		// A preset is the eight slots and each page's own state. The daemon owns the files;
+		// this panel is just the one surface allowed to CREATE them.
+		const PRESET_NAME_RE = /^[A-Za-z0-9 _-]{1,48}$/;
+		let presetNames = [];
+		let activePreset = "";
+		let armedDelete = null; // click × once to arm, again to confirm — no modal dialogs
+
+		function renderPresets() {
+			const list = el("presetList");
+			list.textContent = "";
+			if (!presetNames.length) {
+				const empty = document.createElement("div");
+				empty.className = "empty";
+				empty.textContent = "none saved yet";
+				list.append(empty);
+			}
+			for (const name of presetNames) {
+				const row = document.createElement("div");
+				row.className = "row";
+
+				const load = document.createElement("button");
+				load.className = "chip name" + (name === activePreset ? " on" : "");
+				load.textContent = name;
+				load.title = `load "${name}"`;
+				load.onclick = () => { armedDelete = null; send("/grid/in/preset/load", [name]); };
+
+				const del = document.createElement("button");
+				del.className = "chip del" + (armedDelete === name ? " arm" : "");
+				del.textContent = "×";
+				del.title = armedDelete === name ? "click again to delete" : `delete "${name}"`;
+				del.onclick = () => {
+					if (armedDelete === name) { armedDelete = null; send("/grid/in/preset/delete", [name]); }
+					else { armedDelete = name; renderPresets(); }
+				};
+
+				row.append(load, del);
+				list.append(row);
+			}
+			el("presetNote").textContent = activePreset
+				? `active: ${activePreset}`
+				: presetNames.length ? "edited since load" : "save the current machine";
+		}
+
+		function savePreset() {
+			const input = el("presetName");
+			const name = input.value.trim();
+			if (!PRESET_NAME_RE.test(name)) {
+				el("presetNote").textContent = "name: letters, digits, space, _ or -";
+				return;
+			}
+			// Overwriting is the point of a name you already used, but say so out loud.
+			if (presetNames.includes(name) && !confirm(`Overwrite the preset "${name}"?`)) return;
+			send("/grid/in/preset/save", [name]);
+			input.value = "";
+			armedDelete = null;
+		}
+
+		el("presetSave").onclick = savePreset;
+		el("presetName").onkeydown = (e) => { if (e.key === "Enter") savePreset(); };
+		// Typing a name that exists turns save into an overwrite; hint at it.
+		el("presetName").oninput = () => {
+			const name = el("presetName").value.trim();
+			el("presetSave").textContent = presetNames.includes(name) ? "overwrite" : "save";
+		};
+
 		function renderIdle(s) {
 			const mins = Math.round(s.sleepAfterMs / 60000);
 			idleNoteEl.textContent = s.caffeinated
@@ -455,6 +543,9 @@
 					case "/grid/out/clock/tick": if (Number(m.args[0]) === 0) pulse(); break;
 					case "/grid/out/idle": { try { renderIdle(JSON.parse(m.args[0])); } catch {} break; }
 					case "/grid/out/settings": { try { appSettings = JSON.parse(m.args[0]); } catch {} renderAppSettings(); break; }
+					case "/grid/out/preset/list": presetNames = m.args.map(String); armedDelete = null; renderPresets(); break;
+					// "" = no preset active: a failed load, or the layout was edited since.
+					case "/grid/out/preset/active": activePreset = m.args[0] ? String(m.args[0]) : ""; renderPresets(); break;
 					case "/grid/out/leds": {
 						const [w, h, ...levels] = m.args;
 						if (w !== W || h !== H || cells.length !== w * h) buildGrid(w, h);

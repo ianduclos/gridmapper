@@ -408,13 +408,61 @@ describe("createOscRouter — liveness + presets", () => {
 		expect(emit).not.toHaveBeenCalled()
 	})
 
-	it("has no save route — presets are authored, not captured over the wire", () => {
-		const { router, emit, presets } = makeRouter()
-		router("/grid/in/slot/a/page", ["isometric"])
+	it("saves the live machine when the web panel asks", () => {
+		const { router, emit, slotPages, presets } = makeRouter()
+		router("/grid/in/slot/a/page", ["isometric"], "ui")
 		emit.mockClear()
-		router("/grid/in/preset/save", ["keys"])
+		router("/grid/in/preset/save", ["keys"], "ui")
+		expect(presets.list()).toEqual(["keys"])
+		// The saved slot carries the page's own serialize(), not just its name.
+		expect(presets.read("keys")?.slots.a.page).toBe("isometric")
+		expect(presets.read("keys")?.slots.a.config).toBeDefined()
+		expect(presets.activeName()).toBe("keys")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/list", "keys")
+		expect(emit).toHaveBeenCalledWith("/grid/out/preset/active", "keys")
+		expect(slotPages[0]).toBe("isometric")
+	})
+
+	it("refuses a save that arrived over OSC — a patch must not overwrite a preset", () => {
+		const { router, emit, presets } = makeRouter()
+		router("/grid/in/slot/a/page", ["isometric"], "ui")
+		emit.mockClear()
+		router("/grid/in/preset/save", ["keys"], "osc")
+		router("/grid/in/preset/save", ["keys"]) // origin defaults to osc
 		expect(presets.list()).toEqual([])
 		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("overwrites an existing preset with the same name", () => {
+		const { router, presets } = makeRouter()
+		router("/grid/in/slot/a/page", ["isometric"], "ui")
+		router("/grid/in/preset/save", ["one"], "ui")
+		router("/grid/in/slot/a/page", ["meadowphysics"], "ui")
+		router("/grid/in/preset/save", ["one"], "ui")
+		expect(presets.list()).toEqual(["one"])
+		expect(presets.read("one")?.slots.a.page).toBe("meadowphysics")
+	})
+
+	it("refuses an unsafe preset name from the panel too", () => {
+		const { router, emit, presets } = makeRouter()
+		router("/grid/in/preset/save", ["../escape"], "ui")
+		router("/grid/in/preset/save", [""], "ui")
+		router("/grid/in/preset/save", [], "ui")
+		expect(presets.list()).toEqual([])
+		expect(emit).not.toHaveBeenCalled()
+	})
+
+	it("round-trips a UI save through load, restoring page state", () => {
+		const { router, presets, pm } = makeRouter()
+		router("/grid/in/slot/a/page", ["isometric"], "ui")
+		router("/grid/in/page/a/setting/npo", [7], "ui")
+		router("/grid/in/preset/save", ["seven"], "ui")
+		router("/grid/in/page/a/setting/npo", [12], "ui")
+		expect((pm.serialize(0 as Slot) as any).npo).toBe(12)
+
+		router("/grid/in/preset/load", ["seven"], "ui")
+		expect((pm.serialize(0 as Slot) as any).npo).toBe(7)
+		expect(presets.activeName()).toBe("seven")
 	})
 
 	it("loads a preset, rebuilding every slot, and signals completion LAST", () => {
@@ -505,8 +553,8 @@ describe("createOscRouter — liveness + presets", () => {
 
 	it("leaves preset routes inert when no store is wired (test hosts)", () => {
 		const { router, emit } = makeRouter(false)
-		for (const p of ["list", "load", "delete"]) {
-			expect(() => router(`/grid/in/preset/${p}`, ["x"])).not.toThrow()
+		for (const p of ["list", "save", "load", "delete"]) {
+			expect(() => router(`/grid/in/preset/${p}`, ["x"], "ui")).not.toThrow()
 		}
 		expect(emit).not.toHaveBeenCalled()
 	})
