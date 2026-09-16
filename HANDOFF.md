@@ -111,6 +111,27 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-09-16 — Codex
+Made preset recall explicit in `web/index.html`: a **recall** button beside each
+saved name (name-click still recalls), descriptive accessible label, and a live
+status region. Replaced the misleading "edited since load" fallback with "no preset
+active". Documented UI recall in `docs/max-handshake.md`.
+
+**Verified:** `npx tsc --noEmit` clean; 353 tests green. Browser against an isolated
+NullGrid sim on 57291 (scratch configs, OSC 57931/57930): recall loaded isometric
+with vertical interval 7; changing it to 5 then recalling restored 7. Real UDP load
+returned `/grid/out/preset/active "Recall demo"`. Ready for Ian to check; no hardware
+or Max-patch verification.
+
+**Live state:** installed launchd plist runs `tsx src/cli/sim.ts`, contrary to the
+previous dist note. The current process still predates presets: web connection and
+explicit preset-list request emit no preset state. It needs `launchctl kickstart -k`
+to activate the existing backend; restart authorization requested, not yet received.
+Hardware currently reports m1000279. No live layout/settings changed.
+
+**UI suggestions (not implemented):** stronger label/status contrast; real dirty
+tracking for page edits (active marker currently survives them); responsive layout.
+
 ### 2026-09-12 — Claude
 Built the **Max boot handshake**, mirroring twistermapper's (`6ca8d20`) — the brief was
 STATUS's third `next` item plus `../twistermapper/docs/gridmapper-handshake-prompt.md`.

@@ -103,7 +103,7 @@
 		/* Presets: one row per saved file, the active one filled in like a chip. */
 		.presets { display: flex; flex-direction: column; gap: 4px; }
 		.presets .row { display: flex; align-items: center; gap: 4px; }
-		.presets .row .chip.name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.presets .row .chip.name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		.presets .row .chip.del { padding: 5px 8px; opacity: .3; }
 		.presets .row .chip.del:hover { opacity: .9; }
 		.presets .row .chip.del.arm { background: var(--ink); color: var(--bg); opacity: 1; }
@@ -176,7 +176,7 @@
 					<input id="presetName" type="text" placeholder="name" maxlength="48" spellcheck="false" />
 					<button class="chip" id="presetSave" title="capture the live machine into this preset">save</button>
 				</div>
-				<div class="note" id="presetNote">—</div>
+				<div class="note" id="presetNote" role="status">—</div>
 			</div>
 			<div class="settings">
 				<div class="title">app settings</div>
@@ -425,8 +425,15 @@
 				const load = document.createElement("button");
 				load.className = "chip name" + (name === activePreset ? " on" : "");
 				load.textContent = name;
-				load.title = `load "${name}"`;
+				load.title = `recall "${name}" — restore all eight slots and their page state`;
 				load.onclick = () => { armedDelete = null; send("/grid/in/preset/load", [name]); };
+
+				const recall = document.createElement("button");
+				recall.className = "chip";
+				recall.textContent = "recall";
+				recall.setAttribute("aria-label", `recall ${name}`);
+				recall.title = load.title;
+				recall.onclick = load.onclick;
 
 				const del = document.createElement("button");
 				del.className = "chip del" + (armedDelete === name ? " arm" : "");
@@ -437,12 +444,12 @@
 					else { armedDelete = name; renderPresets(); }
 				};
 
-				row.append(load, del);
+				row.append(load, recall, del);
 				list.append(row);
 			}
 			el("presetNote").textContent = activePreset
 				? `active: ${activePreset}`
-				: presetNames.length ? "edited since load" : "save the current machine";
+				: presetNames.length ? "no preset active · choose recall" : "save the current machine";
 		}
 
 		function savePreset() {

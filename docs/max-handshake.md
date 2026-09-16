@@ -40,6 +40,10 @@ has an address it can hit forever that is guaranteed never to do anything else.
 
 ## Phase 1 — load the preset
 
+In the web UI, click **recall** beside a saved preset in the presets box. Clicking
+the preset name does the same thing; recalling the active preset restores its saved
+state again. The `active: <name>` line confirms completion.
+
     Max  → /grid/in/preset/load <name>
 
 The daemon rebuilds all eight slots from `configs/presets/<name>.json` and emits, in
