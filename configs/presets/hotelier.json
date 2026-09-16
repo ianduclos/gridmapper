@@ -1,0 +1,82 @@
+{
+	"version": 1,
+	"slots": {
+		"a": {
+			"page": "isometric",
+			"config": {
+				"npo": 12,
+				"vertical": 5,
+				"root": 0,
+				"scale": "ionian",
+				"layout": "chromatic",
+				"orientation": "standard",
+				"lane": 0,
+				"arp": "off",
+				"arpRate": 125,
+				"arpDiv": 1,
+				"quant1": "off",
+				"quant2": "off",
+				"quant3": "off",
+				"quant4": "off",
+				"chords": [
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+					null
+				],
+				"patterns": [
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					}
+				],
+				"selected": [
+					0
+				],
+				"routes": [
+					[],
+					[],
+					[],
+					[]
+				]
+			}
+		},
+		"b": {
+			"page": "base"
+		},
+		"c": {
+			"page": "base"
+		},
+		"d": {
+			"page": "base"
+		},
+		"e": {
+			"page": "base"
+		},
+		"f": {
+			"page": "base"
+		},
+		"g": {
+			"page": "base"
+		},
+		"h": {
+			"page": "base"
+		}
+	}
+}
