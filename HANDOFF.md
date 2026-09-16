@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-08-08
+updated: 2026-09-16
 entries: 0
 ---
 
@@ -54,7 +54,25 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
   Max** (`emitOut` = OSC + web). **Control routing is a single shared dispatcher,
   `core/oscRouter.ts`**, used by both `sim.ts` and the daemon.
   **Runtime hotplug lives in `io/gridConnection.ts`** and is shared by both.
-- **Transport (new):** `core/clock.ts` — one app clock, **off at boot**, in **4 lanes**
+- **Max boot handshake + presets (new):** `docs/max-handshake.md` is the contract a
+  patch follows. `/grid/in/ping <token>` → `/grid/out/pong <token>`. A preset layer
+  (`core/systemConfig.ts` = layout-as-data + sanitize→factory; `core/presetStore.ts` =
+  `configs/presets/<name>.json` + `configs/slots.json`, the live layout + `activePreset`
+  marker that both entry points now BOOT into). `/grid/in/preset/{list,load,delete}`;
+  **save is web-panel only** (`origin === "ui"`) — a patch must not overwrite a preset
+  mid-set. `/grid/out/preset/active` is the completion signal, emitted only after all
+  eight slots are built and have announced; `""` = none active.
+  **A preset restores page state**, not just the layout: `Page.restore?(config, ctx)` is
+  the inverse of `serialize()`, called between `init()` and `onFocus()`. isometric brings
+  back settings + 8 chords + 4 recorded loops + track routing; meadowphysics its whole
+  patch. Nothing restored makes a sound (loops come back *stopped* at the top).
+  `util/restoreGuards.ts` is mandatory reading for any new `restore()` — a preset is
+  untrusted input and must never throw.
+  **Echo discipline:** an OSC-originated `/setting/<key>` write no longer echoes on the
+  OSC wire (the web UI still gets it, and a UI write still reaches Max). The router takes
+  an `origin`; the host owns the mute.
+  **Web UI:** a presets box (list · load · save/overwrite · arm-then-confirm delete).
+- **Transport:** `core/clock.ts` — one app clock, **off at boot**, in **4 lanes**
   (each internal ÷n of the drift-compensated master, or external via
   `/grid/in/clock/tick <lane>`). Every lane ticks **every loaded page**
   (`Page.onTick(tick, lane)`), so sequencers run in slots you aren't looking at, and a
@@ -93,6 +111,52 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-09-12 — Claude
+Built the **Max boot handshake**, mirroring twistermapper's (`6ca8d20`) — the brief was
+STATUS's third `next` item plus `../twistermapper/docs/gridmapper-handshake-prompt.md`.
+Three commits: `6a6172c` handshake + preset layer + echo discipline, `5f71b24`
+`serialize()` → `restore()`, `e2fcccd` the web panel's presets box.
+
+**New files:** `core/systemConfig.ts`, `core/presetStore.ts`, `util/restoreGuards.ts`,
+`docs/max-handshake.md`, `test/{systemConfig,presetStore,restore}.test.ts`.
+
+**Scope calls Ian made mid-session:** a preset is *pages and their own state* — NOT
+focus, NOT the transport, NOT the idle policy (those stay in `settings.json`, shared
+across presets). And **no OSC save**: presets are created from the web panel only. The
+first pass cut save entirely, which left nothing able to *make* a preset file
+(hand-writing a looper's event list isn't real) — so it came back gated on
+`origin === "ui"`. That gate is the same `origin` parameter echo discipline uses, which
+is why the router takes one at all.
+
+**Gotchas worth keeping:**
+- **A page announces its DEFAULTS first.** On a preset load a page emits from `init()`
+  (defaults), again from `restore()`, and again from `onFocus()` if focused. A patch that
+  latches the first `/settings` latches the wrong one — take the last, with
+  `/grid/out/preset/active` as the end of the burst. Documented in the handshake doc.
+- **Echo suppression is deliberately narrow** — only `/setting/<key>` (+ value-in-path
+  and plural). `/settings/get` must always reply, and blanket-suppressing everything a
+  page emits during OSC dispatch would swallow notes and chords.
+- Testing the daemon without disturbing the live agent: run it from a **scratch cwd**
+  with its own `configs/` on spare ports (57931/57930, UI 57291) and a symlink to `web/`.
+  `process.cwd()` is what picks up configs, so this needs no code changes and never
+  touches serialosc or port 57131.
+
+**Verified:** `npx tsc --noEmit` clean, **353 tests** green (was 287). End-to-end over
+real UDP against a NullGrid daemon: ping/pong, a hand-authored preset loading with every
+value restored, an unknown page name degrading to `base`, suppressed echo, `/settings/get`
+still replying, failed load reporting `""`. The presets box driven in a real browser
+(Chrome via playwright-core) — save → file on disk → change → load → restore, overwrite
+hint, invalid name, arm-then-confirm delete, marker clearing on a slot change, no console
+errors.
+
+**NOT verified:** anything on hardware, and anything from an actual Max patch. Also
+**not deployed** — the launchd agent still runs a `dist/` predating all of this, so the
+live daemon has no ping, no presets, and still echoes settings. Rebuild + restart is the
+first `next`.
+
+**Next:** deploy (build + `launchctl kickstart -k`); build the Max side against
+`docs/max-handshake.md`; `restore()` on `basic` if its toggle grid ever matters.
+
 ### 2026-08-08 — Claude
 Long session, all on `pages/isometric.ts`, which grew from a keyboard into an
 instrument. **Layout** (see the header comment for the taxonomy): col 13 CHORDS,
