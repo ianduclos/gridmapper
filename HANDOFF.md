@@ -126,8 +126,10 @@ or Max-patch verification.
 **Live state:** installed launchd plist runs `tsx src/cli/sim.ts`, contrary to the
 previous dist note. The current process still predates presets: web connection and
 explicit preset-list request emit no preset state. It needs `launchctl kickstart -k`
-to activate the existing backend; restart authorization requested, not yet received.
-Hardware currently reports m1000279. No live layout/settings changed.
+to activate the existing backend. Ian subsequently authorized deployment: restarted
+the agent with `kickstart -k`; live ping/pong and preset list/active replies verified
+on 57191. No saved presets currently exist. Initial device response after restart was
+`null-grid`; physical reconnection remains to be checked by Ian.
 
 **UI suggestions (not implemented):** stronger label/status contrast; real dirty
 tracking for page edits (active marker currently survives them); responsive layout.
