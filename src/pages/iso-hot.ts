@@ -10,11 +10,13 @@
  *          nothing already sounding moves. Keys always transpose; chord presets and looper
  *          playback do too unless `transposeChords` / `transposeLoops` are off. A chord
  *          remembers the transposition it was saved at and moves RELATIVE to it.
- *          LOOPS record transposer moves as a parallel GESTURE (a control lane) and store
+ *          LOOPS record transposer moves AND arp-button presses as parallel GESTURES (a
+ *          control lane; the arp is stored as the mode it was set to) and store
  *          their notes UNtransposed; playback replays the moves into the live transposer
  *          and the transposer then shifts every loop, its own notes included — so a take
  *          sounds as played. Several loops may drive it; the latest move wins, and a
- *          press of yours holds until a loop's next move. Loop playback is never recorded.
+ *          press of yours holds until a loop's next move. Same rules for the arp mode.
+ *          Loop playback is never recorded.
  *          Transposition is performance state: not saved, 0 on load.
  *          Col 0 row 6: unassigned. Saved chords PERSIST (ctx.persist) on every save/clear.
  *          Everything else is isometric as of the fork.
@@ -195,6 +197,10 @@ const LVL_TR_OTHER = 2
 const LVL_TR_TOGGLE_SHOWN = 12
 const LVL_TR_TOGGLE_OFFSET = 6 // hidden, but a transposition is in force
 const LVL_TR_TOGGLE_IDLE = 2
+
+/** Control-lane ids for gestures the loopers record alongside notes. */
+const CTL_TRANSPOSE = "transpose"
+const CTL_ARP = "arp" // value = index into ARP_MODES (0 = off)
 const BASE_STEP = 0 // bottom-left cell = step 0
 
 // Four tiers that have to be told apart AT A GLANCE on a varibright grid, so they are
@@ -730,6 +736,22 @@ export class IsoHotPage implements Page {
 	private arpKey(idx: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) return
 		this.arp.toggle(ARP_BUTTONS[idx])
+		// Armed loopers take the RESULTING mode (off included), not the button, so replay is
+		// idempotent however many loops carry arp moves.
+		const nowMs = Date.now()
+		for (const r of this.recorders) r.recordControl(CTL_ARP, ARP_MODES.indexOf(this.arp.mode as ArpMode), nowMs)
+		this.arpChanged(ctx)
+	}
+
+	/** A loop replayed an arp move. Not recorded: loopers never tap each other. */
+	private replayArp(value: number, ctx: PageContext) {
+		const mode = ARP_MODES[value]
+		if (!mode || mode === this.arp.mode) return
+		this.arp.set(mode)
+		this.arpChanged(ctx)
+	}
+
+	private arpChanged(ctx: PageContext) {
 		this.arpNote = null
 		this.arpAccMs = 0
 		this.commit(ctx) // recompute the pool before taking the first step
@@ -951,14 +973,19 @@ export class IsoHotPage implements Page {
 					lengthMs: num(node.lengthMs, 0, 0, MAX_RECORD_MS),
 					events: records(node.events, MAX_PATTERN_EVENTS, (e) => {
 						if (e.ctl !== undefined) {
-							const ctl = Number(e.ctl)
-							if (!Number.isFinite(ctl)) return undefined
-							return {
-								atMs: num(e.atMs, -1, 0, MAX_RECORD_MS),
-								step: 0,
-								on: false,
-								ctl: clamp(Math.round(ctl), TRANSPOSE_MIN, TRANSPOSE_MAX),
+							const ctl = isRecord(e.ctl) ? e.ctl : {}
+							const value = Number(ctl.value)
+							if (!Number.isFinite(value)) return undefined
+							const atMs = num(e.atMs, -1, 0, MAX_RECORD_MS)
+							if (ctl.id === CTL_TRANSPOSE) {
+								const v = clamp(Math.round(value), TRANSPOSE_MIN, TRANSPOSE_MAX)
+								return { atMs, step: 0, on: false, ctl: { id: CTL_TRANSPOSE, value: v } }
 							}
+							if (ctl.id === CTL_ARP) {
+								const v = clamp(Math.round(value), 0, ARP_MODES.length - 1)
+								return { atMs, step: 0, on: false, ctl: { id: CTL_ARP, value: v } }
+							}
+							return undefined
 						}
 						if (typeof e.on !== "boolean" && typeof e.on !== "number") return undefined
 						const step = Number(e.step)
@@ -1257,7 +1284,7 @@ export class IsoHotPage implements Page {
 		const next = clamp(t, TRANSPOSE_MIN, TRANSPOSE_MAX)
 		if (byHand) {
 			const nowMs = Date.now()
-			for (const r of this.recorders) r.recordControl(next, nowMs)
+			for (const r of this.recorders) r.recordControl(CTL_TRANSPOSE, next, nowMs)
 			this.syncTimer()
 		}
 		if (next === this.transpose) return
@@ -1329,8 +1356,10 @@ export class IsoHotPage implements Page {
 			this.recorders[i].advance(nowMs, dt, this.quantumMs(i))
 			// A replayed transposer move lands BEFORE commit, so notes starting in the same
 			// window already take it. Latest recorder wins.
-			const ctl = this.recorders[i].takeControl()
-			if (ctl !== undefined) this.setTranspose(ctl, ctx, false)
+			for (const [id, value] of this.recorders[i].takeControls()) {
+				if (id === CTL_TRANSPOSE) this.setTranspose(value, ctx, false)
+				else if (id === CTL_ARP) this.replayArp(value, ctx)
+			}
 		}
 		// Free-run the arp only while the transport is stopped; otherwise onTick owns it.
 		if (this.arp.isOn && !ctx.clock.running) {

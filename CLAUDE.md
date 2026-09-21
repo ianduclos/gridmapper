@@ -321,7 +321,8 @@ src/
                          force when hidden; not saved). A note takes the transposition AT
                          NOTE START. Chords move RELATIVE to the transposition they were saved
                          at (chordTranspose). LOOPS store notes UNtransposed and record
-                         transposer moves as a parallel control lane (PatternEvent.ctl);
+                         transposer moves + arp-button modes as a parallel control lane
+                         (PatternEvent.ctl {id,value});
                          playback drives the LIVE transposer (latest move wins, a hand press
                          holds until the next move), which shifts every loop incl. its own
                          notes. Opt-outs: transposeChords / transposeLoops. Chord save/clear calls

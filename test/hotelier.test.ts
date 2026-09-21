@@ -245,7 +245,7 @@ describe("iso-hot loop transposition", () => {
 		recordGesture(r)
 		const take = (r.pm.serialize(0 as Slot) as any).patterns[0].events
 		expect(take.filter((e: any) => e.on && e.ctl === undefined).map((e: any) => e.step)).toEqual([7, 7])
-		expect(take.filter((e: any) => e.ctl !== undefined).map((e: any) => e.ctl)).toEqual([3])
+		expect(take.filter((e: any) => e.ctl !== undefined).map((e: any) => e.ctl)).toEqual([{ id: "transpose", value: 3 }])
 	})
 
 	it("replays the move into the live transposer, and the transposer shifts the loop's own notes", () => {
@@ -268,6 +268,23 @@ describe("iso-hot loop transposition", () => {
 		recordGesture(r)
 		r.pm.routeOscToPage(0 as Slot, "/setting/transposeLoops", [0])
 		expect(onsIn(r, 600)).toEqual([7, 7])
+	})
+
+	it("arp buttons are recorded as the mode they set, and replayed", () => {
+		const r = rig()
+		r.tap(15, 0) // arm looper 0
+		r.tap(14, 4) // arp ascending → starts the take
+		vi.advanceTimersByTime(200)
+		r.tap(14, 4) // same button again → off
+		vi.advanceTimersByTime(200)
+		r.tap(15, 0) // close → playing (400ms loop)
+		const take = (r.pm.serialize(0 as Slot) as any).patterns[0].events
+		expect(take.map((e: any) => e.ctl)).toEqual([{ id: "arp", value: 1 }, { id: "arp", value: 0 }])
+		const arpState = () => (r.pm.serialize(0 as Slot) as any).arp
+		vi.advanceTimersByTime(100) // just past the top: ascending replayed
+		expect(arpState()).toBe("ascending")
+		vi.advanceTimersByTime(200) // past 200ms: off replayed
+		expect(arpState()).toBe("off")
 	})
 
 	it("loop playback is never recorded into another looper", () => {

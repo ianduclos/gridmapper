@@ -26,10 +26,11 @@ export interface PatternEvent {
 	on: boolean
 	/**
 	 * A CONTROL event instead of a note: a gesture recorded in parallel with the notes
-	 * (iso-hot's transposer). When present, `step`/`on` are ignored and playback reports
-	 * the value through `takeControl()` rather than touching `sounding`.
+	 * (iso-hot's transposer and arp buttons). `id` names the control, `value` is the state
+	 * it was set to. When present, `step`/`on` are ignored and playback reports the value
+	 * through `takeControls()` rather than touching `sounding`.
 	 */
-	ctl?: number
+	ctl?: { id: string; value: number }
 }
 
 /** A recording longer than this closes itself and starts looping. */
@@ -69,6 +70,9 @@ export function quantiseLength(lengthMs: number, quantumMs: number): number {
 	return Math.max(quantumMs, Math.round(lengthMs / quantumMs) * quantumMs)
 }
 
+const copyEvent = (e: PatternEvent): PatternEvent =>
+	e.ctl ? { ...e, ctl: { ...e.ctl } } : { ...e }
+
 export class PatternRecorder {
 	state: RecorderState = "empty"
 	/** Steps this recorder is currently asking to sound. */
@@ -88,8 +92,8 @@ export class PatternRecorder {
 	 * every recorded note a floor of one tick.
 	 */
 	private pendingOff: number[] = []
-	/** The last control value fired by the latest advance(), until taken. */
-	private firedCtl: number | undefined
+	/** Control id → the last value played back, until taken. */
+	private firedCtl = new Map<string, number>()
 
 	/** Recording or playing — i.e. the page's timer needs to be running. */
 	get isRunning(): boolean {
@@ -134,7 +138,7 @@ export class PatternRecorder {
 
 	/** Everything needed to restore this pattern later (preset capture). */
 	snapshot(): { lengthMs: number; events: PatternEvent[] } {
-		return { lengthMs: this.lengthMs, events: this.events.map((e) => ({ ...e })) }
+		return { lengthMs: this.lengthMs, events: this.events.map(copyEvent) }
 	}
 
 	/**
@@ -147,7 +151,7 @@ export class PatternRecorder {
 	restore(snapshot: { lengthMs: number; events: readonly PatternEvent[] }): void {
 		this.clear()
 		if (!snapshot.events.length || snapshot.lengthMs <= 0) return
-		this.events = snapshot.events.map((e) => ({ ...e })).sort((a, b) => a.atMs - b.atMs)
+		this.events = snapshot.events.map(copyEvent).sort((a, b) => a.atMs - b.atMs)
 		this.lengthMs = snapshot.lengthMs
 		this.state = "stopped"
 	}
@@ -161,7 +165,7 @@ export class PatternRecorder {
 		this.playhead = 0 // the ONLY thing that rewinds
 		this.sounding.clear()
 		this.pendingOff = []
-		this.firedCtl = undefined
+		this.firedCtl.clear()
 	}
 
 	/** Tap the live note stream. Ignored unless recording. */
@@ -169,16 +173,16 @@ export class PatternRecorder {
 		this.push(nowMs, { step, on })
 	}
 
-	/** Tap a control gesture (a transposer move). Starts the loop's clock like a note does. */
-	recordControl(value: number, nowMs: number): void {
-		this.push(nowMs, { step: 0, on: false, ctl: value })
+	/** Tap a control gesture (e.g. a transposer move). Starts the loop's clock like a note. */
+	recordControl(id: string, value: number, nowMs: number): void {
+		this.push(nowMs, { step: 0, on: false, ctl: { id, value } })
 	}
 
-	/** The latest control value played back since the last call, if any. */
-	takeControl(): number | undefined {
-		const v = this.firedCtl
-		this.firedCtl = undefined
-		return v
+	/** Control id → the latest value played back since the last call (empty if none). */
+	takeControls(): Map<string, number> {
+		const fired = this.firedCtl
+		this.firedCtl = new Map()
+		return fired
 	}
 
 	private push(nowMs: number, e: Omit<PatternEvent, "atMs">): void {
@@ -211,7 +215,7 @@ export class PatternRecorder {
 		const onThisWindow = new Set<number>()
 		for (const e of fired) {
 			if (e.ctl !== undefined) {
-				this.firedCtl = e.ctl
+				this.firedCtl.set(e.ctl.id, e.ctl.value)
 				continue
 			}
 			if (e.on) {
