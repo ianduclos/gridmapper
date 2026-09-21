@@ -56,3 +56,54 @@ Changing Rhythm world keeps tuning, pulse rate and mute states, selects the new
 world's first cell in every row and preserves the moving shared phase. Matched
 starting points are pentatonic-model for amadinda and heptatonic-model for the
 mbira study; choose tritave for an intentional non-octave transformation.
+
+## Manjanin and Ngòn (2026-09-21)
+
+Both banks have six rows × three choices. They preserve documented rhythmic
+relationships, but their melodic pitches, gains, durations and instrument
+allocation are workshop arrangements. They are not traditional melodic
+transcriptions. A tuning change still retunes the same rhythmic material.
+
+### Manjanin — Kone quartet study
+
+Source: [Polak 2010](https://www.mtosmt.org/issues/mto.10.16.4/mto.10.16.4.polak.html),
+Table 1, the Drissa Kone quartet recording (Bamako, 2006).
+Source score images: [cycles 5–16](https://www.mtosmt.org/issues/mto.10.16.4/polak_table1b.gif),
+[cycles 173–184](https://www.mtosmt.org/issues/mto.10.16.4/polak_table1p.gif).
+
+Rows split first dunun open/muted, second dunun, second jembe, and lead
+bass/tone versus slap. The three ensembles use four consecutive lead cycles:
+5–8, 9–12 and 175–178. Short accompaniment figures continue beneath these
+48-design-pulse loops. The core dunun phrase crosses the cycle boundary;
+the heat excerpt retains its final-cycle downbeat omission. Other independent
+choices offer the published omission variation or explicitly filtered stems.
+
+Lead/J2 use the descriptive 27:33:40 model, including cumulative fractional
+positions 0, .81, 1.8 per three pulses. D1 uses its separate Table 10 mean
+intervals 59:100:98:65:79, normalized from their rounded total 401 to exactly
+12 pulses. D2's timing uses the shared model, not separate onset measurements.
+All loops have fixed tempo; the recording's acceleration and local expressive
+variation are not reproduced. `sourceToken` retains drum/stroke identity.
+
+### Ngòn — measured-feel study
+
+Source: [Polak & London 2014](https://mtosmt.org/issues/mto.14.20.1/mto.14.20.1.polak-london.php),
+figures 3.1, 3.3, 3.6, 5.2 and 6.1.
+Rows: cunba hook, ngangan response, low/high accompaniment stems, and the two
+halves of the lead phrase. The core lead halves alternate across four beats;
+they do not restart together. The bass/stick hook spans eight beats (24 pulses).
+
+The accompaniment model uses measured corpus-mean 40.8:30.7:28.5 spacing:
+0, 1.224, 2.145 per three pulses. HalfBu is .612 pulses. These normalized
+landmarks are not an exact reconstruction of any single performance; the lead
+has its own expressive timing, simplified here to the shared landmarks.
+Flams collapse to one attack. The intermittent ngangan variant has no published
+timing statistics; its placement follows the notation and model. Its six-beat
+excerpt is padded with two beats of arranged rest to retain hook phase.
+Alternative choices include published optional notes and clearly labelled
+filters/combinations. Full accompaniment remains selected in all three recalls;
+the independent stem buttons allow further thinning.
+
+Try Humanize 0 first: the structural timing remains uneven. Then add 1–4 ms if
+wanted. Start with the core ensemble, change the lead pair together to hear the
+source phrase, then separate their choices to create a deliberate hybrid.

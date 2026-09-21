@@ -1,3 +1,5 @@
+import { ngonWorld } from "./cells-ngon.js"
+import { manjaninWorld } from "./cells-manjanin.js"
 import hotelier from "./hotelier-tunings.json" with { type: "json" }
 import horn from "./cells-hot-bank.json" with { type: "json" }
 
@@ -269,6 +271,9 @@ worlds["mbira-chakwi"] = {
 		"Right index B",
 	],
 }
+
+worlds[manjaninWorld.id] = manjaninWorld
+worlds[ngonWorld.id] = ngonWorld
 
 // Existing horn tuning maps remain byte-for-byte musically unchanged. For
 // melodic source parts, ordinal degrees are rescaled into the selected system.

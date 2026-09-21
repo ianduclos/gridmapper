@@ -41,7 +41,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
-- **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Measured microtiming sources: `docs/cells-microtiming-research.md`; new source reconstructions pending.
+- **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Manjanin and Ngòn study banks installed, 18 choices each; source details in `docs/cells-sources.md` and next-repertoire research in `docs/cells-microtiming-research.md`.
 - **Run:** `npm run sim` → http://localhost:57191 (live grid + web mirror; auto-
   connects to the monome 128 when present). `npm run sim -- --null` = no hardware.
   `npm run dev` = headless daemon. `npm test` · `npx tsc --noEmit` · `npm run grid:list`.
@@ -112,6 +112,13 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-21 — Codex — Manjanin and Ngòn banks
+- Added two six-row/three-choice source-derived study banks. Manjanin uses four-cycle lead excerpts 5–8, 9–12, 175–178 and separate measured D1 timing. Ngòn preserves the eight-beat hook and alternating four-beat lead halves, with corpus-mean subdivision and labelled adapted alternatives. Pitch/duration/gain are composed; Ngòn flams collapse to single attacks.
+- Verified source notation visually and independently reviewed Manjanin; tests protect lead phase, omission, fractional OSC onsets with humanization zero, and all tuning/range combinations. Types clean, 417 tests pass. Live browser showed and selected both new banks without changing tuning; original Ssematimba upper-stream choices restored, transport stopped. No physical device or new Max audio audition; Max files untouched.
+- Research: documented second Banda Linda repertoire, Aka/Baka analytical recordings, Balinese kotekan and byar distinction, and Algerian inṣirāf evidence/limits. No additional source banks claimed installed.
+- Files: two data modules, worlds registration, `test/cellsMande.test.ts`, cells source/research docs.
+- Next: Ian auditions; named Banda Linda transcription/recording pairing. Max agent's new `durationMode` implementation is recorded in Hotelier's change feed and playback contract; existing pending UI label still awaits end-to-end listening/integration confirmation.
 
 ### 2026-09-21 — Codex — World banks and Hotelier tunings
 - Added named rhythm/tuning buttons in web settings and physical Grid bank views on row seven. Selection follows existing phase-preserving scheduling; bank view is not persisted.
