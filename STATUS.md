@@ -3,11 +3,11 @@ project: gridmapper
 state: active
 updated: 2026-09-21
 machine: mac
-summary: The hotelier concert set is taking shape — iso-hot (an isometric fork with a column-0 page selector, a loop-recordable transposer and arp, and chords that persist to the preset) plus blank-hot placeholders, deployed to the live agent; 374 tests green, not yet played on the grid.
+summary: The hotelier concert set is live on the agent — iso-hot, set-hot and cells-hot v2 (richer banks, shaped decay, evolution) now running against Hotelier's installed Max half; 447 tests green, cells v2 not yet listened to on the live rig.
 next:
-  - Play hotelier on the grid before the concert (2026-09-23) — selector, transposer, looped transposer/arp moves, chord persistence across a restart
-  - Build the remaining custom hotelier pages (at least two more) in slots b-f
-  - Decide what iso-hot's free key (col 0 row 6) does
+  - Listening/timing pass on cells v2 per docs/cells-v2-rollout.md (press Start on page B first)
+  - Play hotelier on the grid before the concert (2026-09-23) — selector, transposer, looped moves, chord persistence across a restart
+  - Decide whether to commit the dirty configs/slots.json and configs/presets/hotelier.json
   - Build the Max patch side against docs/max-handshake.md, including /grid/out/page/<slot>/transpose
   - Single-instance guard; twistermapper clock bridge
 handoff_for: null
