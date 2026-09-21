@@ -1,0 +1,722 @@
+{
+  "schema": "cells-hot.composition-bank",
+  "schemaVersion": "0.1-draft",
+  "id": "horn-relay-starter",
+  "status": "compositional audition bank; not a curated traditional source bank",
+  "timing": {
+    "unit": "pulse",
+    "pulseSecondsAtPreviewTempo": 0.13833333333333334,
+    "referenceCellPulses": 12,
+    "referenceCellSeconds": 1.66,
+    "meterClaim": false,
+    "phaseOrigin": "shared ensemble zero"
+  },
+  "cells": [
+    {
+      "id": "ground-root",
+      "name": "Root",
+      "voiceRole": "ground",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 1.5,
+          "durationPulses": 1.7,
+          "gain": 0.92,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "ground-pair",
+      "name": "Weighted pair",
+      "voiceRole": "ground",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 1.5,
+          "durationPulses": 1.7,
+          "gain": 0.92,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 13.5,
+          "durationPulses": 1.7,
+          "gain": 0.92,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 20.5,
+          "durationPulses": 0.9,
+          "gain": 0.48,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "ground-space",
+      "name": "Long breath",
+      "voiceRole": "ground",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 1.5,
+          "durationPulses": 2.5,
+          "gain": 0.9,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 13.5,
+          "durationPulses": 2.5,
+          "gain": 0.9,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 25.5,
+          "durationPulses": 2.5,
+          "gain": 0.9,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "knock-offbeat",
+      "name": "Offbeat",
+      "voiceRole": "knock",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 3,
+          "durationPulses": 0.6,
+          "gain": 0.65,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 10.5,
+          "durationPulses": 0.5,
+          "gain": 0.48,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "knock-answer",
+      "name": "Delayed answer",
+      "voiceRole": "knock",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 3,
+          "durationPulses": 0.6,
+          "gain": 0.65,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 15,
+          "durationPulses": 0.6,
+          "gain": 0.65,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 22,
+          "durationPulses": 0.5,
+          "gain": 0.5,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "knock-gap",
+      "name": "One knock",
+      "voiceRole": "knock",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 3,
+          "durationPulses": 0.6,
+          "gain": 0.65,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "low-seed",
+      "name": "Long / short",
+      "voiceRole": "low",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 0.571084,
+          "durationPulses": 3.715663,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 7.575904,
+          "durationPulses": 1.640964,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "inferred",
+        "sourceBand": "H6",
+        "note": "Inferred repetition of band-envelope estimates, not a verified player transcription; 12-pulse normalization is a design convention.",
+        "sourceUrl": "https://www.youtube.com/watch?v=g5Y765MahQw",
+        "sourceWindowSeconds": [
+          8.8,
+          10.46
+        ],
+        "sharedOriginSeconds": 8.8
+      }
+    },
+    {
+      "id": "low-held",
+      "name": "Held call",
+      "voiceRole": "low",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 0.571084,
+          "durationPulses": 5,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 12.571084,
+          "durationPulses": 3.7,
+          "gain": 0.72,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 19.575904,
+          "durationPulses": 1.64,
+          "gain": 0.52,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "low-space",
+      "name": "Missing answer",
+      "voiceRole": "low",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 0.571084,
+          "durationPulses": 3.715663,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 12.571084,
+          "durationPulses": 3.715663,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 19.575904,
+          "durationPulses": 1.640964,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "high-seed",
+      "name": "Close companion",
+      "voiceRole": "high",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 0.354217,
+          "durationPulses": 1.460241,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 7.474699,
+          "durationPulses": 1.387952,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "inferred",
+        "sourceBand": "H4",
+        "note": "Inferred repetition of band-envelope estimates, not a verified player transcription; 12-pulse normalization is a design convention.",
+        "sourceUrl": "https://www.youtube.com/watch?v=g5Y765MahQw",
+        "sourceWindowSeconds": [
+          8.8,
+          10.46
+        ],
+        "sharedOriginSeconds": 8.8
+      }
+    },
+    {
+      "id": "high-sparse",
+      "name": "Leave a hole",
+      "voiceRole": "high",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 0.354217,
+          "durationPulses": 1.46,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 7.474699,
+          "durationPulses": 1.388,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 19.474699,
+          "durationPulses": 1.388,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "high-turn",
+      "name": "Four-turn call",
+      "voiceRole": "high",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 0.354217,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 7.474699,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 12.354217,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 24.354217,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 31.474699,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 43.474699,
+          "durationPulses": 1.46,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "reply-seed",
+      "name": "Unequal reply",
+      "voiceRole": "reply",
+      "lengthPulses": 12,
+      "events": [
+        {
+          "atPulse": 4.279518,
+          "durationPulses": 3.079518,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 9.426506,
+          "durationPulses": 2.428916,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "inferred",
+        "sourceBand": "H5",
+        "note": "Inferred repetition of band-envelope estimates, not a verified player transcription; 12-pulse normalization is a design convention.",
+        "sourceUrl": "https://www.youtube.com/watch?v=g5Y765MahQw",
+        "sourceWindowSeconds": [
+          8.8,
+          10.46
+        ],
+        "sharedOriginSeconds": 8.8
+      }
+    },
+    {
+      "id": "reply-late",
+      "name": "Late answer",
+      "voiceRole": "reply",
+      "lengthPulses": 24,
+      "events": [
+        {
+          "atPulse": 4.279518,
+          "durationPulses": 3.08,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 9.426506,
+          "durationPulses": 2.43,
+          "gain": 0.62,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 17.279518,
+          "durationPulses": 2.7,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 21.426506,
+          "durationPulses": 2,
+          "gain": 0.55,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "reply-arc",
+      "name": "Long answer",
+      "voiceRole": "reply",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 4.28,
+          "durationPulses": 3.08,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 9.43,
+          "durationPulses": 2.43,
+          "gain": 0.6,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 16.28,
+          "durationPulses": 3.08,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 29.28,
+          "durationPulses": 2.7,
+          "gain": 0.7,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 33.43,
+          "durationPulses": 2.0,
+          "gain": 0.55,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 40.28,
+          "durationPulses": 3.08,
+          "gain": 0.75,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "splinter-sparse",
+      "name": "Two sparks",
+      "voiceRole": "splinter",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 17.3,
+          "durationPulses": 0.65,
+          "gain": 0.45,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 41.8,
+          "durationPulses": 0.65,
+          "gain": 0.45,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "splinter-pair",
+      "name": "Bent pair",
+      "voiceRole": "splinter",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 17.3,
+          "durationPulses": 0.65,
+          "gain": 0.45,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 18.4,
+          "durationPulses": 0.5,
+          "gain": 0.32,
+          "pitchOffsetCents": 43,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 41.8,
+          "durationPulses": 0.65,
+          "gain": 0.45,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 43,
+          "durationPulses": 0.5,
+          "gain": 0.3,
+          "pitchOffsetCents": -61,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    },
+    {
+      "id": "splinter-return",
+      "name": "Distant return",
+      "voiceRole": "splinter",
+      "lengthPulses": 48,
+      "events": [
+        {
+          "atPulse": 5.3,
+          "durationPulses": 0.65,
+          "gain": 0.35,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 29.3,
+          "durationPulses": 0.65,
+          "gain": 0.4,
+          "pitchOffsetCents": -91,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 41.8,
+          "durationPulses": 0.65,
+          "gain": 0.45,
+          "pitchOffsetCents": 0,
+          "microOffsetPulses": 0
+        },
+        {
+          "atPulse": 46.2,
+          "durationPulses": 0.5,
+          "gain": 0.3,
+          "pitchOffsetCents": 43,
+          "microOffsetPulses": 0
+        }
+      ],
+      "provenance": {
+        "kind": "composed",
+        "sourceBand": null,
+        "note": "Designed composition; no claim of traditional authenticity."
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "lock",
+      "name": "Deep lock",
+      "cells": [
+        "ground-root",
+        "knock-offbeat",
+        "low-seed",
+        "high-seed",
+        "reply-late",
+        "splinter-sparse"
+      ]
+    },
+    {
+      "id": "hollow",
+      "name": "Open spaces",
+      "cells": [
+        "ground-root",
+        "knock-offbeat",
+        "low-seed",
+        "high-sparse",
+        "reply-arc",
+        "splinter-pair"
+      ]
+    },
+    {
+      "id": "long",
+      "name": "Long return",
+      "cells": [
+        "ground-root",
+        "knock-offbeat",
+        "low-seed",
+        "high-turn",
+        "reply-late",
+        "splinter-return"
+      ]
+    }
+  ],
+  "tunings": {
+    "tritave": {
+      "kind": "equal-log-period",
+      "rootHz": 82,
+      "periodRatio": 3,
+      "divisions": 13,
+      "voiceSteps": [
+        0,
+        3,
+        7,
+        11,
+        14,
+        18
+      ]
+    },
+    "beating": {
+      "kind": "absolute-hz",
+      "voiceHz": [
+        94,
+        141,
+        188,
+        193.2,
+        283.7,
+        292.1
+      ]
+    },
+    "source": {
+      "kind": "recording-estimate-hz",
+      "voiceHz": [
+        125.8,
+        195.6,
+        383.8,
+        527.9,
+        425.1,
+        656.8
+      ]
+    }
+  }
+}

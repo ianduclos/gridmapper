@@ -17,12 +17,16 @@ replacement remainder. Muting uses an empty `events` array; unmuting only schedu
 future events, so neither operation creates a retroactive attack. `stop` is
 `{type:"stop",session}` and clears the session queue and any notes it owns.
 
-The page runs on a selected app-clock lane (default 0). Run sets the shared app clock
-to **12 / 1.66 = 7.22891566 Hz**, one pulse per tick, then starts it; Stop stops that
-shared transport. It never changes transport state on page load or preset restore.
+The page uses the actual selected app-clock lane rate: `periodMs = 1000 * lane.div /
+clock.rate`. Run sets the shared app clock to **12 / 1.66 = 7.22891566 Hz**, one pulse
+per tick, then starts it; Stop stops that shared transport. It never changes transport
+state on page load or preset restore. The first received lane tick establishes a fresh
+phase-zero epoch, so a stopped/restarted session never inherits an old clock counter.
 The Max watchdog should treat `max(2000, 3 * periodMs)` without a sync as a timeout.
 
-Rows 0–5 select one of three paired source-bank cells, mute a voice, or phase-shift it
-by one pulse. The bottom row has Run, Stop and three ensemble selections. Tuning,
-root Hz, lane and 0–4 ms deterministic humanization serialize with the page; playback
-state and session IDs do not.
+Rows 0–5 select one of three paired source-bank cells or mute a voice; columns 5–15
+show that cell's phase progress, with a bright pending-onset flash. The bottom row has
+Run, Stop and the starter bank's `lock`, `hollow`, and `long` ensembles. Tuning is
+either the bank's tritave map (root 82 Hz and steps 0/3/7/11/14/18), absolute beating,
+or absolute source estimates; `rootMultiplier`, lane and 0–4 ms Max-side humanization
+serialize with the page. Gridmapper never applies local timing jitter.

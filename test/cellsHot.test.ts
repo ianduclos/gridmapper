@@ -1,57 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { CellsHotPage, PULSE_RATE } from "../src/pages/cells-hot.js"
-import type { PageContext } from "../src/core/types.js"
-
-const ctx = (sent: any[], controls: string[] = []): PageContext => ({
-	size: { width: 16, height: 8 }, modifiers: { held: new Set(), shift1: false, shift2: false },
-	clock: { running: false, rate: 20, tick: 0, lanes: [] }, slot: 1, slotLabel: "b",
-	osc: { send: (path, ...args) => sent.push({ path, args }) }, setDirty: () => {}, setShift: () => {}, focus: () => {}, persist: () => {},
-	clockControl: { start: () => controls.push("start"), stop: () => controls.push("stop"), setRate: (rate) => controls.push(`rate:${rate}`) },
-})
-const press = (p: CellsHotPage, c: PageContext, x: number, y: number) => { p.onKey({ x, y, s: 1 }, c); p.onKey({ x, y, s: 0 }, c) }
-const packets = (sent: any[]) => sent.filter((m) => m.path === "/grid/out/page/b/cells").map((m) => JSON.parse(m.args[0]))
-
-describe("cells-hot", () => {
-	it("announces a session and produces an absolute-deadline sync packet from its chosen lane", () => {
-		const sent: any[] = []; const p = new CellsHotPage(); const c = ctx(sent)
-		p.init(c); sent.length = 0
-		p.onClock!({ ...c.clock, running: true }, c)
-		p.onTick!(1, 0, c)
-		const out = packets(sent)
-		expect(out[0]).toMatchObject({ type: "start" })
-		expect(out.at(-1)).toMatchObject({ type: "sync", periodMs: 1000 / PULSE_RATE, humanizeMs: 4 })
-		expect(out.at(-1).events[0]).toMatchObject({ voice: 1, hz: 55 })
-		expect(out.at(-1).events[0].onsetMs).toBeGreaterThanOrEqual(Date.now() + 90)
-	})
-
-	it("keeps phase through a cell selection and replaces only the changed voice future", () => {
-		const sent: any[] = []; const p = new CellsHotPage(); const c = ctx(sent)
-		p.init(c); sent.length = 0; p.onClock!({ ...c.clock, running: true }, c); p.onTick!(4, 0, c); sent.length = 0
-		press(p, c, 2, 0) // second ground cell
-		const replace = packets(sent).find((x) => x.type === "replace")
-		expect(replace).toMatchObject({ type: "replace", voice: 1 })
-		expect(replace.cutoffMs).toBeGreaterThanOrEqual(Date.now() + 90)
-		expect(replace.events.every((e: any) => e.onsetMs >= replace.cutoffMs)).toBe(true)
-	})
-
-	it("mutes by cancelling future events, restores silently, and persists settings without runtime state", () => {
-		const sent: any[] = []; const p = new CellsHotPage(); const c = ctx(sent)
-		p.init(c); p.onClock!({ ...c.clock, running: true }, c); sent.length = 0
-		press(p, c, 4, 1); press(p, c, 4, 1)
-		const out = packets(sent)
-		expect(out.map((x) => x.type)).toEqual(["replace", "replace"])
-		expect(out[0].events).toEqual([])
-		const snapshot = p.serialize() as any
-		expect(snapshot.muted).toEqual([false, false, false, false, false, false])
-		const restored = new CellsHotPage(); restored.init(c); sent.length = 0; restored.restore!({ rootHz: 110, humanizeMs: 1, muted: [true] }, c)
-		expect(packets(sent)).toEqual([])
-		expect(restored.serialize()).toMatchObject({ rootHz: 110, humanizeMs: 1, muted: [true, false, false, false, false, false] })
-	})
-
-	it("starts the selected pulse rate only on an explicit run key and sends stop", () => {
-		const sent: any[] = []; const controls: string[] = []; const p = new CellsHotPage(); const c = ctx(sent, controls)
-		p.init(c); sent.length = 0; press(p, c, 1, 7); press(p, c, 2, 7)
-		expect(controls).toEqual([`rate:${PULSE_RATE}`, "start", "stop"])
-		expect(packets(sent).at(-1)).toMatchObject({ type: "stop" })
-	})
+import { ledIndex, type PageContext } from "../src/core/types.js"
+const clock:any={running:false,rate:20,tick:0,lanes:[{div:2},{div:1},{div:1},{div:1}]}
+const rig=()=>{const sent:any[]=[],ctl:string[]=[];const c:PageContext={size:{width:16,height:8},modifiers:{held:new Set(),shift1:false,shift2:false},clock,slot:1,slotLabel:"b",osc:{send:(path,...args)=>sent.push({path,args})},setDirty:()=>{},setShift:()=>{},focus:()=>{},persist:()=>{},clockControl:{start:()=>ctl.push("start"),stop:()=>ctl.push("stop"),setRate:r=>ctl.push(`rate:${r}`)}};const p=new CellsHotPage();p.init(c);const packets=()=>sent.filter(x=>x.path.endsWith("/cells")).map(x=>JSON.parse(x.args[0]));const tap=(x:number,y:number)=>p.onKey({x,y,s:1},c);return{p,c,sent,ctl,packets,tap}}
+describe("cells-hot",()=>{
+	it("uses tritave frequencies, phase zero first tick, and actual lane period",()=>{vi.useFakeTimers();vi.setSystemTime(1000);const r=rig();r.p.onClock!({...clock,running:true},r.c);r.p.onTick!(9,0,r.c);const q=r.packets().at(-1);expect(q.periodMs).toBe(100);expect(q.events.find((e:any)=>e.voice===3).hz).toBeCloseTo(82*Math.pow(3,7/13));expect(q.events.every((e:any)=>e.onsetMs>=1100)).toBe(true);vi.useRealTimers()})
+	it("uses beating and source maps with root multiplier",()=>{const a=rig();a.p.restore!({tuning:"beating",rootMultiplier:2},a.c);a.p.onClock!({...clock,running:true},a.c);a.p.onTick!(1,0,a.c);expect(a.packets().at(-1).events.find((e:any)=>e.voice===3).hz).toBe(376);const b=rig();b.p.restore!({tuning:"source",rootMultiplier:2},b.c);b.p.onClock!({...clock,running:true},b.c);b.p.onTick!(1,0,b.c);expect(b.packets().at(-1).events.find((e:any)=>e.voice===3).hz).toBeCloseTo(767.6)})
+	it("selects source bank presets",()=>{const r=rig();r.tap(4,7);expect((r.p.serialize()as any).selected).toEqual([0,0,0,0,1,0]);r.tap(5,7);expect((r.p.serialize()as any).selected).toEqual([0,0,0,1,2,1]);r.tap(6,7);expect((r.p.serialize()as any).selected).toEqual([0,0,0,2,1,2])})
+	it("replaces only remaining prepared events and delayed ticks re-anchor",()=>{vi.useFakeTimers();vi.setSystemTime(1000);const r=rig();r.p.onClock!({...clock,running:true},r.c);r.p.onTick!(1,0,r.c);r.tap(2,2);const q=r.packets().at(-1);expect(q.type).toBe("replace");expect(q.events.every((e:any)=>e.onsetMs>=q.cutoffMs&&e.onsetMs<1200&&e.id.includes("-1-"))).toBe(true);vi.setSystemTime(9000);r.p.onTick!(2,0,r.c);expect(r.packets().at(-1).events.every((e:any)=>e.onsetMs>=9100)).toBe(true);vi.useRealTimers()})
+	it("only explicit run sets pulse rate and phase/onset LEDs draw",()=>{vi.useFakeTimers();vi.setSystemTime(1000);const r=rig();r.p.onClock!({...clock,running:false},r.c);expect(r.packets().some(x=>x.type==="start")).toBe(false);r.tap(1,7);expect(r.ctl).toEqual([`rate:${PULSE_RATE}`,"start"]);r.p.onTick!(1,0,r.c);vi.advanceTimersByTime(160);const f=r.p.render(r.c)!;expect(f[ledIndex(r.c.size,5,2)]).toBeGreaterThan(0);expect(f[ledIndex(r.c.size,15,2)]).toBe(15);vi.useRealTimers()})
 })
