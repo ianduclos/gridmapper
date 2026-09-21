@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-09-16
+updated: 2026-09-21
 entries: 0
 ---
 
@@ -111,6 +111,28 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-09-21 — Claude
+**Hotelier concert set** (concert 2026-09-23). The preset `hotelier` is now `iso-hot` in slot a and
+`blank-hot` in b–h (`configs/presets/hotelier.json` + `configs/slots.json`).
+- `pages/iso-hot.ts` — deliberate FORK of isometric (diverges freely; isometric untouched).
+  Keyboard at cols 1–12, col 0 rows 0–5 = page selector (`util/pageSelector.ts`, shared with
+  `pages/blank-hot.ts`), col 0 row 7 = transposer toggle (bottom row → −7..+4, col 8 = 0).
+  Notes are stamped with the transposition at note start. Chords move relative to the
+  transposition they were saved at and PERSIST on save/clear (live layout + a chords-only
+  merge into the active preset). Loops store notes untransposed and record transposer moves
+  + arp-button modes as a parallel control lane (`PatternEvent.ctl {id,value}`) that
+  replays into the live controls; latest move wins. Opt-outs: `transposeChords`,
+  `transposeLoops`. Header of `iso-hot.ts` is the spec.
+- Framework: `PageContext.focus(slot)` and `PageContext.persist(patch)`, via PageManager's
+  `PageHooks` (wired in both sim and daemon); `PresetStore.persistSlot`. `PageManager.onKey`
+  no longer paints the old page's frame when a key moved focus.
+- Col 0 rows 6–7 are PER-PAGE keys by convention (recorded in CLAUDE.md).
+
+**Verified:** `npx tsc --noEmit` clean; 374 tests green (`test/hotelier.test.ts` new). Agent
+restarted after each change; live WebSocket shows slots `iso-hot, blank-hot×7`, preset active
+`hotelier`, and focus changes arriving from the physical grid. **Not played by Ian yet.**
+**Next:** Ian plays it; more custom hotelier pages; decide col 0 row 6 in iso-hot.
+
 ### 2026-09-16 — Codex
 Made preset recall explicit in `web/index.html`: a **recall** button beside each
 saved name (name-click still recalls), descriptive accessible label, and a live

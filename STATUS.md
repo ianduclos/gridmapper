@@ -1,15 +1,15 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-09-16
+updated: 2026-09-21
 machine: mac
-summary: The Max boot handshake is built — ping/pong, a preset layer whose presets restore each page's own state, and OSC echo discipline on settings writes — with presets created from the web panel; 353 tests green but the live agent still runs a dist/ predating all of it.
+summary: The hotelier concert set is taking shape — iso-hot (an isometric fork with a column-0 page selector, a loop-recordable transposer and arp, and chords that persist to the preset) plus blank-hot placeholders, deployed to the live agent; 374 tests green, not yet played on the grid.
 next:
-  - Rebuild and restart the launchd agent — the running daemon predates the handshake, so Max still sees no ping, no presets, and echoing settings
-  - Play the isometric surface on the grid — arp accent model, LED contrast, whether column 15 is still readable now every row is lit
-  - Build the Max patch side against docs/max-handshake.md and confirm the handshake end to end
-  - Decide whether loopers should be swept into the arp (left ungated; see commit 4273bda)
-  - Single-instance guard; twistermapper clock bridge (~20 lines now that lane IDs match)
+  - Play hotelier on the grid before the concert (2026-09-23) — selector, transposer, looped transposer/arp moves, chord persistence across a restart
+  - Build the remaining custom hotelier pages (at least two more) in slots b-f
+  - Decide what iso-hot's free key (col 0 row 6) does
+  - Build the Max patch side against docs/max-handshake.md, including /grid/out/page/<slot>/transpose
+  - Single-instance guard; twistermapper clock bridge
 handoff_for: null
 ---
 
@@ -30,6 +30,10 @@ documented Max boot contract — **`docs/max-handshake.md`** — plus a preset l
 and echo discipline on settings writes. See both entries in the cross-project
 change feed.
 
-**Not deployed.** The launchd agent `com.ianduclos.gridmapper` runs a `dist/`
-built before the handshake, so nothing above is live for Max until it is rebuilt
-and restarted.
+**Deployed.** The launchd agent `com.ianduclos.gridmapper` runs `tsx` on source, so
+`launchctl kickstart -k gui/$(id -u)/com.ianduclos.gridmapper` picks up changes; it
+was restarted 2026-09-21 and serves the `hotelier` preset.
+
+**Concert work (2026-09-21):** `src/pages/iso-hot.ts` (header documents the
+selector, transposer, control-lane looping and chord persistence),
+`src/pages/blank-hot.ts`, `src/util/pageSelector.ts`, `configs/presets/hotelier.json`.
