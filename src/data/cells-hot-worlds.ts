@@ -1,3 +1,6 @@
+import { manjanin2World } from "./cells-manjanin2.js"
+import { wolosoWorld } from "./cells-woloso.js"
+import { kotekanWorld } from "./cells-kotekan.js"
 import { ngonWorld } from "./cells-ngon.js"
 import { manjaninWorld } from "./cells-manjanin.js"
 import hotelier from "./hotelier-tunings.json" with { type: "json" }
@@ -22,6 +25,14 @@ export type World = {
 	id: string
 	name: string
 	degreeCount: number
+	/** Source pulses per shared performance beat; legacy banks retain 3. */
+	pulsesPerBeat?: number
+	performanceBeatBasis?: string
+	recommendationBasis?: string
+	foundationRows?: number[]
+	/** Source parts split between rows; evolution rules may use only a subset. */
+	pairedParts?: number[][]
+	evolutionGroups?: { rows: number[]; choices: number[][] }[]
 	cells: Cell[][]
 	presets: number[][]
 	presetNames: string[]
@@ -274,6 +285,31 @@ worlds["mbira-chakwi"] = {
 
 worlds[manjaninWorld.id] = manjaninWorld
 worlds[ngonWorld.id] = ngonWorld
+worlds[manjanin2World.id] = manjanin2World
+worlds[wolosoWorld.id] = wolosoWorld
+worlds[kotekanWorld.id] = kotekanWorld
+
+// Explicit performance arrangements: these groups choose existing compatible
+// cell tuples and never synthesize new attacks or change foundation rows.
+const legacyEvolution: Record<string, { rows: number[]; choices: number[][] }[]> = {
+ "horn-relay": [{ rows: [3], choices: [[0],[1],[2]] }, { rows: [4], choices: [[0],[1],[2]] }, { rows: [5], choices: [[0],[1],[2]] }],
+ "amadinda-ndyegulira": [{ rows: [0,1], choices: [[0,0],[1,1],[2,2]] }],
+ "amadinda-ssematimba": [{ rows: [0,1], choices: [[0,0],[1,1],[2,2]] }],
+ "mbira-chakwi": [{ rows: [4,5], choices: [[0,0],[1,1],[2,2]] }],
+ manjanin: [{ rows: [4,5], choices: [[0,0],[1,1],[2,2]] }],
+ ngon: [{ rows: [4,5], choices: [[0,0],[1,1],[2,2]] }],
+}
+for (const world of Object.values(worlds)) {
+ world.pulsesPerBeat ??= 3
+ world.performanceBeatBasis ??= ["manjanin", "ngon"].includes(world.id)
+  ? "Three design pulses per documented beat; uneven onsets retained."
+  : "Three design pulses per performance beat: workshop grouping, not a traditional-meter claim."
+ world.recommendationBasis ??= world.recommendedTuning.endsWith("-model")
+  ? "Idealized degree-count model; not measured source intonation."
+  : "Workshop recommendation for this arrangement; not a traditional tuning claim."
+ world.evolutionGroups ??= legacyEvolution[world.id] ?? []
+ world.foundationRows ??= [0,1,2,3,4,5].filter(row => !world.evolutionGroups!.some(group => group.rows.includes(row)))
+}
 
 // Existing horn tuning maps remain byte-for-byte musically unchanged. For
 // melodic source parts, ordinal degrees are rescaled into the selected system.

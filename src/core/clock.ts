@@ -71,7 +71,7 @@ export interface AppClockOpts {
 	rate?: number
 	lanes?: readonly LaneConfig[]
 	/** Called once per LANE tick, with that lane's running count (first tick = 1). */
-	onTick: (tick: number, lane: number) => void
+	onTick: (tick: number, lane: number, deadlineMs: number) => void
 	/** Transport/config changed (start, stop, rate, lane, reset) — NOT per tick. */
 	onChange?: (state: Readonly<ClockState>) => void
 }
@@ -187,7 +187,7 @@ export class AppClock {
 		const l = this.lanes[lane]
 		if (!l) return
 		l.tick += 1
-		this.opts.onTick(l.tick, lane)
+		this.opts.onTick(l.tick, lane, Date.now())
 	}
 
 	/** Zero the master and every lane counter. */
@@ -226,6 +226,7 @@ export class AppClock {
 	private fire() {
 		this.timer = null
 		if (!this._running) return
+		const deadlineMs = this.nextAt
 		this._tick += 1
 		// One master tick feeds every INTERNAL lane whose divisor lands on it. External
 		// lanes ignore the master entirely and wait for step().
@@ -235,7 +236,7 @@ export class AppClock {
 			if (this._tick % l.div !== 0) continue
 			l.tick += 1
 			try {
-				this.opts.onTick(l.tick, i)
+				this.opts.onTick(l.tick, i, deadlineMs)
 			} catch (err) {
 				console.error(`[AppClock] tick error on lane ${i}:`, err)
 			}

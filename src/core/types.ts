@@ -109,7 +109,8 @@ export interface Page {
 	 * declares which lane it follows and ignores the rest (see pages/meadowphysics.ts).
 	 * `tick` is that lane's running count since boot/reset.
 	 */
-	onTick?(tick: number, lane: number, ctx: PageContext): void
+	/** `deadlineMs` is the intended clock instant, not when a delayed callback ran. */
+	onTick?(tick: number, lane: number, ctx: PageContext, deadlineMs?: number): void
 	/**
 	 * The transport changed (start/stop/rate/source/reset). Also reaches every loaded
 	 * page. This is where a sequencer releases sounding notes on stop.

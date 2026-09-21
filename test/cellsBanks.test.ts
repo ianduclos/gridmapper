@@ -37,7 +37,9 @@ describe("cells-hot choice banks", () => {
 		r.page.onClock!({ ...r.ctx.clock, running: true }, r.ctx)
 		r.page.onTick!(10, 0, r.ctx)
 		r.tap(1, 6); r.tap(2, 0)
-		expect(r.packets().at(-1).type).toBe("replace")
+		// World changes are queued for the next performance-beat boundary; the
+		// current prepared pulse remains intact while the bank is open.
+		expect(r.packets().at(-1).type).toBe("sync")
 		expect(r.packets().some((packet) => packet.type === "stop")).toBe(false)
 		r.page.onTick!(11, 0, r.ctx)
 		expect(r.packets().at(-1).type).toBe("sync")

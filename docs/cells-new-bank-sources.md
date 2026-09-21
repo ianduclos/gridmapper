@@ -1,0 +1,17 @@
+# New rhythm-bank source notes
+
+## Manjanin II
+
+Polak's Table 1 score images were visually checked at [cycles 29–40](https://www.mtosmt.org/issues/mto.10.16.4/polak_table1d.gif), [65–76](https://www.mtosmt.org/issues/mto.10.16.4/polak_table1g.gif), and [161–172](https://www.mtosmt.org/issues/mto.10.16.4/polak_table1o.gif). The bank uses 29–32, 65–68, and 165–168, avoiding the original bank's 5–12 and 175–178. It keeps the existing quartet allocation and six-row timbre split. D2 and J2 repeat their six-pulse ostinatos twice per 12-pulse cycle. The lead uses the existing Manjanin 27:33:40 descriptive mean; J2's two-attack groups use the reported 60:40 binary positions, D2 inherits those landmarks, and D1 retains its separate Table 10 model. These are mean models because the selected excerpts' local onsets were not measured. Foundation alternatives are disclosed filters; only the paired lead rows evolve in presets. Compact flam signs in the score are collapsed to a single main-stroke event because the cells scheduler cannot represent two simultaneous attacks in one voice. Pitches, gains and durations are designed.
+
+## Woloso-dòn
+
+Source: [Polak 2010, §§123–132](https://www.mtosmt.org/issues/mto.10.16.4/mto.10.16.4.polak.html), Video 2 and Tables 19–20 in the linked examples PDF. Cycle 8 is an eight-beat/24-position example. Its accompaniment is binary (58:42 in the worked nesting) while lead subdivision is ternary (25:33:42). The stored binary offbeat is therefore 1.74 positions after each beat; lead landmarks are 0, .75 and 1.74, rather than integer-grid playback. The bank uses the dunun motif printed under Table 19: `O..O.O...X.OO.O..X..X..O`. Table 20 visibly prints a different dunun variant (`O..O..X..X..O.O..X..X..O`); the two are not conflated. The full preset follows the chosen printed rows. The alternatives loop the printed opening or closing four-beat lead excerpt while protecting the four accompaniment rows. Pitches, gains and durations are designed.
+
+## Pelayon kotekan
+
+Source: [Tenzer 2000, Example 1 and §§3.1–3.12](https://mtosmt.org/classic/mto.00.6.2/mto.6.2.tenzer.html). The eight-beat example prints a composite four-tones-per-beat Pelayon kotekan above neliti, pokok and jegogan strata oriented to gong. Relative to final `I`, the composite is `[1,0,1,0, 1,1,2,1, 2,1,2,1, -1,-1,0,-1, 0,-1,0,-1, -2,-2,-1,-2, -1,-2,-1,-2, 0,0,1,0]`. Neliti solfege is `e o I A | I U A I`, or `[2,1,0,-1, 0,-2,-1,0]`; Tenzer's first contour-class labels `[3,2,1,0]` are instead relative to the midpoint `A`. Midpoint and final onsets are positions 12 and 28, and gong coincides with the final at 28. The printed composite does not identify separate polos and sangsih lines, so this bank's alternating A/B assignment is a software allocation. The interlock pair evolves together; slow rows remain the foundation. The source pitches are relative five-tone scale steps; gains, durations and register placement are designed.
+
+## Ango — not encoded
+
+The [CNRS film page](https://images.cnrs.fr/en/video/893) identifies Banda-Linda horn players, a basic model and subtle variations, but exposes neither a named cycle transcription nor attack-level notation. The accessible film metadata is insufficient to distinguish a defensible source-derived bank from a newly composed horn relay. No `angoWorld` is provided until a citable Arom score or a time-coded, independently checkable transcription is available.

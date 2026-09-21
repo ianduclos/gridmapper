@@ -41,6 +41,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
+- **cells-hot v2 prepared, not live:** richer banks, shared-beat world changes, independent tuning recommendations, shaped decay, optional evolution/rests and selected-cell mute/rejoin. 447 tests and types pass. Max compatibility is committed separately; do not restart Gridmapper until the Max owner installs/verifies it. See `docs/cells-v2-rollout.md` and `docs/cells-v2-verification.md`.
 - **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Manjanin and Ngòn study banks installed, 18 choices each; source details in `docs/cells-sources.md` and next-repertoire research in `docs/cells-microtiming-research.md`.
 - **Run:** `npm run sim` → http://localhost:57191 (live grid + web mirror; auto-
   connects to the monome 128 when present). `npm run sim -- --null` = no hardware.
@@ -112,6 +113,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-21 — Codex — Cells v2, prepared for coordinated installation
+- Added independently audited Manjanin II, Woloso-dòn and Pelayon banks (18 cells each), explicit source/arrangement metadata, paired evolution rules and tuning recommendations. Ango omitted: accessible metadata did not support an attack-level reconstruction.
+- Intended clock deadlines now reach Cells; world requests replace all six future schedules on a shared beat while preserving phase. Added shaped decay, named web controls, separate tuning groups and physical tuning rows, seeded auto-evolve, locks/manual protection, optional temporary rests, and tap-selected-cell mute/rejoin.
+- Verified: types; 447 tests; isolated browser controls. 1,346 callback samples under UI use: p95 +2.030 ms, max +5.390 ms. These are callback measurements, not audio jitter. Max scheduler/resolver/staged DSP regressions pass; real OSC/audio rollout awaits the other Max agent.
+- No live daemon restart, Max mutation, user preset staging or physical Grid claim. Preserve dirty `configs/slots.json` and `configs/presets/hotelier.json`. Next: follow `docs/cells-v2-rollout.md`; install compatible Max receiver/resolver/Gen first, then restart Gridmapper and record timing/dropouts separately.
 
 ### 2026-09-21 — Codex — Manjanin and Ngòn banks
 - Added two six-row/three-choice source-derived study banks. Manjanin uses four-cycle lead excerpts 5–8, 9–12, 175–178 and separate measured D1 timing. Ngòn preserves the eight-beat hook and alternating four-beat lead halves, with corpus-mean subdivision and labelled adapted alternatives. Pitch/duration/gain are composed; Ngòn flams collapse to single attacks.

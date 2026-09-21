@@ -27,6 +27,8 @@ export interface SettingSpec {
 	options?: string[]
 	/** enum: human-readable names keyed by the wire value. */
 	optionLabels?: Record<string, string>
+	/** Named sections within a button bank, keyed by option value. */
+	optionGroups?: Record<string, string>
 	default: number | boolean | string
 }
 

@@ -71,9 +71,9 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 		rate: settings.get().clock.rate,
 		lanes: settings.get().clock.lanes,
 		// A running clock is activity: a live sequencer never gets slept out from under Max.
-		onTick: (n, lane) => {
+		onTick: (n, lane, deadlineMs) => {
 			idle.activity()
-			pm.tick(n, lane)
+			pm.tick(n, lane, deadlineMs)
 			if (settings.get().clock.echo) emit("/grid/out/clock/tick", lane, n)
 		},
 		onChange: (state) => {

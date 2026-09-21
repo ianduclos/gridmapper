@@ -126,6 +126,17 @@
 			background: transparent; border: 1px solid var(--ink); border-radius: 3px;
 			padding: 4px 6px; cursor: pointer; opacity: .55;
 		}
+		.settings .enum-section { display:flex; flex-wrap:wrap; gap:4px; width:100%; margin-bottom:5px; }
+		.settings .bank-title { flex:0 0 100%; font-size:11px; opacity:.7; margin:3px 0; }
+		.settings .enum-button.pending { border-style:dashed; opacity:1; outline:1px dashed var(--ink); outline-offset:2px; }
+		.cells-details { border-top:1px solid var(--ink); margin-top:14px; padding-top:10px; }
+		.cells-heading { margin:0 0 8px; font-size:13px; }
+		.cells-advice { display:flex; align-items:center; gap:10px; font-size:12px; flex-wrap:wrap; }
+		.cells-note { font-size:11px; opacity:.65; margin:5px 0 12px; }
+		.cells-rows { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+		.cells-row.muted .cell-choice[aria-pressed="true"], .cells-row.resting .cell-choice[aria-pressed="true"] { opacity:.45; border-style:dashed; }
+		.cells-row { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+		.cells-role { flex:0 0 100%; font-size:11px; margin-top:3px; }
 		.settings .enum-button:hover { opacity: .85; }
 		.settings .enum-button[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
 		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
@@ -228,6 +239,11 @@
 		let slotPages = SLOT_LABELS.map(() => "base");
 		let specsByPage = {};                          // pageName -> SettingSpec[]
 		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
+		let cellsViews = SLOT_LABELS.map(() => null);
+		let cellsViewSignature = "";
+		const cellsPanel = document.createElement("section");
+		cellsPanel.className = "cells-details"; cellsPanel.setAttribute("aria-label", "Cells performance");
+		settingsFields.after(cellsPanel);
 
 		// The page dropdown is built from whatever the daemon reports — drop a new
 		// page file in src/pages/ and it appears here automatically.
@@ -263,7 +279,7 @@
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
 			const specs = specsByPage[page] || [];
 			settingsFields.innerHTML = "";
-			if (!specs.length) { settingsNote.textContent = `no settings for ${page} yet`; return; }
+			if (!specs.length) { renderCellsView(); settingsNote.textContent = `no settings for ${page} yet`; return; }
 			settingsNote.textContent = "";
 			const values = settingsBySlot[focusedSlot] || {};
 			const setVal = (key, v) => send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/setting/${key}`, [v]);
@@ -278,11 +294,24 @@
 				} else if (spec.type === "enum" && spec.presentation === "buttons") {
 					input = document.createElement("div"); input.className = "enum-buttons";
 					input.setAttribute("role", "group"); input.setAttribute("aria-label", spec.label || spec.key);
+					const groups = new Map();
 					(spec.options || []).forEach((o) => {
+						const groupName = spec.optionGroups && spec.optionGroups[o];
+						let destination = input;
+						if (groupName) {
+							if (!groups.has(groupName)) {
+								const group = document.createElement("div"); group.className = "enum-section";
+								group.setAttribute("role", "group"); group.setAttribute("aria-label", groupName);
+								const title = document.createElement("div"); title.className = "bank-title"; title.textContent = groupName;
+								group.appendChild(title); input.appendChild(group); groups.set(groupName, group);
+							}
+							destination = groups.get(groupName);
+						}
 						const b = document.createElement("button"); b.type = "button"; b.className = "enum-button";
 						b.textContent = (spec.optionLabels && spec.optionLabels[o]) || o;
 						b.setAttribute("aria-pressed", String(String(cur) === o));
-						b.onclick = () => setVal(spec.key, o); input.appendChild(b);
+						b.dataset.setting = spec.key; b.dataset.option = o;
+						b.onclick = () => setVal(spec.key, o); destination.appendChild(b);
 					});
 				} else if (spec.type === "enum") {
 					input = document.createElement("select"); input.className = "select";
@@ -299,8 +328,58 @@
 					input.value = cur;
 					input.onchange = () => { const v = Number(input.value); if (Number.isFinite(v)) setVal(spec.key, v); };
 				}
+				if (input.tagName !== "DIV") { input.id = `page-setting-${spec.key}`; lab.htmlFor = input.id; }
 				row.appendChild(lab); row.appendChild(input); settingsFields.appendChild(row);
 			});
+			renderCellsView();
+		}
+
+		function requestCellsView() {
+			if (slotPages[focusedSlot] === "cells-hot") send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/action/refreshView`, []);
+		}
+		function renderCellsView() {
+			const view = slotPages[focusedSlot] === "cells-hot" ? cellsViews[focusedSlot] : null;
+			cellsPanel.hidden = !view;
+			for (const b of settingsFields.querySelectorAll('[data-setting="rhythmWorld"]')) {
+				b.classList.toggle("pending", !!view && b.dataset.option === view.pendingWorldId);
+			}
+			const signature = JSON.stringify([focusedSlot,view]);
+			if (signature === cellsViewSignature) return;
+			cellsViewSignature = signature; cellsPanel.replaceChildren();
+			if (!view) return;
+			const sendAction = (path,args=[]) => send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}${path}`, args);
+			const button = (label, action, pressed) => {
+				const b = document.createElement("button"); b.type="button"; b.className="enum-button"; b.textContent=label;
+				if (pressed !== undefined) b.setAttribute("aria-pressed", String(pressed));
+				b.onclick=action; return b;
+			};
+			const heading = document.createElement("p"); heading.className="cells-heading";
+			heading.textContent = view.pendingWorldName ? `${view.worldName} → ${view.pendingWorldName} · next beat` : view.worldName;
+			cellsPanel.appendChild(heading);
+			const advice = document.createElement("div"); advice.className="cells-advice";
+			const tuningSpec = (specsByPage["cells-hot"] || []).find(s=>s.key==="tuning");
+			const name = tuningSpec?.optionLabels?.[view.recommendedTuning] || view.recommendedTuning;
+			const description = document.createElement("span");
+			description.textContent = `Recommended: ${name}${view.recommendationPending ? " · queued with world" : view.recommendationActive ? " · active" : ""}`;
+			advice.append(description, button("Apply recommendation",()=>sendAction("/action/applyRecommendation")));
+			const basis = document.createElement("p"); basis.className="cells-note"; basis.textContent=view.recommendationBasis || "";
+			cellsPanel.append(advice,basis);
+			const controls = document.createElement("div"); controls.className="enum-buttons";
+			controls.setAttribute("role","group"); controls.setAttribute("aria-label","Ensemble recalls");
+			(view.presetNames || []).forEach((name,i)=>controls.appendChild(button(name,()=>sendAction(`/ensemble/${i}`))));
+			controls.appendChild(button(view.evolving ? "Auto-evolve · on" : "Auto-evolve · off",()=>sendAction("/action/evolve"),!!view.evolving));
+			cellsPanel.appendChild(controls);
+			const rows=document.createElement("div"); rows.className="cells-rows";
+			(view.roles || []).forEach((role,r)=>{
+				const row=document.createElement("div"); row.className="cells-row"; row.classList.toggle("muted",!!view.muted?.[r]); row.classList.toggle("resting",!!view.evolvedRest?.[r]); row.setAttribute("role","group"); row.setAttribute("aria-label",`Voice ${r+1}: ${role}`);
+				const label=document.createElement("span"); label.className="cells-role"; label.textContent=`${r+1} · ${role}${view.muted?.[r] ? " · muted" : view.evolvedRest?.[r] ? " · resting" : ""}`;
+				row.appendChild(label);
+				(view.cellNames?.[r] || []).forEach((name,c)=>{ const b=button(name,()=>sendAction(`/cell/${r}/${c}`),view.selected?.[r]===c); b.classList.add("cell-choice"); row.appendChild(b); });
+				row.appendChild(button(view.locks?.[r] ? "Locked" : "Lock",()=>sendAction(`/lock/${r}`),!!view.locks?.[r]));
+				rows.appendChild(row);
+			});
+			cellsPanel.appendChild(rows);
+			const hint=document.createElement("p"); hint.className="cells-note"; hint.textContent="Tap the selected cell to mute or rejoin. Choosing another cell brings that voice in at the current phase."; cellsPanel.appendChild(hint);
 		}
 
 		// --- Transport + app settings ------------------------------------------------
@@ -562,8 +641,8 @@
 					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
 					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
 					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
-					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); break; }
-					case "/grid/out/slots": slotPages = m.args; renderToolbar(); break;
+					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); requestCellsView(); break; }
+					case "/grid/out/slots": slotPages = m.args; renderToolbar(); requestCellsView(); break;
 					case "/grid/out/clock": { try { clockState = JSON.parse(m.args[0]); } catch {} renderTransport(); break; }
 					// [lane, n] — blink on lane 0 only, or four lanes would strobe at once.
 					case "/grid/out/clock/tick": if (Number(m.args[0]) === 0) pulse(); break;
@@ -579,6 +658,11 @@
 						break;
 					}
 					default: {
+						const vm = m.path.match(/^\/grid\/out\/page\/([a-h])\/view$/);
+						if (vm) {
+							try { const idx=SLOT_LABELS.indexOf(vm[1]); cellsViews[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) renderCellsView(); } catch {}
+							break;
+						}
 						// /grid/out/page/<slot>/settings <json> — slot is a letter (a..h).
 						const sm = m.path.match(/^\/grid\/out\/page\/([a-h])\/settings$/);
 						if (sm) {

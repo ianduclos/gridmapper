@@ -115,12 +115,12 @@ export class PageManager {
 	 * the framework from having to read a page's own settings to route ticks.
 	 * Guarded per page: one page throwing must not stall the transport for the others.
 	 */
-	tick(n: number, lane = 0) {
+	tick(n: number, lane = 0, deadlineMs?: number) {
 		for (const slot of SLOT_INDICES) {
 			const p = this.pages[slot]
 			if (!p?.onTick) continue
 			try {
-				p.onTick(n, lane, this.ctxPerSlot[slot])
+				p.onTick(n, lane, this.ctxPerSlot[slot], deadlineMs)
 			} catch (err) {
 				console.error(`[PageManager] onTick error in slot ${slotLabel(slot)}:`, err)
 			}
