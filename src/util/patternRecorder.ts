@@ -92,6 +92,11 @@ export class PatternRecorder {
 		return this.events.length > 0 && this.lengthMs > 0
 	}
 
+	/** Events in the take so far — 0 until a recording's first note lands. */
+	get eventCount(): number {
+		return this.events.length
+	}
+
 	get loopMs(): number {
 		return this.lengthMs
 	}

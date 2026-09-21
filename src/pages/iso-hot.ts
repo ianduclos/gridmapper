@@ -3,7 +3,17 @@
  * FORK   : a deliberate copy of isometric, free to diverge for the hotelier set.
  *          The one difference so far: COLUMN 0 is the page selector (util/pageSelector.ts)
  *          and the keyboard moved one column right to 1-12, with the step field's
- *          origin (step 0, home) at column 1. Everything else is isometric as of the fork.
+ *          origin (step 0, home) at column 1.
+ *          TRANSPOSER: col 0 row 7 toggles the bottom row (cols 1-12) into a transposer —
+ *          col 8 = 0, left = down, right = up (−7..+4 steps). Turning it off keeps the
+ *          transposition. A note takes the transposition in force WHEN IT STARTS, so
+ *          nothing already sounding moves. Keys always transpose; chord presets and looper
+ *          playback do too unless `transposeChords` / `transposeLoops` are off. A chord or
+ *          loop remembers the transposition it was saved/recorded at and moves RELATIVE to
+ *          it — saved at +2, it plays as saved while you're still at +2.
+ *          Transposition is performance state: not saved, 0 on load.
+ *          Col 0 row 6: unassigned. Saved chords PERSIST (ctx.persist) on every save/clear.
+ *          Everything else is isometric as of the fork.
  * Summary : Isomorphic keyboard on cols 1-12 — a pure integer "step field".
  *           Each key has a step index; we emit the NUMBER, Max owns step→pitch.
  * Input   : press a keyboard key → /grid/out/page/<slot>/note <step> <1|0> <track>.
@@ -169,6 +179,18 @@ import {
 
 const KEYS_W = 13 // keyboard ends before column 13 (keysW is its exclusive right edge)
 const KEYS_X0 = 1 // ... and starts at column 1: column 0 is the page selector
+
+/** Transposer: col 0 row 7 shows it on the bottom row, whose col 8 is "no transpose". */
+const TRANSPOSE_TOGGLE_ROW = 7
+const TRANSPOSE_ZERO_COL = 8
+const TRANSPOSE_MIN = KEYS_X0 - TRANSPOSE_ZERO_COL // −7
+const TRANSPOSE_MAX = KEYS_W - 1 - TRANSPOSE_ZERO_COL // +4
+const LVL_TR_CURRENT = 15
+const LVL_TR_ZERO = 6 // where "home" is, when you're elsewhere
+const LVL_TR_OTHER = 2
+const LVL_TR_TOGGLE_SHOWN = 12
+const LVL_TR_TOGGLE_OFFSET = 6 // hidden, but a transposition is in force
+const LVL_TR_TOGGLE_IDLE = 2
 const BASE_STEP = 0 // bottom-left cell = step 0
 
 // Four tiers that have to be told apart AT A GLANCE on a varibright grid, so they are
@@ -324,6 +346,8 @@ const SPECS: SettingSpec[] = [
 	{ key: "arp", label: "arpeggiator", type: "enum", options: [...ARP_MODES], default: "off" },
 	{ key: "arpRate", label: "arp rate (ms, clock off)", type: "number", min: 20, max: 2000, step: 5, default: 125 },
 	{ key: "arpDiv", label: "arp divide (clock on)", type: "number", min: 1, max: 16, step: 1, default: 1 },
+	{ key: "transposeChords", label: "transpose chord presets", type: "toggle", default: true },
+	{ key: "transposeLoops", label: "transpose loop playback", type: "toggle", default: true },
 	...Array.from({ length: RECORDER_ROWS }, (_, i): SettingSpec => ({
 		key: `quant${i + 1}`,
 		label: `rec ${i + 1} quantise`,
@@ -369,7 +393,9 @@ export class IsoHotPage implements Page {
 	// reconciled — a step goes on when the first source claims it and off when the last
 	// one lets go. That is what stops two unison twins from double-triggering Max, and
 	// what lets "turn that note off" mean the note rather than one cell.
-	private held = new Set<number>() // ledIndex of cells physically under a finger
+	// ledIndex of cells physically under a finger → the step it STARTED on, so moving the
+	// transposer never re-pitches a held note.
+	private held = new Map<number, number>()
 	private sustained = new Set<number>() // STEPS parked by whichever sustain is active
 	private presetHeld = new Map<number, number[]>() // preset slot → its steps, while held
 	// These four hold PACKED (track, step) keys — see noteKey().
@@ -425,6 +451,18 @@ export class IsoHotPage implements Page {
 
 	/** Chord presets: slot (row) → the steps saved there. Survives focus changes. */
 	private chords = new Map<number, number[]>()
+	/** slot → the transposition in force when that chord was saved. */
+	private chordT = new Map<number, number>()
+
+	/** Current transposition in steps, and whether the bottom row is showing it. */
+	private transpose = 0
+	private transposerShown = false
+	private transposeChords = SPEC_BY_KEY.get("transposeChords")!.default as boolean
+	private transposeLoops = SPEC_BY_KEY.get("transposeLoops")!.default as boolean
+	/** Per looper: the transposition in force at its take's first note. */
+	private recT = new Array<number>(RECORDER_ROWS).fill(0)
+	/** Per looper: recorded step → the step it went out as, stamped at note start. */
+	private loopShift: Array<Map<number, number>> = Array.from({ length: RECORDER_ROWS }, () => new Map())
 	/** The latching half of sustain — OR'd with the momentary pedal. */
 	private sustainToggle = false
 	/** The momentary half. Its own state now, not shift 2. */
@@ -478,6 +516,19 @@ export class IsoHotPage implements Page {
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		if (selectorKey(ev, ctx)) return
+		if (ev.x === 0) {
+			if (ev.y === TRANSPOSE_TOGGLE_ROW && ev.s) {
+				this.transposerShown = !this.transposerShown
+				ctx.setDirty()
+			}
+			return // row 6: unassigned
+		}
+		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
+			const i = ledIndex(this.size, ev.x, ev.y)
+			if (ev.s) this.setTranspose(ev.x - TRANSPOSE_ZERO_COL, ctx)
+			else if (this.held.has(i)) this.releaseKey(i, ctx) // held from before the toggle
+			return
+		}
 		// Right-edge control keys. Both shifts route through the shared ShiftInput, so a
 		// local shift behaves exactly like one sent over OSC.
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
@@ -515,7 +566,7 @@ export class IsoHotPage implements Page {
 		// one belongs to another instrument and is none of this gesture's business. The rule
 		// is applied per selected track, which collapses to the old behaviour when one is
 		// selected: subtract it if sustain is merely holding it, else articulate over it.
-		const step = this.stepOfIndex(i)
+		const step = this.stepOfIndex(i) + this.transpose
 		let subtractedEverywhere = true
 		for (const track of this.selected) {
 			const key = noteKey(track, step)
@@ -531,7 +582,7 @@ export class IsoHotPage implements Page {
 			subtractedEverywhere = false
 			if (this.lastSounding.has(key)) this.retrigger.add(key)
 		}
-		if (!subtractedEverywhere) this.held.add(i)
+		if (!subtractedEverywhere) this.held.set(i, step)
 		this.commit(ctx)
 	}
 
@@ -568,7 +619,8 @@ export class IsoHotPage implements Page {
 		if (ctx.modifiers.shift1) {
 			// Shift-clear, same gesture as clearing a looper. Beats saving to it.
 			this.chords.delete(slot)
-			this.emitChords(ctx)
+			this.chordT.delete(slot)
+			this.chordsChanged(ctx)
 			return
 		}
 		if (this.sustainToggle) {
@@ -581,14 +633,20 @@ export class IsoHotPage implements Page {
 				this.commit(ctx)
 				return
 			}
-			if (chord.length) this.chords.set(slot, chord)
-			else this.chords.delete(slot) // saving silence clears the slot
-			this.emitChords(ctx)
+			if (chord.length) {
+				this.chords.set(slot, chord)
+				this.chordT.set(slot, this.transpose)
+			} else {
+				this.chords.delete(slot) // saving silence clears the slot
+				this.chordT.delete(slot)
+			}
+			this.chordsChanged(ctx)
 			return
 		}
 		const chord = this.chords.get(slot)
 		if (!chord) return
-		this.presetHeld.set(slot, [...chord])
+		const off = this.transposeChords ? this.transpose - (this.chordT.get(slot) ?? 0) : 0
+		this.presetHeld.set(slot, chord.map((step) => step + off))
 		this.commit(ctx)
 	}
 
@@ -741,9 +799,12 @@ export class IsoHotPage implements Page {
 				const i = ledIndex(this.size, x, y)
 				const step = this.step(x, y)
 				let lvl = this.baseLevel(step, arpOn)
-				if (this.litSteps.has(step)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
+				// The scale map stays under your fingers; what's SOUNDING is shown at the cells
+				// that would play it now, i.e. at the current transposition.
+				const sounding = step + this.transpose
+				if (this.litSteps.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
 				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
-				if (arpOn && this.voicedSteps.has(step)) lvl = LVL_ARP_VOICE
+				if (arpOn && this.voicedSteps.has(sounding)) lvl = LVL_ARP_VOICE
 				f[i] = lvl
 			}
 		}
@@ -813,6 +874,17 @@ export class IsoHotPage implements Page {
 				f[ledIndex(this.size, cx, slot)] = lvl
 			}
 		}
+		if (this.transposerShown) {
+			const y = this.size.height - 1
+			for (let x = KEYS_X0; x < this.keysW; x++) {
+				const t = x - TRANSPOSE_ZERO_COL
+				f[ledIndex(this.size, x, y)] =
+					t === this.transpose ? LVL_TR_CURRENT : t === 0 ? LVL_TR_ZERO : LVL_TR_OTHER
+			}
+		}
+		f[ledIndex(this.size, 0, TRANSPOSE_TOGGLE_ROW)] = this.transposerShown
+			? LVL_TR_TOGGLE_SHOWN
+			: this.transpose !== 0 ? LVL_TR_TOGGLE_OFFSET : LVL_TR_TOGGLE_IDLE
 		drawSelector(f, ctx)
 		return f
 	}
@@ -822,8 +894,9 @@ export class IsoHotPage implements Page {
 		// state and anything currently sounding deliberately do not.
 		return {
 			...this.settings(),
-			chords: this.chordArray(),
+			...this.chordState(),
 			patterns: this.recorders.map((r) => r.snapshot()),
+			patternTranspose: [...this.recT],
 			...this.trackState(),
 		}
 	}
@@ -856,6 +929,16 @@ export class IsoHotPage implements Page {
 				const chord = [...intSet(raw[slot], -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT)]
 				if (chord.length) this.chords.set(slot, chord.slice(0, CHORD_MAX_NOTES))
 			}
+		}
+		// The transposition each chord / take was made at. Missing = 0 (an older file).
+		const rawCT = Array.isArray(config.chordTranspose) ? config.chordTranspose : []
+		this.chordT.clear()
+		for (const slot of this.chords.keys()) {
+			this.chordT.set(slot, Math.round(num(rawCT[slot], 0, -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT)))
+		}
+		const rawPT = Array.isArray(config.patternTranspose) ? config.patternTranspose : []
+		for (let i = 0; i < RECORDER_ROWS; i++) {
+			this.recT[i] = Math.round(num(rawPT[i], 0, -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT))
 		}
 
 		// Recorded loops, take by take. An entry that doesn't add up to a loop restores as
@@ -997,7 +1080,7 @@ export class IsoHotPage implements Page {
 
 		// 1. LIVE — what your hands and the chord presets are asking for, as plain steps.
 		const live = new Set<number>()
-		for (const i of this.held) live.add(this.stepOfIndex(i))
+		for (const step of this.held.values()) live.add(step)
 		for (const steps of this.presetHeld.values()) for (const step of steps) live.add(step)
 
 		// 2. RECORD TAP — the transitions of that stream, before sustain or tracks touch it.
@@ -1005,7 +1088,7 @@ export class IsoHotPage implements Page {
 
 		// 3. INTENT — live plus loop playback, each step stamped with the track(s) it began
 		//    on. Loopers never tap each other, so a loop can't record itself into a pile.
-		const sources = [live, ...this.recorders.map((r) => r.sounding)]
+		const sources = [live, ...this.recorders.map((r, i) => this.loopOut(i, r.sounding))]
 		const intent = new Set<number>()
 		const liveKeys = new Set<number>() // intent from your HANDS — the only thing the arp gates
 		for (let s = 0; s < sources.length; s++) {
@@ -1129,7 +1212,47 @@ export class IsoHotPage implements Page {
 	}
 
 	private recordAll(step: number, on: boolean, nowMs: number) {
-		for (const r of this.recorders) r.record(step, on, nowMs)
+		this.recorders.forEach((r, i) => {
+			if (r.state === "recording" && r.eventCount === 0) this.recT[i] = this.transpose
+			r.record(step, on, nowMs)
+		})
+	}
+
+	/**
+	 * A looper's sounding steps as they go OUT: shifted by how far the transposer has moved
+	 * since the take was recorded, stamped per note at its start so a ringing note is never
+	 * re-pitched. The take itself holds what you heard (keys were already transposed).
+	 */
+	private loopOut(i: number, raw: ReadonlySet<number>): Set<number> {
+		const map = this.loopShift[i]
+		for (const step of map.keys()) if (!raw.has(step)) map.delete(step)
+		const off = this.transposeLoops ? this.transpose - this.recT[i] : 0
+		for (const step of raw) if (!map.has(step)) map.set(step, step + off)
+		return new Set(map.values())
+	}
+
+	private setTranspose(t: number, ctx: PageContext) {
+		const next = clamp(t, TRANSPOSE_MIN, TRANSPOSE_MAX)
+		if (next === this.transpose) return
+		this.transpose = next
+		this.emitTranspose(ctx)
+	}
+
+	private emitTranspose(ctx: PageContext) {
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/transpose`, this.transpose)
+	}
+
+	/** Saved chords changed: tell Max, and write them through to disk. */
+	private chordsChanged(ctx: PageContext) {
+		this.emitChords(ctx)
+		ctx.persist(this.chordState())
+	}
+
+	private chordState() {
+		return {
+			chords: this.chordArray(),
+			chordTranspose: Array.from({ length: this.size.height }, (_, s) => this.chordT.get(s) ?? 0),
+		}
 	}
 
 	private note(ctx: PageContext, key: number, on: boolean) {
@@ -1311,6 +1434,12 @@ export class IsoHotPage implements Page {
 			this.orientation = raw
 			return true
 		}
+		if (spec.type === "toggle") {
+			const on = bool(raw, spec.default as boolean)
+			if (key === "transposeChords") this.transposeChords = on
+			else if (key === "transposeLoops") this.transposeLoops = on
+			return true
+		}
 		const value = Number(raw)
 		if (!Number.isFinite(value)) return false
 		const v = clamp(Math.round(value), spec.min ?? 0, spec.max ?? value)
@@ -1324,8 +1453,9 @@ export class IsoHotPage implements Page {
 	}
 
 	private announce(ctx: PageContext) {
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/type`, "isometric")
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/type`, "iso-hot")
 		this.emitSettings(ctx)
+		this.emitTranspose(ctx)
 		this.emitChords(ctx)
 		this.emitPatterns(ctx)
 		this.emitTracks(ctx)
@@ -1343,6 +1473,8 @@ export class IsoHotPage implements Page {
 			arp: this.arp.mode as ArpMode,
 			arpRate: this.arpRate,
 			arpDiv: this.arpDiv,
+			transposeChords: this.transposeChords,
+			transposeLoops: this.transposeLoops,
 			...Object.fromEntries(
 				this.quant.map((v, i) => [`quant${i + 1}`, v === 0 ? "off" : String(v)]),
 			),

@@ -82,6 +82,12 @@ export interface PageContext {
 	 * `/grid/out/focus/page` announced. Safe to call from onKey.
 	 */
 	focus: (slot: Slot) => void
+	/**
+	 * This page's STORED CONTENT changed (a saved chord, say) and should outlive a restart.
+	 * `patch` is the subset of serialize() that changed; the host writes the live layout and
+	 * merges `patch` into the active preset. Not for settings or transient state.
+	 */
+	persist: (patch: Record<string, unknown>) => void
 }
 
 export interface Page {

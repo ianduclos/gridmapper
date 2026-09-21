@@ -18,25 +18,29 @@ import {
 } from "./types.js"
 import type { ClockState } from "./clock.js"
 
+/** Host callbacks for things a PAGE initiates (as opposed to OSC/web routing). */
+export interface PageHooks {
+	/** A page moved focus (ctx.focus) — announce it like `/grid/in/focus/page` does. */
+	onPageFocus?: (slot: Slot) => void
+	/** A page's stored content changed (ctx.persist) — write it to disk. */
+	onPersist?: (slot: Slot, patch: Record<string, unknown>) => void
+}
+
 export class PageManager {
 	private pages: (Page | null)[] = Array.from(SLOT_INDICES, () => null)
 	private desired: (LedFrame | undefined)[] = Array.from(SLOT_INDICES, () => undefined)
 	private focused: Slot = 0
 	private ctxPerSlot: PageContext[] = []
 	private onFrame?: OnFrame
-	private onPageFocus?: (slot: Slot) => void
+	private hooks: PageHooks
 
-	/**
-	 * `onPageFocus` fires when a PAGE moved focus (ctx.focus), so the host can announce it
-	 * the way the router announces an OSC-driven `/grid/in/focus/page`.
-	 */
 	constructor(
-		baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus">,
+		baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "persist">,
 		onFrame?: OnFrame,
-		onPageFocus?: (slot: Slot) => void,
+		hooks: PageHooks = {},
 	) {
 		this.onFrame = onFrame
-		this.onPageFocus = onPageFocus
+		this.hooks = hooks
 		for (const slot of SLOT_INDICES) {
 			this.ctxPerSlot[slot] = {
 				...baseCtx,
@@ -51,8 +55,9 @@ export class PageManager {
 				focus: (target) => {
 					if (target === this.focused) return
 					this.focus(target)
-					this.onPageFocus?.(target)
+					this.hooks.onPageFocus?.(target)
 				},
+				persist: (patch) => this.hooks.onPersist?.(slot, patch),
 			}
 		}
 	}

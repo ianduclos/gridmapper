@@ -315,6 +315,19 @@ src/
                          start/stop). First note of a new chord fires immediately.
                          CHORDS also: re-press the slot you just saved (same chord still
                          ringing) to RELEASE it; SHIFT+press clears the slot.
+  pages/iso-hot.ts       HOTELIER (concert) FORK of isometric — free to diverge. Keyboard at
+                         cols 1-12 (home col 1); col 0 rows 0-5 = page selector, row 7 =
+                         TRANSPOSER toggle (bottom row becomes −7..+4, col 8 = 0; stays in
+                         force when hidden; not saved). A note takes the transposition AT
+                         NOTE START; chords/loops move RELATIVE to the transposition they were
+                         saved/recorded at (chordTranspose / patternTranspose in serialize),
+                         opt-out via transposeChords / transposeLoops. Chord save/clear calls
+                         ctx.persist → slots.json + a chords-only merge into the active preset.
+  pages/blank-hot.ts     blank + the selector (placeholder for unbuilt hotelier pages)
+  util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
+                         PER-PAGE assignable: the selector neither consumes nor draws them.
+                         Pages move focus via ctx.focus and save stored content via
+                         ctx.persist (PageManager's PageHooks; both hosts wire them).
   util/arpeggiator.ts    arpSequence (pure) + Arpeggiator cursor; urn takes an injected RNG
   util/scales.ts         16 scales as 12-EDO degree sets + isInScale/foldedStep (pure).
                          DEFAULT_SCALE = ionian (chromatic is the identity, not the default)

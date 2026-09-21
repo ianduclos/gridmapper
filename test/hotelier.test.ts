@@ -1,4 +1,9 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { createPresetStore } from "../src/core/presetStore.js"
+import { defaultSystemConfig } from "../src/core/systemConfig.js"
 import { PageManager } from "../src/core/pageManager.js"
 import { IsoHotPage } from "../src/pages/iso-hot.js"
 import { BlankHotPage } from "../src/pages/blank-hot.js"
@@ -10,6 +15,7 @@ const at = (f: Uint8Array | undefined, x: number, y: number) => f![ledIndex(SIZE
 function rig() {
 	const sent: Array<{ path: string; args: any[] }> = []
 	const announced: Slot[] = []
+	const persisted: Array<{ slot: Slot; patch: Record<string, unknown> }> = []
 	const frames: Array<{ frame: Uint8Array | undefined; reason: string }> = []
 	const modifiers: Modifiers = { held: new Set(), shift1: false, shift2: false }
 	const pm = new PageManager(
@@ -21,14 +27,18 @@ function rig() {
 			setShift: () => {},
 		},
 		(frame, reason) => frames.push({ frame, reason }),
-		(slot) => announced.push(slot),
+		{
+			onPageFocus: (slot) => announced.push(slot),
+			onPersist: (slot, patch) => persisted.push({ slot, patch }),
+		},
 	)
 	pm.load(0 as Slot, () => new IsoHotPage())
 	for (let s = 1; s < 8; s++) pm.load(s as Slot, () => new BlankHotPage())
 	pm.focus(0 as Slot)
 	const notes = () => sent.filter((m) => m.path.endsWith("/note"))
 	const key = (x: number, y: number, s: 0 | 1) => pm.onKey({ x, y, s })
-	return { pm, sent, notes, announced, frames, key }
+	const tap = (x: number, y: number) => { key(x, y, 1); key(x, y, 0) }
+	return { pm, sent, notes, announced, persisted, frames, key, tap }
 }
 
 describe("hotelier page selector (column 0)", () => {
@@ -43,7 +53,7 @@ describe("hotelier page selector (column 0)", () => {
 		expect(r.announced).toEqual([3, 0])
 	})
 
-	it("rows 6-7, releases and the current slot are inert", () => {
+	it("rows 6-7, releases and the current slot never switch pages", () => {
 		const r = rig()
 		r.key(0, 6, 1)
 		r.key(0, 7, 1)
@@ -67,15 +77,15 @@ describe("hotelier page selector (column 0)", () => {
 		const f = r.pm.renderFocused()
 		expect(at(f, 0, 0)).toBe(12)
 		for (let y = 1; y < 6; y++) expect(at(f, 0, y)).toBe(2)
-		expect(at(f, 0, 6)).toBe(0)
-		expect(at(f, 0, 7)).toBe(0)
+		expect(at(f, 0, 6)).toBe(0) // unassigned in iso-hot
+		expect(at(f, 0, 7)).toBe(2) // iso-hot's transposer toggle, idle
 	})
 })
 
 describe("iso-hot keyboard", () => {
 	it("column 0 never plays; the keyboard's home (step 0) is column 1, bottom row", () => {
 		const r = rig()
-		r.key(0, 7, 1)
+		r.key(0, 6, 1)
 		expect(r.notes()).toEqual([])
 		r.key(1, 7, 1)
 		expect(r.notes()[0].args.slice(0, 2)).toEqual([0, 1])
@@ -111,5 +121,161 @@ describe("blank-hot", () => {
 		r.key(0, 4, 1)
 		const g = r.pm.renderFocused()!
 		for (let i = 0; i < f.length; i++) if (i % 16 !== 0) expect(g[i]).toBe(0)
+	})
+})
+
+describe("iso-hot transposer", () => {
+	const noteOns = (r: ReturnType<typeof rig>) => r.notes().filter((m) => m.args[1] === 1).map((m) => m.args[0])
+	const transposeTo = (r: ReturnType<typeof rig>, col: number) => {
+		r.tap(0, 7) // show
+		r.tap(col, 7)
+		r.tap(0, 7) // hide again — the transposition stays
+	}
+
+	it("shows on the bottom row with col 8 lit; the row stops playing while shown", () => {
+		const r = rig()
+		r.tap(0, 7)
+		const f = r.pm.renderFocused()
+		expect(at(f, 8, 7)).toBe(15)
+		expect(at(f, 1, 7)).toBe(2)
+		expect(at(f, 0, 7)).toBe(12)
+		r.tap(3, 7)
+		expect(r.notes()).toEqual([])
+		expect(r.sent.filter((m) => m.path.endsWith("/transpose")).at(-1)!.args).toEqual([-5])
+	})
+
+	it("transposes new key presses, keeps it after hiding, and marks the toggle", () => {
+		const r = rig()
+		transposeTo(r, 10) // +2
+		r.tap(1, 7)
+		expect(noteOns(r)).toEqual([2])
+		expect(at(r.pm.renderFocused(), 0, 7)).toBe(6)
+	})
+
+	it("never re-pitches a note that is already sounding", () => {
+		const r = rig()
+		r.key(1, 6, 1) // step 5, held
+		r.tap(0, 7)
+		r.tap(9, 7) // +1 while holding
+		r.key(1, 6, 0)
+		expect(r.notes().map((m) => m.args.slice(0, 2))).toEqual([[5, 1], [5, 0]])
+	})
+
+	it("chords play relative to the transposition they were saved at; opt-out plays as stored", () => {
+		const r = rig()
+		transposeTo(r, 10) // +2
+		r.tap(15, 4) // sustain toggle on = armed
+		r.key(1, 6, 1) // sounds 5+2 = 7
+		r.key(1, 6, 0)
+		r.tap(13, 0) // save → [7] at t=+2
+		r.tap(15, 4) // toggle off, releases
+		r.sent.length = 0
+		r.tap(13, 0) // play at the same +2 → as saved
+		expect(noteOns(r)).toEqual([7])
+		transposeTo(r, 8) // 0 → two below
+		r.sent.length = 0
+		r.tap(13, 0)
+		expect(noteOns(r)).toEqual([5])
+		r.pm.routeOscToPage(0 as Slot, "/setting/transposeChords", [0])
+		r.sent.length = 0
+		r.tap(13, 0)
+		expect(noteOns(r)).toEqual([7])
+	})
+
+	it("saving or clearing a chord persists just the chord state", () => {
+		const r = rig()
+		r.tap(15, 4)
+		r.key(2, 7, 1)
+		r.key(2, 7, 0)
+		r.tap(13, 3)
+		expect(r.persisted).toHaveLength(1)
+		const patch = r.persisted[0].patch as any
+		expect(Object.keys(patch).sort()).toEqual(["chordTranspose", "chords"])
+		expect(patch.chords[3]).toEqual([1])
+		expect(r.persisted[0].slot).toBe(0)
+	})
+
+	it("round-trips chord transpositions through serialize/restore", () => {
+		const a = rig()
+		transposeTo(a, 10)
+		a.tap(15, 4)
+		a.key(1, 7, 1)
+		a.key(1, 7, 0)
+		a.tap(13, 1)
+		const cfg = a.pm.serialize(0 as Slot) as any
+		expect(cfg.chordTranspose[1]).toBe(2)
+		const b = rig()
+		b.pm.load(0 as Slot, () => new IsoHotPage(), cfg)
+		b.sent.length = 0
+		b.tap(13, 1) // b is at 0, chord saved at +2 → shifted down 2
+		expect(noteOns(b)).toEqual([0])
+	})
+})
+
+describe("iso-hot loop transposition", () => {
+	beforeEach(() => { vi.useFakeTimers() })
+	afterEach(() => { vi.useRealTimers() })
+
+	// A one-note loop on looper 0 (col 15 row 0), recorded at whatever is in force.
+	const recordLoop = (r: ReturnType<typeof rig>) => {
+		r.tap(15, 0)
+		vi.advanceTimersByTime(100)
+		r.key(3, 6, 1) // step 7 at t=0
+		vi.advanceTimersByTime(50)
+		r.key(3, 6, 0)
+		vi.advanceTimersByTime(250)
+		r.tap(15, 0) // close → playing
+	}
+	const lapOns = (r: ReturnType<typeof rig>) => {
+		r.sent.length = 0
+		vi.advanceTimersByTime(400)
+		return [...new Set(r.notes().filter((m) => m.args[1] === 1).map((m) => m.args[0]))]
+	}
+
+	it("playback follows the transposer relative to the take; opt-out plays as recorded", () => {
+		const r = rig()
+		recordLoop(r)
+		expect(lapOns(r)).toEqual([7])
+		r.tap(0, 7)
+		r.tap(11, 7) // +3
+		expect(lapOns(r)).toEqual([10])
+		r.pm.routeOscToPage(0 as Slot, "/setting/transposeLoops", [0])
+		expect(lapOns(r)).toEqual([7])
+	})
+})
+
+describe("presetStore.persistSlot", () => {
+	it("merges only the patch into the active preset, and writes the live layout", () => {
+		const dir = mkdtempSync(join(tmpdir(), "gridmapper-hot-"))
+		mkdirSync(join(dir, "presets"))
+		const preset = defaultSystemConfig()
+		preset.slots.a = { page: "iso-hot", config: { npo: 12, chords: [] } }
+		writeFileSync(join(dir, "presets", "hotelier.json"), JSON.stringify(preset))
+		const store = createPresetStore(dir)
+		store.setActive(preset, "hotelier")
+
+		const live = defaultSystemConfig()
+		live.slots.a = { page: "iso-hot", config: { npo: 19, chords: [[1]] } }
+		store.persistSlot(live, "a", { chords: [[1]] })
+
+		const saved = JSON.parse(readFileSync(join(dir, "presets", "hotelier.json"), "utf8"))
+		expect(saved.slots.a.config).toEqual({ npo: 12, chords: [[1]] }) // npo NOT baked in
+		const slots = JSON.parse(readFileSync(join(dir, "slots.json"), "utf8"))
+		expect(slots.activePreset).toBe("hotelier")
+		expect(slots.slots.a.config.npo).toBe(19)
+	})
+
+	it("leaves the preset alone when its slot holds a different page", () => {
+		const dir = mkdtempSync(join(tmpdir(), "gridmapper-hot-"))
+		mkdirSync(join(dir, "presets"))
+		const preset = defaultSystemConfig()
+		writeFileSync(join(dir, "presets", "p.json"), JSON.stringify(preset))
+		const store = createPresetStore(dir)
+		store.setActive(preset, "p")
+		const live = defaultSystemConfig()
+		live.slots.a = { page: "iso-hot", config: {} }
+		store.persistSlot(live, "a", { chords: [[1]] })
+		const saved = JSON.parse(readFileSync(join(dir, "presets", "p.json"), "utf8"))
+		expect(saved.slots.a.config).toBeUndefined()
 	})
 })

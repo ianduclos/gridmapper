@@ -25,6 +25,7 @@ import {
 	defaultSystemConfig,
 	type SystemConfig,
 } from "./systemConfig.js"
+import type { SlotLabel } from "./types.js"
 
 const NAME_RE = /^[A-Za-z0-9 _-]{1,48}$/
 
@@ -56,6 +57,14 @@ export interface PresetStore {
 	activeName(): string | null
 	/** Persist the live layout + marker to slots.json. Returns write success. */
 	setActive(config: SystemConfig, name: string | null): boolean
+	/**
+	 * A page's STORED CONTENT changed (e.g. a saved chord). Persist the live layout to
+	 * slots.json, keeping the marker, and merge `patch` into that slot's config in the
+	 * active preset file too — only those keys, so the rest of the live state (loops,
+	 * settings) is not silently baked into the preset. Skipped when no preset is active or
+	 * the preset holds a different page in that slot.
+	 */
+	persistSlot(live: SystemConfig, slot: SlotLabel, patch: Record<string, unknown>): void
 	/** Snapshot messages for a newly-connected client (web onConnect / Max boot). */
 	state(): Array<{ path: string; args: Array<number | string | boolean> }>
 }
@@ -146,6 +155,18 @@ export function createPresetStore(configsDir = resolvePath(process.cwd(), "confi
 
 		active: () => activeConfig,
 		activeName: () => activePreset,
+
+		persistSlot(live, slot, patch) {
+			const name = activePreset
+			this.setActive(live, name)
+			if (name === null) return
+			const cfg = this.read(name)
+			const entry = cfg?.slots[slot]
+			if (!cfg || !entry || entry.page !== live.slots[slot]?.page) return
+			const prev = entry.config && typeof entry.config === "object" ? entry.config : {}
+			entry.config = { ...prev, ...patch }
+			this.write(name, cfg)
+		},
 
 		setActive(config, name) {
 			const clean = sanitizeSystemConfig(config)

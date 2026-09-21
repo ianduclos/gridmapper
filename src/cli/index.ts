@@ -17,7 +17,7 @@ import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
 import { createPresetStore } from "../core/presetStore.js"
-import { applySystemConfig } from "../core/systemConfig.js"
+import { applySystemConfig, captureSystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
 import { DEFAULT_PAGE } from "../pages/registry.js"
@@ -113,7 +113,7 @@ const clockView: ClockState = {
 	get lanes() { return (rt?.clock.laneStates ?? []) as LaneState[] },
 }
 
-const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus"> = {
+const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "persist"> = {
 	size: grid.size,
 	modifiers,
 	clock: clockView,
@@ -126,9 +126,14 @@ const pm = new PageManager(
 	(_frame, reason) => {
 		if (reason === "focus") needsFullPaint = true
 	},
-	// A page switched focus itself (the hotelier selector column) — announce it exactly
-	// like the router does for /grid/in/focus/page.
-	(slot) => emitOut("/grid/out/focus/page", slotLabel(slot)),
+	{
+		// A page switched focus itself (the hotelier selector column) — announce it exactly
+		// like the router does for /grid/in/focus/page.
+		onPageFocus: (slot) => emitOut("/grid/out/focus/page", slotLabel(slot)),
+		// A page saved content (iso-hot's chords): live layout + the active preset.
+		onPersist: (slot, patch) =>
+			presets.persistSlot(captureSystemConfig({ pm, slotPages }), slotLabel(slot), patch),
+	},
 )
 
 function renderTick() {
