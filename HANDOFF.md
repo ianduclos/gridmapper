@@ -114,6 +114,13 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-09-21 — Claude — cells-hot: play toggle, loopers, BPM, panel
+- Bottom row: x0 shift, x1 play toggle, x12-15 gesture loopers (cell/mute/ensemble moves; shift+press clears; saved in page state). Playhead dims on silent rows, edge glides.
+- Clock "resetting to 7": cells pushed its pulseRate on every Run and never learned transport edits. Cells now owns tempo as BPM (3 pulses/beat) and adopts transport edits (internal lanes only).
+- Worlds carry `context`/`ensembleNotes` (Sonnet-drafted from the source docs, numbers spot-checked); web panel rebuilt into sections with per-setting `help`.
+- Verified: types, 458 tests, Playwright against an isolated `--null` sim copy on 57231/57291 (toggle, BPM both ways, transport edit sticks, looper rec/play/clear, no console errors). Agent restarted. Not verified: physical grid, audio.
+- Gotcha: a second sim in the repo shares `configs/` (and so the OSC ports and slots.json); test from a copy with its own `configs/settings.json`.
+
 ### 2026-09-21 — Claude — Cells v2 gone live
 - Hotelier's Max half landed (61dd9bf there; evidence in its `docs/CELLS-PLAYBACK.md`). Here: types clean, 447 tests, `launchctl kickstart -k` the agent; UI answers on 57191, slot b = cells-hot, transport boots stopped. No code change.
 - Not verified: physical grid, audio, the listening/timing checklist in `docs/cells-v2-rollout.md`. Page B needs Start again (the Max reload dropped the running session).
