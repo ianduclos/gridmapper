@@ -2,7 +2,7 @@
 	"version": 1,
 	"slots": {
 		"a": {
-			"page": "isometric",
+			"page": "iso-hot",
 			"config": {
 				"npo": 12,
 				"vertical": 5,
@@ -58,25 +58,25 @@
 			}
 		},
 		"b": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"c": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"d": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"e": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"f": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"g": {
-			"page": "base"
+			"page": "blank-hot"
 		},
 		"h": {
-			"page": "base"
+			"page": "blank-hot"
 		}
 	}
 }

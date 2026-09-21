@@ -27,6 +27,7 @@ import {
 	type Modifiers,
 	type KeyEvent,
 	SLOT_INDICES,
+	slotLabel,
 } from "../core/types.js"
 
 const useNull = process.argv.includes("--null")
@@ -112,7 +113,7 @@ const clockView: ClockState = {
 	get lanes() { return (rt?.clock.laneStates ?? []) as LaneState[] },
 }
 
-const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
+const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus"> = {
 	size: grid.size,
 	modifiers,
 	clock: clockView,
@@ -120,9 +121,15 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel"> = {
 	setShift: (which, down) => shift.set(which, down),
 }
 
-const pm = new PageManager(baseCtx, (_frame, reason) => {
-	if (reason === "focus") needsFullPaint = true
-})
+const pm = new PageManager(
+	baseCtx,
+	(_frame, reason) => {
+		if (reason === "focus") needsFullPaint = true
+	},
+	// A page switched focus itself (the hotelier selector column) — announce it exactly
+	// like the router does for /grid/in/focus/page.
+	(slot) => emitOut("/grid/out/focus/page", slotLabel(slot)),
+)
 
 function renderTick() {
 	const frame = pm.renderFocused()

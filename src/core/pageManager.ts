@@ -24,12 +24,19 @@ export class PageManager {
 	private focused: Slot = 0
 	private ctxPerSlot: PageContext[] = []
 	private onFrame?: OnFrame
+	private onPageFocus?: (slot: Slot) => void
 
+	/**
+	 * `onPageFocus` fires when a PAGE moved focus (ctx.focus), so the host can announce it
+	 * the way the router announces an OSC-driven `/grid/in/focus/page`.
+	 */
 	constructor(
-		baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel">,
-		onFrame?: OnFrame
+		baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus">,
+		onFrame?: OnFrame,
+		onPageFocus?: (slot: Slot) => void,
 	) {
 		this.onFrame = onFrame
+		this.onPageFocus = onPageFocus
 		for (const slot of SLOT_INDICES) {
 			this.ctxPerSlot[slot] = {
 				...baseCtx,
@@ -40,6 +47,11 @@ export class PageManager {
 					if (!p) return
 					this.desired[slot] = p.render(this.ctxPerSlot[slot]) ?? this.desired[slot]
 					if (slot === this.focused) this.onFrame?.(this.desired[slot], "dirty")
+				},
+				focus: (target) => {
+					if (target === this.focused) return
+					this.focus(target)
+					this.onPageFocus?.(target)
 				},
 			}
 		}
@@ -80,11 +92,15 @@ export class PageManager {
 	}
 
 	onKey(ev: KeyEvent) {
-		const p = this.pages[this.focused]
+		const slot = this.focused
+		const p = this.pages[slot]
 		if (!p) return
-		p.onKey(ev, this.ctxPerSlot[this.focused])
-		this.desired[this.focused] = p.render(this.ctxPerSlot[this.focused]) ?? this.desired[this.focused]
-		this.onFrame?.(this.desired[this.focused], "key")
+		p.onKey(ev, this.ctxPerSlot[slot])
+		// The key may have moved focus (ctx.focus). focus() already rendered and pushed the
+		// new page, so don't paint the old page's frame over it.
+		if (slot !== this.focused) return
+		this.desired[slot] = p.render(this.ctxPerSlot[slot]) ?? this.desired[slot]
+		this.onFrame?.(this.desired[slot], "key")
 	}
 
 	/**

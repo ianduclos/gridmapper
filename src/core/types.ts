@@ -76,6 +76,12 @@ export interface PageContext {
 	 * via `ctx.modifiers.shift1` / `shift2`.
 	 */
 	setShift: (which: number, down: boolean) => void
+	/**
+	 * Focus another slot from inside a page (e.g. a page-selector key). Same effect as
+	 * `/grid/in/focus/page`: this page is blurred, the target focused and repainted, and
+	 * `/grid/out/focus/page` announced. Safe to call from onKey.
+	 */
+	focus: (slot: Slot) => void
 }
 
 export interface Page {
