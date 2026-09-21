@@ -217,7 +217,7 @@ describe("World boundaries and deadline acceptance", () => {
 	})
 	it("maps included tunings to row one and Hotelier scales to row two", () => {
 		const r = rig()
-		r.p.onKey({ x: 2, y: 6, s: 1 }, r.c)
+		r.p.onKey({ x: 3, y: 6, s: 1 }, r.c)
 		r.p.onKey({ x: 6, y: 0, s: 1 }, r.c)
 		expect((r.p.serialize() as any).tuning).toBe("tritave")
 		r.p.onKey({ x: 1, y: 1, s: 1 }, r.c)

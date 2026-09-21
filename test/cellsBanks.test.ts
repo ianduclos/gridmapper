@@ -23,9 +23,9 @@ const makeRig = () => {
 describe("cells-hot choice banks", () => {
 	it("selects rhythm and tuning choices from their physical banks", () => {
 		const r = makeRig()
-		r.tap(1, 6); r.tap(2, 0)
-		expect(r.page.serialize()).toMatchObject({ rhythmWorld: "amadinda-ndyegulira" })
 		r.tap(2, 6); r.tap(2, 0)
+		expect(r.page.serialize()).toMatchObject({ rhythmWorld: "amadinda-ndyegulira" })
+		r.tap(3, 6); r.tap(2, 0)
 		expect(r.page.serialize()).toMatchObject({ tuning: "beating" })
 		const frame = r.page.render(r.ctx)
 		expect(frame[ledIndex(r.ctx.size, 2, 0)]).toBe(12)
@@ -36,7 +36,7 @@ describe("cells-hot choice banks", () => {
 		const r = makeRig()
 		r.page.onClock!({ ...r.ctx.clock, running: true }, r.ctx)
 		r.page.onTick!(10, 0, r.ctx)
-		r.tap(1, 6); r.tap(2, 0)
+		r.tap(2, 6); r.tap(2, 0)
 		// World changes are queued for the next performance-beat boundary; the
 		// current prepared pulse remains intact while the bank is open.
 		expect(r.packets().at(-1).type).toBe("sync")
@@ -48,18 +48,18 @@ describe("cells-hot choice banks", () => {
 
 	it("keeps the play toggle available in a bank", () => {
 		const r = makeRig()
-		r.tap(2, 6); r.tap(1, 7); r.tap(1, 7)
+		r.tap(3, 6); r.tap(1, 7); r.tap(1, 7)
 		expect(r.control).toEqual([`rate:${PULSE_RATE * 2}`, "start", "stop"])
 		expect(r.packets().map((packet) => packet.type)).toEqual(["start", "stop"])
 	})
 
 	it("does not save bank mode and restores the cells view", () => {
 		const r = makeRig()
-		r.tap(1, 6)
+		r.tap(2, 6)
 		expect(r.page.serialize()).not.toHaveProperty("bankMode")
 		r.page.restore!(r.page.serialize(), r.ctx)
 		const frame = r.page.render(r.ctx)
-		expect(frame[ledIndex(r.ctx.size, 1, 6)]).toBe(5)
-		expect(frame[ledIndex(r.ctx.size, 3, 6)]).toBe(8)
+		expect(frame[ledIndex(r.ctx.size, 2, 6)]).toBe(5)
+		expect(frame[ledIndex(r.ctx.size, 1, 6)]).toBe(8)
 	})
 })

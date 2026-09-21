@@ -99,15 +99,15 @@ describe("cells-hot gesture loopers", () => {
 		const r = rig()
 		r.tap(12, 7) // arm looper 1
 		expect(r.patterns()[0].state).toBe("recording")
-		r.tap(3, 0) // row 0 → choice 2 (loop starts here)
+		r.tap(4, 0) // row 0 → choice 2 (loop starts here)
 		vi.setSystemTime(1500)
-		r.tap(4, 1) // mute row 1
+		r.tap(1, 1) // mute row 1
 		vi.setSystemTime(2000)
 		r.tap(12, 7) // close: 1000 ms loop, now playing
 		expect(r.patterns()[0]).toEqual({ state: "playing", ms: 1000 })
 		// Undo by hand while looper 1 plays; looper 2 is not recording, so nothing records.
-		r.tap(2, 0)
-		r.tap(4, 1)
+		r.tap(3, 0)
+		r.tap(1, 1)
 		expect((r.page.serialize() as any).selected[0]).toBe(1)
 		r.page.onLooperTimer(2000)
 		r.page.onLooperTimer(2600)
@@ -160,7 +160,7 @@ describe("cells-hot gesture loopers", () => {
 		const r = rig()
 		r.tap(5, 7)
 		expect(r.view().activeEnsemble).toBe(1)
-		r.tap(4, 0) // a mute breaks the match
+		r.tap(1, 0) // a mute breaks the match
 		expect(r.view().activeEnsemble).toBe(-1)
 	})
 })

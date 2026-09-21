@@ -88,7 +88,7 @@ describe("cells-hot", () => {
 		const r = rig()
 		r.p.onClock!({ ...clock, running: true }, r.c)
 		r.p.onTick!(1, 0, r.c)
-		r.tap(2, 2)
+		r.tap(3, 2)
 		const q = r.packets().at(-1)
 		expect(q.type).toBe("replace")
 		expect(q.events).toHaveLength(1)
@@ -112,7 +112,7 @@ describe("cells-hot", () => {
 			.at(-1)
 			.events.find((e: any) => e.voice === 3)
 		expect(before).toBeTruthy()
-		r.tap(2, 2)
+		r.tap(3, 2)
 		const replace = r.packets().at(-1)
 		expect(replace.events).toHaveLength(1)
 		expect(replace.events[0].onsetMs).toBe(before.onsetMs)
@@ -130,9 +130,9 @@ describe("cells-hot", () => {
 			.packets()
 			.at(-1)
 			.events.find((e: any) => e.voice === 3).onsetMs
-		r.tap(2, 2)
+		r.tap(3, 2)
 		const b = r.packets().at(-1).events[0]
-		r.tap(1, 2)
+		r.tap(2, 2)
 		const a = r.packets().at(-1).events[0]
 		expect(b.onsetMs).toBe(onset)
 		expect(a.onsetMs).toBe(onset)
@@ -145,10 +145,10 @@ describe("cells-hot", () => {
 		const r = rig()
 		r.p.onClock!({ ...clock, running: true }, r.c)
 		r.p.onTick!(1, 0, r.c)
-		r.tap(4, 2)
+		r.tap(1, 2)
 		const muted = r.packets().at(-1)
 		expect(muted.events).toEqual([])
-		r.tap(4, 2)
+		r.tap(1, 2)
 		const joined = r.packets().at(-1)
 		expect(joined.events).toHaveLength(1)
 		expect(joined.events[0].onsetMs).toBeGreaterThanOrEqual(joined.cutoffMs)
@@ -197,13 +197,13 @@ describe("cells-hot", () => {
 it("persists choices/settings without playback and flashes only after onsets", () => {
  vi.useFakeTimers();vi.setSystemTime(1000);const r=rig();
  expect((r.p.serialize() as any).selected).toEqual([0,0,0,0,1,0]);
- r.tap(2,2);expect(r.saved.at(-1).selected[2]).toBe(1);
+ r.tap(3,2);expect(r.saved.at(-1).selected[2]).toBe(1);
  r.p.onOsc('/setting/rootMultiplier',[1.5],r.c);expect(r.saved.at(-1).rootMultiplier).toBe(1.5);
- expect(r.saved.at(-1).running).toBeUndefined();r.tap(1,2);
+ expect(r.saved.at(-1).running).toBeUndefined();r.tap(2,2);
  r.p.onClock({...clock,running:true},r.c);r.p.onTick(1,0,r.c);
  expect(r.p.render(r.c)[ledIndex(r.c.size,15,2)]).not.toBe(15);
  const onset=r.packets().at(-1).events.find((e:any)=>e.voice===3).onsetMs;vi.setSystemTime(onset+1);expect(r.p.render(r.c)[ledIndex(r.c.size,15,2)]).toBe(15);
- r.tap(2,2);expect(r.p.render(r.c)[ledIndex(r.c.size,2,2)]).toBe(7);
- vi.setSystemTime(1300);expect(r.p.render(r.c)[ledIndex(r.c.size,2,2)]).toBe(12);
+ r.tap(3,2);expect(r.p.render(r.c)[ledIndex(r.c.size,3,2)]).toBe(7);
+ vi.setSystemTime(1300);expect(r.p.render(r.c)[ledIndex(r.c.size,3,2)]).toBe(12);
  vi.useRealTimers();
 })

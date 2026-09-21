@@ -34,6 +34,13 @@ export const bpmToPulseRate = (bpm: number) =>
 	(bpm * PERFORMANCE_PULSES_PER_BEAT) / 60
 const BPM_MIN = 20,
 	BPM_MAX = 400
+/** Voice rows: mute (or lock) key at x1, three cell choices at x2-4, phase bar x5-15. */
+const MUTE_X = 1,
+	CELL_X0 = 2
+/** Row 6 view keys: cells (main) at x1, rhythm banks x2, tuning banks x3. */
+const CELLS_VIEW_X = 1,
+	RHYTHM_VIEW_X = 2,
+	TUNING_VIEW_X = 3
 /** Bottom row: shift held at x0, play toggle at x1, four gesture loopers at x12-15. */
 const SHIFT_X = 0,
 	PLAY_X = 1,
@@ -357,9 +364,9 @@ export class CellsHotPage implements Page {
 		}
 		if (!e.s) return
 		if (e.y === 6) {
-			if (e.x === 1) this.bankMode = "rhythmWorld"
-			else if (e.x === 2) this.bankMode = "tuning"
-			else if (e.x === 3) this.bankMode = "cells"
+			if (e.x === CELLS_VIEW_X) this.bankMode = "cells"
+			else if (e.x === RHYTHM_VIEW_X) this.bankMode = "rhythmWorld"
+			else if (e.x === TUNING_VIEW_X) this.bankMode = "tuning"
 			else if (e.x === 4) {
 				this.toggleEvolution(c)
 			} else if (e.x === 5) this.lockMode = !this.lockMode
@@ -381,8 +388,9 @@ export class CellsHotPage implements Page {
 			return
 		}
 		if (e.y < VOICES) {
-			if (e.x >= 1 && e.x <= 3) this.chooseCell(c, e.y, e.x - 1, true)
-			else if (e.x === 4) {
+			if (e.x >= CELL_X0 && e.x < CELL_X0 + 3)
+				this.chooseCell(c, e.y, e.x - CELL_X0, true)
+			else if (e.x === MUTE_X) {
 				if (this.lockMode) this.toggleLock(e.y)
 				else this.toggleMute(c, e.y)
 			} else return
@@ -555,16 +563,16 @@ export class CellsHotPage implements Page {
 			}
 		} else
 			for (let y = 0; y < VOICES; y++) {
-				for (let x = 1; x <= 3; x++)
+				for (let x = CELL_X0; x < CELL_X0 + 3; x++)
 					f[ledIndex(c.size, x, y)] =
-						this.selected[y] === x - 1
+						this.selected[y] === x - CELL_X0
 							? now < this.changedUntil[y]
 								? 7
 								: this.silent(y)
 									? 3
 									: 12
 							: 2
-				f[ledIndex(c.size, 4, y)] = this.lockMode
+				f[ledIndex(c.size, MUTE_X, y)] = this.lockMode
 					? this.locks[y]
 						? 15
 						: 4
@@ -592,9 +600,9 @@ export class CellsHotPage implements Page {
 				)
 					f[ledIndex(c.size, 15, y)] = 15
 			}
-		f[ledIndex(c.size, 1, 6)] = this.bankMode === "rhythmWorld" ? 15 : 5
-		f[ledIndex(c.size, 2, 6)] = this.bankMode === "tuning" ? 15 : 5
-		f[ledIndex(c.size, 3, 6)] = this.bankMode === "cells" ? 8 : 3
+		f[ledIndex(c.size, CELLS_VIEW_X, 6)] = this.bankMode === "cells" ? 8 : 3
+		f[ledIndex(c.size, RHYTHM_VIEW_X, 6)] = this.bankMode === "rhythmWorld" ? 15 : 5
+		f[ledIndex(c.size, TUNING_VIEW_X, 6)] = this.bankMode === "tuning" ? 15 : 5
 		f[ledIndex(c.size, 4, 6)] = this.autoEvolve ? 15 : 4
 		f[ledIndex(c.size, 5, 6)] = this.lockMode ? 15 : 4
 		f[ledIndex(c.size, 6, 6)] =

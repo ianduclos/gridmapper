@@ -141,7 +141,8 @@
 		.cx-section { border-top: 1px solid rgba(21,20,15,.18); padding: 14px 0 6px; }
 		.cx-section:first-child { border-top: 0; padding-top: 4px; }
 		.cx-title { font-size: 13px; font-weight: 500; letter-spacing: .2px; margin: 0 0 8px; }
-		.cx-now .cx-title { font-size: 16px; }
+		.cx-nowline { font-size: 16px; font-weight: 500; margin: 2px 0 6px; }
+		.cx-world-title { font-size: 13px; font-weight: 500; margin: 0 0 6px; }
 		.cx-context { font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 6px; }
 		.cx-source { font-size: 11px; line-height: 1.5; opacity: .55; max-width: 80ch; margin: 0 0 12px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 		.cx-help { font-size: 11px; line-height: 1.5; opacity: .55; margin: 2px 0 8px; max-width: 72ch; flex: 0 0 100%; }
@@ -430,9 +431,11 @@
 			settingsCtx.textContent = `slot ${slot} · cells-hot`;
 			if (!view) { cellsPanel.append(make("p", "cx-help", "Waiting for the page…")); act("/action/refreshView"); return; }
 
-			// Now playing: the world, in words.
-			const now = section(view.pendingWorldName ? `${view.worldName}, then ${view.pendingWorldName} on the next beat` : view.worldName);
+			// One line on top; the world's explanation and picker come after the basic controls.
+			cellsPanel.append(make("p", "cx-nowline", view.pendingWorldName ? `${view.worldName}, then ${view.pendingWorldName} on the next beat` : view.worldName));
+			const now = section("Rhythm world");
 			now.classList.add("cx-now");
+			now.append(make("p", "cx-world-title", view.worldName));
 			if (view.context) now.append(make("p", "cx-context", view.context));
 			if (view.source) now.append(make("p", "cx-source", view.source));
 			const worldSpec = specs.rhythmWorld;
@@ -537,6 +540,7 @@
 			evo.append(ev);
 			field("allowSilence", evo);
 
+			cellsPanel.append(now); // moves it below the basic settings
 			// Rarely touched.
 			const more = make("details", "cx-more"); more.append(make("summary", "", "Timing and routing"));
 			for (const k of ["lane", "humanizeMs"]) field(k, more);

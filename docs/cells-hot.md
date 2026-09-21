@@ -17,8 +17,8 @@ Grid coordinates below are zero-based. Column 0 remains the page selector.
 
 | Control | Position |
 | --- | --- |
-| Cell choices / mute | x=1–3 / x=4, y=0–5 |
-| Rhythm banks / tuning banks / cells view | x=1 / 2 / 3, y=6 |
+| Mute (lock in lock-edit mode) / cell choices | x=1 / x=2–4, y=0–5 |
+| Cells view (main) / rhythm banks / tuning banks | x=1 / 2 / 3, y=6 |
 | Auto-evolve / lock-edit mode | x=4 / 5, y=6 |
 | Apply current or pending world's recommendation | x=6, y=6 |
 | Shift (hold) | x=0, y=7 |

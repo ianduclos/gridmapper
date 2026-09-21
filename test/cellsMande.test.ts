@@ -35,7 +35,7 @@ describe("Mande source banks", () => {
    p.onOsc!("/setting/rhythmWorld",["manjanin"],c)
    p.onOsc!("/setting/humanizeMs",[0],c)
    // Select heat; existing controls keep source pitches/timing paired.
-   p.onKey({x:3,y:4,s:1},c); p.onKey({x:3,y:5,s:1},c)
+   p.onKey({x:4,y:4,s:1},c); p.onKey({x:4,y:5,s:1},c)
    p.onClock!({...c.clock,running:true},c); p.onTick!(0,0,c)
    const packets=sent.filter(x=>x.path.endsWith("/cells")).map(x=>JSON.parse(x.args[0]))
    const events=packets.flatMap(x=>x.events??[]).filter((x:any)=>x.voice===5)
