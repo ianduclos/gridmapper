@@ -328,6 +328,12 @@ src/
                          notes. Opt-outs: transposeChords / transposeLoops. Chord save/clear calls
                          ctx.persist → slots.json + a chords-only merge into the active preset.
   pages/blank-hot.ts     blank + the selector (placeholder for unbuilt hotelier pages)
+  pages/set-hot.ts       HOTELIER voice switches (slot f). Bottom four rows, bottom→top: damp
+                         (momentary) · freeze · bow · roll (toggles); col 2 = ALL (sets the six),
+                         cols 4-9 = voices 1-6. Out: /grid/out/page/<slot>/voice <n> <param>
+                         <1|0>, changes only. In (never echoed): /voice/<n>/<param> <1|0> sync,
+                         /voice/<n>/state <0|1|2> feedback on row 3. Runtime only, sends
+                         nothing at load.
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
                          PER-PAGE assignable: the selector neither consumes nor draws them.
                          Pages move focus via ctx.focus and save stored content via
