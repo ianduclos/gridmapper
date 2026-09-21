@@ -1,5 +1,10 @@
 /* Cells Hot — slot b's bank-backed, clock-scheduled hocket page. */
-import bank from "../data/cells-hot-bank.json" with { type: "json" }
+import {
+	worlds,
+	tuningNames,
+	eventHz,
+	type Tuning,
+} from "../data/cells-hot-worlds.js"
 import {
 	type KeyEvent,
 	type LedFrame,
@@ -13,16 +18,9 @@ import { bool, int, isRecord, num } from "../util/restoreGuards.js"
 import { drawSelector, selectorKey } from "../util/pageSelector.js"
 export const PULSE_RATE = 12 / 1.66
 const BUFFER_MS = 100,
-	VOICES = 6,
-	roles = ["ground", "knock", "low", "high", "reply", "splinter"]
-const cells = roles.map((role) =>
-		bank.cells.filter((c) => c.voiceRole === role),
-	),
-	presets = bank.presets.map((p) =>
-		p.cells.map((id, v) => cells[v].findIndex((c) => c.id === id)),
-	)
-type Tuning = "tritave" | "beating" | "source"
-const tunings: Tuning[] = ["tritave", "beating", "source"]
+	VOICES = 6
+const worldNames = Object.keys(worlds)
+const tunings: readonly string[] = tuningNames
 type OutEvent = {
 	id: string
 	voice: number
@@ -30,13 +28,28 @@ type OutEvent = {
 	gain: number
 	onsetMs: number
 	durationMs: number
+	durationMode: "gate" | "decay"
 }
 export const settings: SettingSpec[] = [
 	{
-		key: "tuning",
-		label: "Tuning",
+		key: "rhythmWorld",
+		label: "Rhythm world",
 		type: "enum",
-		options: tunings,
+		options: worldNames,
+		default: "horn-relay",
+	},
+	{
+		key: "durationMode",
+		label: "Duration (decay needs Max update)",
+		type: "enum",
+		options: ["gate", "decay"],
+		default: "gate",
+	},
+	{
+		key: "tuning",
+		label: "Tuning world",
+		type: "enum",
+		options: [...tunings],
 		default: "tritave",
 	},
 	{
@@ -77,7 +90,12 @@ export const settings: SettingSpec[] = [
 	},
 ]
 export class CellsHotPage implements Page {
-	private selected = [...presets[0]]
+	private rhythmWorld = "horn-relay"
+	private durationMode: "gate" | "decay" = "gate"
+	private get world() {
+		return worlds[this.rhythmWorld]
+	}
+	private selected = [...worlds["horn-relay"].presets[0]]
 	private muted = new Array(VOICES).fill(false)
 	private tuning: Tuning = "tritave"
 	private rootMultiplier = 1
@@ -159,7 +177,7 @@ export class CellsHotPage implements Page {
 			c.clockControl?.stop()
 			this.stop(c)
 		} else if (e.y === 7 && e.x >= 4 && e.x <= 6) {
-			this.selected = [...presets[e.x - 4]]
+			this.selected = [...this.world.presets[e.x - 4]]
 			for (let v = 0; v < VOICES; v++) this.replace(c, v)
 			this.persist(c)
 			c.setDirty()
@@ -167,12 +185,18 @@ export class CellsHotPage implements Page {
 	}
 	onOsc(path: string, args: any[], c: PageContext) {
 		const m =
-			/^\/setting\/(tuning|rootMultiplier|pulseRate|lane|humanizeMs)$/.exec(
+			/^\/setting\/(rhythmWorld|durationMode|tuning|rootMultiplier|pulseRate|lane|humanizeMs)$/.exec(
 				path,
 			)
 		if (!m) return
 		const [_, k] = m,
 			v = args[0]
+		if (k === "rhythmWorld" && worldNames.includes(v)) {
+			this.rhythmWorld = v
+			this.selected = [...this.world.presets[0]]
+		}
+		if (k === "durationMode" && (v === "gate" || v === "decay"))
+			this.durationMode = v
 		if (k === "tuning" && tunings.includes(v)) this.tuning = v
 		if (k === "rootMultiplier")
 			this.rootMultiplier = num(v, this.rootMultiplier, 0.25, 4)
@@ -191,7 +215,12 @@ export class CellsHotPage implements Page {
 			}
 		}
 		if (k === "humanizeMs") this.humanizeMs = int(v, this.humanizeMs, 0, 4)
-		if (k === "tuning" || k === "rootMultiplier")
+		if (
+			k === "tuning" ||
+			k === "rootMultiplier" ||
+			k === "rhythmWorld" ||
+			k === "durationMode"
+		)
 			for (let voice = 0; voice < VOICES; voice++) this.replace(c, voice)
 		this.persist(c)
 		this.announce(c)
@@ -211,7 +240,7 @@ export class CellsHotPage implements Page {
 								: 12
 						: 2
 			f[ledIndex(c.size, 4, y)] = this.muted[y] ? 3 : 8
-			const len = cells[y][this.selected[y]].lengthPulses,
+			const len = this.world.cells[y][this.selected[y]].lengthPulses,
 				phase = this.running
 					? Math.max(
 							0,
@@ -232,6 +261,8 @@ export class CellsHotPage implements Page {
 	}
 	serialize() {
 		return {
+			rhythmWorld: this.rhythmWorld,
+			durationMode: this.durationMode,
 			selected: [...this.selected],
 			muted: [...this.muted],
 			tuning: this.tuning,
@@ -244,6 +275,13 @@ export class CellsHotPage implements Page {
 	restore(raw: unknown, c: PageContext) {
 		if (!isRecord(raw)) return
 		if (this.running) this.stop(c)
+		if (
+			typeof raw.rhythmWorld === "string" &&
+			worldNames.includes(raw.rhythmWorld)
+		)
+			this.rhythmWorld = raw.rhythmWorld
+		if (raw.durationMode === "gate" || raw.durationMode === "decay")
+			this.durationMode = raw.durationMode
 		this.selected = this.selected.map((d, i) =>
 			int((raw.selected as any)?.[i], d, 0, 2),
 		)
@@ -315,7 +353,7 @@ export class CellsHotPage implements Page {
 		if (this.originTick === undefined) return out
 		for (let v = 0; v < VOICES; v++) {
 			if ((only !== undefined && v !== only) || this.muted[v]) continue
-			const cell = cells[v][this.selected[v]]
+			const cell = this.world.cells[v][this.selected[v]]
 			for (const e of cell.events) {
 				let p =
 					e.atPulse +
@@ -327,23 +365,16 @@ export class CellsHotPage implements Page {
 					out.push({
 						id: `${this.session}-${v + 1}-${this.revisions[v]}-${Math.round(p * 1000)}`,
 						voice: v + 1,
-						hz: this.hz(v, e.pitchOffsetCents),
+						hz: eventHz(this.tuning, v, e, this.world, this.rootMultiplier),
 						gain: e.gain,
 						onsetMs,
 						durationMs: e.durationPulses * period,
+						durationMode: this.durationMode,
 					})
 				}
 			}
 		}
 		return out
-	}
-	private hz(v: number, cents: number) {
-		const t: any = bank.tunings[this.tuning]
-		const hz =
-			t.kind === "equal-log-period"
-				? t.rootHz * Math.pow(t.periodRatio, t.voiceSteps[v] / t.divisions)
-				: t.voiceHz[v]
-		return hz * this.rootMultiplier * Math.pow(2, cents / 1200)
 	}
 	private rememberFlashes(events: OutEvent[], now: number) {
 		this.flashes = this.flashes.map((a) => a.filter((at) => at + 120 > now))

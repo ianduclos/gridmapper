@@ -32,3 +32,25 @@ or absolute source estimates; `rootMultiplier`, `pulseRate`, lane and 0–4 ms M
 serialize with the page. Gridmapper never applies local timing jitter.
 
 Cell-choice buttons are dimmer during the 100 ms replacement buffer; muted selections remain dim. Selections, mutes and settings persist immediately; playback state is never saved. The bank is explicitly composed/inferred material, not a verified traditional transcription. Automatic variation is absent in v1.
+
+
+## Rhythm worlds and decay option
+
+`rhythmWorld` now selects horn-relay, amadinda-ndyegulira,
+amadinda-ssematimba or mbira-chakwi. Each has six rows and three choices;
+source-derived parts and adapted subsets/excerpt loops are distinguished in
+[cells-sources.md](cells-sources.md). Original horn choices and tuning outputs
+are unchanged. World changes preserve tuning, tempo, mutes and shared phase;
+the new world's first ensemble is selected. Ensemble buttons recall the active
+world's three combinations, described in the source ledger.
+
+`pentatonic-model` and `heptatonic-model` extend the independent tuning selector.
+They are idealized models, not measured instrument tunings. Source degree order
+and register are stored independently and retuned by the selected system.
+
+Every event also includes `durationMode: "gate" | "decay"`, default gate.
+The Gridmapper UI/packet side is implemented; decay playback depends on the
+separate Max timing agent's update and is labelled accordingly. See
+[cells-decay-handoff.md](cells-decay-handoff.md) for exact semantics and checks.
+Do not treat the old scheduler accepting the extra JSON field as proof that it
+implements decay.

@@ -110,7 +110,13 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ---
 
-## Session log (newest first)
+## Session log
+
+### 2026-09-21 · Codex · cells rhythm worlds and decay interface
+- Added three sourced worlds (Ndyegulira, Ssematimba, Chakwi), each with six rows/three choices; source notation verified visually and adapted filters/excerpts labelled. Independent tuning models and source-relative pitch mapping; existing horn outputs unchanged.
+- Duration mode is captured in each OSC event; decay is explicitly pending the separately owned Max timing implementation. Handoff: `docs/cells-decay-handoff.md`; provenance: `docs/cells-sources.md`.
+- Verification: types and full test suite; focused source sequence/phase/pitch mapping and world independence tests. No Max edits, Gen reloads or audio mutations by this task. 405 tests pass. Launchd daemon restarted; live browser verified four Rhythm worlds, five Tuning worlds, and Gate/Decay selector. Original horn world and user settings retained, transport stopped. No physical Grid connected.
+ (newest first)
 ### 2026-09-21 — Codex
 Added `cells-hot` for hotelier slot b: six rows of paired 18-bank cells, per-voice
 selection/mute/phase, three ensembles, and explicit bottom-row Run/Stop. It schedules
