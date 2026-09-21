@@ -24,6 +24,12 @@ export interface PatternEvent {
 	atMs: number
 	step: number
 	on: boolean
+	/**
+	 * A CONTROL event instead of a note: a gesture recorded in parallel with the notes
+	 * (iso-hot's transposer). When present, `step`/`on` are ignored and playback reports
+	 * the value through `takeControl()` rather than touching `sounding`.
+	 */
+	ctl?: number
 }
 
 /** A recording longer than this closes itself and starts looping. */
@@ -82,6 +88,8 @@ export class PatternRecorder {
 	 * every recorded note a floor of one tick.
 	 */
 	private pendingOff: number[] = []
+	/** The last control value fired by the latest advance(), until taken. */
+	private firedCtl: number | undefined
 
 	/** Recording or playing — i.e. the page's timer needs to be running. */
 	get isRunning(): boolean {
@@ -90,11 +98,6 @@ export class PatternRecorder {
 
 	get hasContent(): boolean {
 		return this.events.length > 0 && this.lengthMs > 0
-	}
-
-	/** Events in the take so far — 0 until a recording's first note lands. */
-	get eventCount(): number {
-		return this.events.length
 	}
 
 	get loopMs(): number {
@@ -158,16 +161,33 @@ export class PatternRecorder {
 		this.playhead = 0 // the ONLY thing that rewinds
 		this.sounding.clear()
 		this.pendingOff = []
+		this.firedCtl = undefined
 	}
 
 	/** Tap the live note stream. Ignored unless recording. */
 	record(step: number, on: boolean, nowMs: number): void {
+		this.push(nowMs, { step, on })
+	}
+
+	/** Tap a control gesture (a transposer move). Starts the loop's clock like a note does. */
+	recordControl(value: number, nowMs: number): void {
+		this.push(nowMs, { step: 0, on: false, ctl: value })
+	}
+
+	/** The latest control value played back since the last call, if any. */
+	takeControl(): number | undefined {
+		const v = this.firedCtl
+		this.firedCtl = undefined
+		return v
+	}
+
+	private push(nowMs: number, e: Omit<PatternEvent, "atMs">): void {
 		if (this.state !== "recording") return
 		if (this.recArmed) {
-			this.recStartMs = nowMs // the loop starts HERE, at the first note
+			this.recStartMs = nowMs // the loop starts HERE, at the first event
 			this.recArmed = false
 		}
-		this.events.push({ atMs: nowMs - this.recStartMs, step, on })
+		this.events.push({ atMs: nowMs - this.recStartMs, ...e })
 	}
 
 	/**
@@ -190,6 +210,10 @@ export class PatternRecorder {
 		this.playhead = playhead
 		const onThisWindow = new Set<number>()
 		for (const e of fired) {
+			if (e.ctl !== undefined) {
+				this.firedCtl = e.ctl
+				continue
+			}
 			if (e.on) {
 				onThisWindow.add(e.step)
 				if (!this.sounding.has(e.step)) { this.sounding.add(e.step); changed = true }

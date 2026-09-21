@@ -216,31 +216,68 @@ describe("iso-hot loop transposition", () => {
 	beforeEach(() => { vi.useFakeTimers() })
 	afterEach(() => { vi.useRealTimers() })
 
-	// A one-note loop on looper 0 (col 15 row 0), recorded at whatever is in force.
-	const recordLoop = (r: ReturnType<typeof rig>) => {
-		r.tap(15, 0)
+	const onsIn = (r: ReturnType<typeof rig>, ms: number) => {
+		r.sent.length = 0
+		vi.advanceTimersByTime(ms)
+		return r.notes().filter((m) => m.args[1] === 1).map((m) => m.args[0])
+	}
+	const tr = (r: ReturnType<typeof rig>) => r.sent.filter((m) => m.path.endsWith("/transpose")).map((m) => m.args[0])
+
+	// Looper 0 (col 15 row 0): note, transposer → +3, the same key again. 600ms loop.
+	const recordGesture = (r: ReturnType<typeof rig>) => {
+		r.tap(0, 7) // show the transposer
+		r.tap(15, 0) // arm
+		r.key(3, 6, 1) // finger step 7, heard 7
+		vi.advanceTimersByTime(50)
+		r.key(3, 6, 0)
+		vi.advanceTimersByTime(150)
+		r.tap(11, 7) // +3, recorded as a gesture at ~200ms
 		vi.advanceTimersByTime(100)
-		r.key(3, 6, 1) // step 7 at t=0
+		r.key(3, 6, 1) // heard 10
 		vi.advanceTimersByTime(50)
 		r.key(3, 6, 0)
 		vi.advanceTimersByTime(250)
 		r.tap(15, 0) // close → playing
 	}
-	const lapOns = (r: ReturnType<typeof rig>) => {
-		r.sent.length = 0
-		vi.advanceTimersByTime(400)
-		return [...new Set(r.notes().filter((m) => m.args[1] === 1).map((m) => m.args[0]))]
-	}
 
-	it("playback follows the transposer relative to the take; opt-out plays as recorded", () => {
+	it("stores notes untransposed with the move alongside", () => {
 		const r = rig()
-		recordLoop(r)
-		expect(lapOns(r)).toEqual([7])
-		r.tap(0, 7)
-		r.tap(11, 7) // +3
-		expect(lapOns(r)).toEqual([10])
+		recordGesture(r)
+		const take = (r.pm.serialize(0 as Slot) as any).patterns[0].events
+		expect(take.filter((e: any) => e.on && e.ctl === undefined).map((e: any) => e.step)).toEqual([7, 7])
+		expect(take.filter((e: any) => e.ctl !== undefined).map((e: any) => e.ctl)).toEqual([3])
+	})
+
+	it("replays the move into the live transposer, and the transposer shifts the loop's own notes", () => {
+		const r = rig()
+		recordGesture(r)
+		r.tap(8, 7) // back to 0 by hand — holds until the loop's next move
+		r.sent.length = 0
+		const lap = onsIn(r, 600)
+		expect(lap).toEqual([7, 10]) // sounds exactly as played
+		expect(tr(r)).toContain(3)
+		// Your hands follow what the loop set.
+		r.tap(0, 7) // hide so the bottom row plays
+		r.sent.length = 0
+		r.key(1, 7, 1)
+		expect(r.notes()[0].args[0]).toBe(3)
+	})
+
+	it("transposeLoops off: the loop still moves the transposer but its notes ignore it", () => {
+		const r = rig()
+		recordGesture(r)
 		r.pm.routeOscToPage(0 as Slot, "/setting/transposeLoops", [0])
-		expect(lapOns(r)).toEqual([7])
+		expect(onsIn(r, 600)).toEqual([7, 7])
+	})
+
+	it("loop playback is never recorded into another looper", () => {
+		const r = rig()
+		recordGesture(r)
+		r.tap(15, 1) // arm looper 1 while looper 0 plays its move
+		vi.advanceTimersByTime(700)
+		r.tap(15, 1) // close: nothing was played by hand → back to empty
+		const p = (r.pm.serialize(0 as Slot) as any).patterns[1]
+		expect(p.events).toEqual([])
 	})
 })
 

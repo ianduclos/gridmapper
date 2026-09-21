@@ -8,9 +8,13 @@
  *          col 8 = 0, left = down, right = up (−7..+4 steps). Turning it off keeps the
  *          transposition. A note takes the transposition in force WHEN IT STARTS, so
  *          nothing already sounding moves. Keys always transpose; chord presets and looper
- *          playback do too unless `transposeChords` / `transposeLoops` are off. A chord or
- *          loop remembers the transposition it was saved/recorded at and moves RELATIVE to
- *          it — saved at +2, it plays as saved while you're still at +2.
+ *          playback do too unless `transposeChords` / `transposeLoops` are off. A chord
+ *          remembers the transposition it was saved at and moves RELATIVE to it.
+ *          LOOPS record transposer moves as a parallel GESTURE (a control lane) and store
+ *          their notes UNtransposed; playback replays the moves into the live transposer
+ *          and the transposer then shifts every loop, its own notes included — so a take
+ *          sounds as played. Several loops may drive it; the latest move wins, and a
+ *          press of yours holds until a loop's next move. Loop playback is never recorded.
  *          Transposition is performance state: not saved, 0 on load.
  *          Col 0 row 6: unassigned. Saved chords PERSIST (ctx.persist) on every save/clear.
  *          Everything else is isometric as of the fork.
@@ -459,8 +463,8 @@ export class IsoHotPage implements Page {
 	private transposerShown = false
 	private transposeChords = SPEC_BY_KEY.get("transposeChords")!.default as boolean
 	private transposeLoops = SPEC_BY_KEY.get("transposeLoops")!.default as boolean
-	/** Per looper: the transposition in force at its take's first note. */
-	private recT = new Array<number>(RECORDER_ROWS).fill(0)
+	/** Live sounding step → the transposition in force when it started (record tap). */
+	private liveT = new Map<number, number>()
 	/** Per looper: recorded step → the step it went out as, stamped at note start. */
 	private loopShift: Array<Map<number, number>> = Array.from({ length: RECORDER_ROWS }, () => new Map())
 	/** The latching half of sustain — OR'd with the momentary pedal. */
@@ -525,7 +529,7 @@ export class IsoHotPage implements Page {
 		}
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
 			const i = ledIndex(this.size, ev.x, ev.y)
-			if (ev.s) this.setTranspose(ev.x - TRANSPOSE_ZERO_COL, ctx)
+			if (ev.s) this.setTranspose(ev.x - TRANSPOSE_ZERO_COL, ctx, true)
 			else if (this.held.has(i)) this.releaseKey(i, ctx) // held from before the toggle
 			return
 		}
@@ -896,7 +900,6 @@ export class IsoHotPage implements Page {
 			...this.settings(),
 			...this.chordState(),
 			patterns: this.recorders.map((r) => r.snapshot()),
-			patternTranspose: [...this.recT],
 			...this.trackState(),
 		}
 	}
@@ -936,10 +939,7 @@ export class IsoHotPage implements Page {
 		for (const slot of this.chords.keys()) {
 			this.chordT.set(slot, Math.round(num(rawCT[slot], 0, -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT)))
 		}
-		const rawPT = Array.isArray(config.patternTranspose) ? config.patternTranspose : []
-		for (let i = 0; i < RECORDER_ROWS; i++) {
-			this.recT[i] = Math.round(num(rawPT[i], 0, -CHORD_PITCH_LIMIT, CHORD_PITCH_LIMIT))
-		}
+
 
 		// Recorded loops, take by take. An entry that doesn't add up to a loop restores as
 		// an empty recorder, which is also what an untouched looper looks like in the file.
@@ -950,6 +950,16 @@ export class IsoHotPage implements Page {
 				this.recorders[i].restore({
 					lengthMs: num(node.lengthMs, 0, 0, MAX_RECORD_MS),
 					events: records(node.events, MAX_PATTERN_EVENTS, (e) => {
+						if (e.ctl !== undefined) {
+							const ctl = Number(e.ctl)
+							if (!Number.isFinite(ctl)) return undefined
+							return {
+								atMs: num(e.atMs, -1, 0, MAX_RECORD_MS),
+								step: 0,
+								on: false,
+								ctl: clamp(Math.round(ctl), TRANSPOSE_MIN, TRANSPOSE_MAX),
+							}
+						}
 						if (typeof e.on !== "boolean" && typeof e.on !== "number") return undefined
 						const step = Number(e.step)
 						if (!Number.isFinite(step)) return undefined
@@ -1197,42 +1207,59 @@ export class IsoHotPage implements Page {
 
 	/** Feed the live stream's transitions to every armed recorder. */
 	private tapRecorders(live: Set<number>, nowMs: number) {
-		if (this.recorders.some((r) => r.state === "recording")) {
-			for (const step of this.lastLive) if (!live.has(step)) this.recordAll(step, false, nowMs)
+		// Loops store UNtransposed steps (sounding minus the transposition it started at);
+		// the transposer is recorded alongside as a gesture and re-applied on playback.
+		const raw = (step: number) => step - (this.liveT.get(step) ?? this.transpose)
+		const recording = this.recorders.some((r) => r.state === "recording")
+		for (const step of this.lastLive) {
+			if (live.has(step)) continue
+			if (recording) this.recordAll(raw(step), false, nowMs)
+			this.liveT.delete(step)
+		}
+		if (recording) {
 			for (const key of this.retrigger) {
 				const step = stepOf(key)
 				if (live.has(step) && this.lastLive.has(step)) {
-					this.recordAll(step, false, nowMs)
-					this.recordAll(step, true, nowMs)
+					this.recordAll(raw(step), false, nowMs)
+					this.recordAll(raw(step), true, nowMs)
 				}
 			}
-			for (const step of live) if (!this.lastLive.has(step)) this.recordAll(step, true, nowMs)
+		}
+		for (const step of live) {
+			if (this.lastLive.has(step)) continue
+			this.liveT.set(step, this.transpose)
+			if (recording) this.recordAll(raw(step), true, nowMs)
 		}
 		this.lastLive = live
 	}
 
 	private recordAll(step: number, on: boolean, nowMs: number) {
-		this.recorders.forEach((r, i) => {
-			if (r.state === "recording" && r.eventCount === 0) this.recT[i] = this.transpose
-			r.record(step, on, nowMs)
-		})
+		for (const r of this.recorders) r.record(step, on, nowMs)
 	}
 
 	/**
-	 * A looper's sounding steps as they go OUT: shifted by how far the transposer has moved
-	 * since the take was recorded, stamped per note at its start so a ringing note is never
-	 * re-pitched. The take itself holds what you heard (keys were already transposed).
+	 * A looper's sounding steps as they go OUT: its untransposed steps plus the current
+	 * transposition, stamped per note at its start so a ringing note is never re-pitched.
 	 */
 	private loopOut(i: number, raw: ReadonlySet<number>): Set<number> {
 		const map = this.loopShift[i]
 		for (const step of map.keys()) if (!raw.has(step)) map.delete(step)
-		const off = this.transposeLoops ? this.transpose - this.recT[i] : 0
+		const off = this.transposeLoops ? this.transpose : 0
 		for (const step of raw) if (!map.has(step)) map.set(step, step + off)
 		return new Set(map.values())
 	}
 
-	private setTranspose(t: number, ctx: PageContext) {
+	/**
+	 * `byHand` = a press of yours, which armed loopers record as a gesture. Moves played back
+	 * by a loop are not recorded — loopers never tap each other.
+	 */
+	private setTranspose(t: number, ctx: PageContext, byHand: boolean) {
 		const next = clamp(t, TRANSPOSE_MIN, TRANSPOSE_MAX)
+		if (byHand) {
+			const nowMs = Date.now()
+			for (const r of this.recorders) r.recordControl(next, nowMs)
+			this.syncTimer()
+		}
 		if (next === this.transpose) return
 		this.transpose = next
 		this.emitTranspose(ctx)
@@ -1300,6 +1327,10 @@ export class IsoHotPage implements Page {
 		this.lastTickMs = nowMs
 		for (let i = 0; i < this.recorders.length; i++) {
 			this.recorders[i].advance(nowMs, dt, this.quantumMs(i))
+			// A replayed transposer move lands BEFORE commit, so notes starting in the same
+			// window already take it. Latest recorder wins.
+			const ctl = this.recorders[i].takeControl()
+			if (ctl !== undefined) this.setTranspose(ctl, ctx, false)
 		}
 		// Free-run the arp only while the transport is stopped; otherwise onTick owns it.
 		if (this.arp.isOn && !ctx.clock.running) {

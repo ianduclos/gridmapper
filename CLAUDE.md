@@ -319,9 +319,12 @@ src/
                          cols 1-12 (home col 1); col 0 rows 0-5 = page selector, row 7 =
                          TRANSPOSER toggle (bottom row becomes −7..+4, col 8 = 0; stays in
                          force when hidden; not saved). A note takes the transposition AT
-                         NOTE START; chords/loops move RELATIVE to the transposition they were
-                         saved/recorded at (chordTranspose / patternTranspose in serialize),
-                         opt-out via transposeChords / transposeLoops. Chord save/clear calls
+                         NOTE START. Chords move RELATIVE to the transposition they were saved
+                         at (chordTranspose). LOOPS store notes UNtransposed and record
+                         transposer moves as a parallel control lane (PatternEvent.ctl);
+                         playback drives the LIVE transposer (latest move wins, a hand press
+                         holds until the next move), which shifts every loop incl. its own
+                         notes. Opt-outs: transposeChords / transposeLoops. Chord save/clear calls
                          ctx.persist → slots.json + a chords-only merge into the active preset.
   pages/blank-hot.ts     blank + the selector (placeholder for unbuilt hotelier pages)
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
