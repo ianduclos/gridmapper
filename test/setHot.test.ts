@@ -6,15 +6,16 @@ const SIZE: GridSize = { width: 16, height: 8 }
 
 function rig() {
 	const sent: Array<{ path: string; args: any[] }> = []
+	const modifiers = { held: new Set(), shift1: false, shift2: false }
 	const ctx = {
 		size: SIZE,
-		modifiers: { held: new Set(), shift1: false, shift2: false },
+		modifiers,
 		clock: { running: false, rate: 20, tick: 0, lanes: [] },
 		osc: { send: (path: string, ...args: any[]) => sent.push({ path, args }) },
 		slot: 5,
 		slotLabel: "f",
 		setDirty: () => {},
-		setShift: () => {},
+		setShift: (which: number, down: boolean) => { if (which === 1) modifiers.shift1 = down },
 		focus: () => {},
 		persist: () => {},
 	} as unknown as PageContext
@@ -129,5 +130,104 @@ describe("set-hot from Max", () => {
 		r.p.onOsc("/voice/1/freeze", ["x"], r.ctx)
 		for (let x = 4; x < 10; x++) expect(r.at(x, 3)).toBe(0)
 		expect(r.at(4, 6)).toBe(2)
+	})
+})
+
+describe("set-hot loopers (col 15 rows 0-3)", () => {
+	afterEach(() => { vi.useRealTimers() })
+
+	// Looper 0: freeze voice 1 on, hold damp on voice 2 for 100ms, freeze voice 1 off. 500ms.
+	const record = (r: ReturnType<typeof rig>, idx = 0) => {
+		r.tap(15, idx) // arm
+		r.tap(4, 6) // freeze v1 on — starts the take
+		vi.advanceTimersByTime(100)
+		r.key(5, 7, 1)
+		vi.advanceTimersByTime(100)
+		r.key(5, 7, 0)
+		vi.advanceTimersByTime(100)
+		r.tap(4, 6) // freeze v1 off
+		vi.advanceTimersByTime(200)
+		r.tap(15, idx) // close → playing
+	}
+	const lap = (r: ReturnType<typeof rig>) => {
+		r.sent.length = 0
+		vi.advanceTimersByTime(500)
+		return r.voice()
+	}
+
+	it("replays toggles and momentary damp, sending the same OSC", () => {
+		vi.useFakeTimers()
+		const r = rig()
+		record(r)
+		expect(lap(r)).toEqual([
+			[1, "freeze", 1],
+			[2, "damp", 1],
+			[2, "damp", 0],
+			[1, "freeze", 0],
+		])
+		expect(r.at(15, 0)).toBe(15)
+	})
+
+	it("a hand damp and a loop damp overlap without cutting each other off", () => {
+		vi.useFakeTimers()
+		const r = rig()
+		record(r)
+		r.key(5, 7, 1) // hold voice 2 by hand through the lap
+		r.sent.length = 0
+		vi.advanceTimersByTime(500)
+		expect(r.voice().filter((m) => m[1] === "damp")).toEqual([])
+		r.key(5, 7, 0)
+		expect(r.voice().at(-1)).toEqual([2, "damp", 0])
+	})
+
+	it("stop pauses (releasing a held damp), shift 1 + press clears", () => {
+		vi.useFakeTimers()
+		const r = rig()
+		record(r)
+		vi.advanceTimersByTime(150) // inside the damp
+		r.sent.length = 0
+		r.tap(15, 0) // stop
+		expect(r.voice()).toEqual([[2, "damp", 0]])
+		expect(r.at(15, 0)).toBe(5)
+		r.key(15, 7, 1)
+		r.tap(15, 0)
+		r.key(15, 7, 0)
+		expect(r.at(15, 0)).toBe(1)
+		expect(lap(r)).toEqual([])
+	})
+
+	it("loop playback is not recorded into another looper", () => {
+		vi.useFakeTimers()
+		const r = rig()
+		record(r)
+		r.tap(15, 1)
+		vi.advanceTimersByTime(600)
+		r.tap(15, 1) // nothing played by hand → back to empty
+		expect((r.p.serialize() as any).patterns[1].events).toEqual([])
+	})
+
+	it("saves the loops, restores them stopped and silent", () => {
+		vi.useFakeTimers()
+		const a = rig()
+		record(a)
+		const cfg = a.p.serialize()
+		const b = rig()
+		b.p.restore(cfg, b.ctx)
+		expect(b.voice()).toEqual([])
+		expect(b.at(15, 0)).toBe(5)
+		b.tap(15, 0) // play
+		expect(lap(b).map((m) => m.slice(1))).toEqual([["freeze", 1], ["damp", 1], ["damp", 0], ["freeze", 0]])
+		b.p.dispose(b.ctx)
+	})
+
+	it("restore drops junk events", () => {
+		const r = rig()
+		r.p.restore({ patterns: [{ lengthMs: 400, events: [
+			{ atMs: 0, step: 9, on: true },
+			{ atMs: 0, step: 0, on: false, ctl: { id: "explode/1", value: 1 } },
+			{ atMs: 10, step: 0, on: false, ctl: { id: "bow/3", value: 1 } },
+		] }] }, r.ctx)
+		const ev = (r.p.serialize() as any).patterns[0].events
+		expect(ev).toEqual([{ atMs: 10, step: 0, on: false, ctl: { id: "bow/3", value: 1 } }])
 	})
 })

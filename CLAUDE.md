@@ -332,8 +332,11 @@ src/
                          (momentary) · freeze · roll · bow (toggles); col 2 = ALL (sets the six),
                          cols 4-9 = voices 1-6. Out: /grid/out/page/<slot>/voice <n> <param>
                          <1|0>, changes only. In (never echoed): /voice/<n>/<param> <1|0> sync,
-                         /voice/<n>/state <0|1|2> feedback on row 3. Runtime only, sends
-                         nothing at load.
+                         /voice/<n>/state <0|1|2> feedback on row 3. Switches are runtime
+                         only and send nothing at load. Col 15 rows 0-3 = 4 GESTURE LOOPERS
+                         (row 7 = shift 1, +press clears): damp records as notes (step =
+                         voice), toggles as ctl events `<param>/<voice>`; playback drives the
+                         switches (latest wins, damp = hand OR loop). Loops save in presets.
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
                          PER-PAGE assignable: the selector neither consumes nor draws them.
                          Pages move focus via ctx.focus and save stored content via
