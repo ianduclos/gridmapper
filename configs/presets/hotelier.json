@@ -58,7 +58,16 @@
 			}
 		},
 		"b": {
-			"page": "blank-hot"
+			"page": "cells-hot",
+			"config": {
+				"selected": [0, 0, 0, 0, 0, 0],
+				"muted": [false, false, false, false, false, false],
+				"phase": [0, 0, 0, 0, 0, 0],
+				"tuningHz": 432,
+				"rootHz": 55,
+				"lane": 0,
+				"humanizeMs": 4
+			}
 		},
 		"c": {
 			"page": "blank-hot"

@@ -111,6 +111,20 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log (newest first)
+### 2026-09-21 — Codex
+Added `cells-hot` for hotelier slot b: six rows of paired 18-bank cells, per-voice
+selection/mute/phase, three ensembles, and explicit bottom-row Run/Stop. It schedules
+absolute same-host epoch OSC packets at `/grid/out/page/b/cells`: start/sync/replace/stop
+with a 100 ms look-ahead; muting cancels only future events and restores silently.
+`PageContext.clockControl` is a small optional seam wired in both entry points; only
+explicit Run changes the shared clock to 12/1.66 Hz. Config restores without a session
+or attacks. Packet/watchdog contract: `docs/cells-hot.md`.
+
+Files: `src/pages/cells-hot.ts`, `src/core/types.ts`, `src/cli/{sim,index}.ts`,
+`configs/{slots,presets/hotelier}.json`, `test/cellsHot.test.ts`.
+Verified: `npx tsc --noEmit`; `npm test` (394 tests). Not restarted or hardware/Max
+auditioned. Next: Max side consumes the documented packet contract; Ian plays the page.
+
 ### 2026-09-21 — Claude
 **Hotelier concert set** (concert 2026-09-23). The preset `hotelier` is now `iso-hot` in slot a and
 `blank-hot` in b–h (`configs/presets/hotelier.json` + `configs/slots.json`).

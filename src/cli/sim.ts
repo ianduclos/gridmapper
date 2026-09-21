@@ -152,6 +152,11 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "
 	size: grid.size,
 	modifiers,
 	clock: clockView,
+	clockControl: {
+		start: () => rt?.clock.start(),
+		stop: () => rt?.clock.stop(),
+		setRate: (rate) => rt?.clock.setRate(rate),
+	},
 	osc: { send: emitOut },
 	setShift: (which, down) => shift.set(which, down),
 }

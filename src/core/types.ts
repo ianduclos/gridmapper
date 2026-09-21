@@ -62,6 +62,12 @@ export interface PageContext {
 	 * object the host mutates, never a copy taken at init.
 	 */
 	clock: Readonly<ClockState>
+	/** Explicit, local requests to the one app clock. Pages never mutate it on load/restore. */
+	clockControl?: {
+		start: () => void
+		stop: () => void
+		setRate: (rate: number) => void
+	}
 	osc: {
 		send: (path: string, ...args: Array<number | string | boolean>) => void
 	}
