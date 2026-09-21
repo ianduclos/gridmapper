@@ -41,7 +41,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
-- **cells-hot v2 prepared, not live:** richer banks, shared-beat world changes, independent tuning recommendations, shaped decay, optional evolution/rests and selected-cell mute/rejoin. 447 tests and types pass. Max compatibility is committed separately; do not restart Gridmapper until the Max owner installs/verifies it. See `docs/cells-v2-rollout.md` and `docs/cells-v2-verification.md`.
+- **cells-hot v2 LIVE (2026-09-21, agent restarted after Hotelier 61dd9bf installed the Max half):** richer banks, shared-beat world changes, independent tuning recommendations, shaped decay, optional evolution/rests and selected-cell mute/rejoin. 447 tests and types pass. Max half installed and probed (replaceAll, decayMs→scorearm, armDecay0..3, decay scales; 4-slot guard offline-tested only). Listening/timing pass is Ian's. See `docs/cells-v2-rollout.md` and `docs/cells-v2-verification.md`.
 - **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Manjanin and Ngòn study banks installed, 18 choices each; source details in `docs/cells-sources.md` and next-repertoire research in `docs/cells-microtiming-research.md`.
 - **Run:** `npm run sim` → http://localhost:57191 (live grid + web mirror; auto-
   connects to the monome 128 when present). `npm run sim -- --null` = no hardware.
@@ -113,6 +113,10 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-21 — Claude — Cells v2 gone live
+- Hotelier's Max half landed (61dd9bf there; evidence in its `docs/CELLS-PLAYBACK.md`). Here: types clean, 447 tests, `launchctl kickstart -k` the agent; UI answers on 57191, slot b = cells-hot, transport boots stopped. No code change.
+- Not verified: physical grid, audio, the listening/timing checklist in `docs/cells-v2-rollout.md`. Page B needs Start again (the Max reload dropped the running session).
 
 ### 2026-09-21 — Codex — Cells v2, prepared for coordinated installation
 - Added independently audited Manjanin II, Woloso-dòn and Pelayon banks (18 cells each), explicit source/arrangement metadata, paired evolution rules and tuning recommendations. Ango omitted: accessible metadata did not support an attack-level reconstruction.
