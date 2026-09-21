@@ -118,6 +118,16 @@
 		.settings.wide #settingsFields { display: flex; flex-wrap: wrap; gap: 4px 24px; }
 		.settings.wide .field { margin: 6px 0; flex: 0 0 auto; }
 		.settings.wide select.select { max-width: 132px; }
+		.settings.wide .field.enum-field { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; align-items: flex-start; }
+		.settings .field.enum-field label { flex: 0 0 100%; }
+		.settings .enum-buttons { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 4px; justify-content: flex-start; }
+		.settings .enum-button {
+			font: inherit; font-size: 11px; letter-spacing: .2px; color: var(--ink);
+			background: transparent; border: 1px solid var(--ink); border-radius: 3px;
+			padding: 4px 6px; cursor: pointer; opacity: .55;
+		}
+		.settings .enum-button:hover { opacity: .85; }
+		.settings .enum-button[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
 		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
 			color: var(--ink); background: transparent;
 			border: 1px solid var(--ink); border-radius: 3px; padding: 4px 6px; }
@@ -258,13 +268,22 @@
 			const values = settingsBySlot[focusedSlot] || {};
 			const setVal = (key, v) => send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/setting/${key}`, [v]);
 			specs.forEach((spec) => {
-				const row = document.createElement("div"); row.className = "field";
+				const row = document.createElement("div"); row.className = "field" + (spec.presentation === "buttons" ? " enum-field" : "");
 				const lab = document.createElement("label"); lab.textContent = spec.label || spec.key;
 				const cur = values[spec.key] !== undefined ? values[spec.key] : spec.default;
 				let input;
 				if (spec.type === "toggle") {
 					input = document.createElement("input"); input.type = "checkbox"; input.checked = !!cur;
 					input.onchange = () => setVal(spec.key, input.checked ? 1 : 0);
+				} else if (spec.type === "enum" && spec.presentation === "buttons") {
+					input = document.createElement("div"); input.className = "enum-buttons";
+					input.setAttribute("role", "group"); input.setAttribute("aria-label", spec.label || spec.key);
+					(spec.options || []).forEach((o) => {
+						const b = document.createElement("button"); b.type = "button"; b.className = "enum-button";
+						b.textContent = (spec.optionLabels && spec.optionLabels[o]) || o;
+						b.setAttribute("aria-pressed", String(String(cur) === o));
+						b.onclick = () => setVal(spec.key, o); input.appendChild(b);
+					});
 				} else if (spec.type === "enum") {
 					input = document.createElement("select"); input.className = "select";
 					(spec.options || []).forEach((o) => {

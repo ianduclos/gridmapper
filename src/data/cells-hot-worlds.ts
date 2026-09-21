@@ -1,3 +1,4 @@
+import hotelier from "./hotelier-tunings.json" with { type: "json" }
 import horn from "./cells-hot-bank.json" with { type: "json" }
 
 export type CellEvent = {
@@ -26,14 +27,35 @@ export type World = {
 	source: string
 	roles: string[]
 }
+export const hotelierTuningNames = [
+ "hotelier-12edo", "hotelier-just", "hotelier-werckmeister3",
+ "hotelier-young", "hotelier-slendro", "hotelier-pelog", "hotelier-ranat",
+ "hotelier-balafon", "hotelier-equipentatonic",
+] as const
 export const tuningNames = [
 	"tritave",
 	"beating",
 	"source",
 	"pentatonic-model",
 	"heptatonic-model",
+ ...hotelierTuningNames,
 ] as const
 export type Tuning = (typeof tuningNames)[number]
+export const tuningLabels: Record<string, string> = {
+ tritave: "Tritave", beating: "Beating", source: "Horn source model",
+ "pentatonic-model": "Five-tone model", "heptatonic-model": "Seven-tone model",
+ ...Object.fromEntries(hotelierTuningNames.map(id => [id, "Hotelier · " + id.slice(9)])),
+}
+export function hotelierKeyHz(id: string, key: number): number {
+ const table = hotelier.tables.find(t => t.id === id)
+ if (!table) throw new Error(`Unknown Hotelier tuning: ${id}`)
+ const n = table.cents.length, period = table.period ?? 1200
+ const cents = (k: number) => {
+  const relative = k - table.root, octave = Math.floor(relative / n)
+  return octave * period + table.cents[relative - octave * n]
+ }
+ return hotelier.anchorHz * 2 ** ((cents(key) - cents(hotelier.anchorKey)) / 1200)
+}
 const hornRoles = ["ground", "knock", "low", "high", "reply", "splinter"]
 const hornCells = hornRoles.map((role) =>
 	horn.cells.filter((c) => c.voiceRole === role),
@@ -259,11 +281,18 @@ export function eventHz(
 	rootMultiplier: number,
 ): number {
 	let hz: number
-	if (event.pitchStep === undefined) {
+ if (tuning.startsWith("hotelier-")) {
+  const id = tuning.slice(9), table = hotelier.tables.find(t => t.id === id)!
+  const n = table.cents.length
+  const rank = event.pitchStep === undefined
+   ? horn.tunings.tritave.voiceSteps[voice] / horn.tunings.tritave.divisions
+   : event.pitchStep / world.degreeCount
+  hz = hotelierKeyHz(id, hotelier.anchorKey - 2 * n + Math.round(rank * n))
+ } else if (event.pitchStep === undefined) {
 		if (tuning === "pentatonic-model" || tuning === "heptatonic-model")
 			hz = 82 * 2 ** (voice / (tuning === "pentatonic-model" ? 5 : 7))
 		else {
-			const t = horn.tunings[tuning]
+			const t = horn.tunings[tuning as keyof typeof horn.tunings]
 			hz =
 				"voiceSteps" in t
 					? t.rootHz * t.periodRatio ** (t.voiceSteps[voice] / t.divisions)
@@ -276,7 +305,7 @@ export function eventHz(
 			const n = tuning === "pentatonic-model" ? 5 : 7
 			hz = 82 * 2 ** (Math.round(rank * n) / n)
 		} else {
-			const hzValues = horn.tunings[tuning].voiceHz,
+			const hzValues = horn.tunings[tuning as "beating" | "source"].voiceHz,
 				root = hzValues[0]
 			const ratios = [
 				...new Set(

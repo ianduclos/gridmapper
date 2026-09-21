@@ -41,6 +41,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
+- **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Measured microtiming sources: `docs/cells-microtiming-research.md`; new source reconstructions pending.
 - **Run:** `npm run sim` → http://localhost:57191 (live grid + web mirror; auto-
   connects to the monome 128 when present). `npm run sim -- --null` = no hardware.
   `npm run dev` = headless daemon. `npm test` · `npx tsc --noEmit` · `npm run grid:list`.
@@ -111,6 +112,14 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-21 — Codex — World banks and Hotelier tunings
+- Added named rhythm/tuning buttons in web settings and physical Grid bank views on row seven. Selection follows existing phase-preserving scheduling; bank view is not persisted.
+- Added nine canonical Hotelier tuning snapshots and regeneration script; preserves 432 Hz anchor, Young keyboard order, and stretched Ranat period. Independent choices only; selected-Max-scale following needs future handshake integration.
+- Documented measured Manjanin, Ngòn and Bire timing sources and adaptation boundaries. These research candidates are not new playable transcriptions yet.
+- Verified: types clean; 412 tests; generated snapshot matches current `idk.tuning.js`; live web Ranat selection round-trip leaves Ndyegulira selected, then restored five-tone model. Gridmapper restarted stopped. Physical device absent; no live Max/audio mutations or new jitter claim.
+- Files: `src/data/cells-hot-worlds.ts`, `src/data/hotelier-tunings.json`, `scripts/sync-hotelier-tunings.mjs`, page/settings/web bank controls, two test files, cells docs.
+- Next: Max agent duration/decay integration; source-derived multi-part microtiming bank. Preserve dirty configs and the Max agent's live patch edits.
 
 ### 2026-09-21 · Codex · cells rhythm worlds and decay interface
 - Added three sourced worlds (Ndyegulira, Ssematimba, Chakwi), each with six rows/three choices; source notation verified visually and adapted filters/excerpts labelled. Independent tuning models and source-relative pitch mapping; existing horn outputs unchanged.

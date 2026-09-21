@@ -54,3 +54,26 @@ separate Max timing agent's update and is labelled accordingly. See
 [cells-decay-handoff.md](cells-decay-handoff.md) for exact semantics and checks.
 Do not treat the old scheduler accepting the extra JSON field as proof that it
 implements decay.
+
+## Rhythm and tuning banks
+
+The web settings expose named button banks. On a 16×8 Grid, the seventh row
+(y=6) uses x=1 for rhythm bank, x=2 for tuning bank and x=3 to return to cells.
+Bank options occupy x=1..15 of the first six rows, in reading order. The left
+page column and bottom transport/ensemble controls remain available. Bank mode
+is temporary and is not saved. Selecting a rhythm keeps the tuning; selecting a
+tuning keeps rhythm, phase and mute state.
+
+Nine `hotelier-*` tunings copy Hotelier's canonical keyboard tables exactly,
+including Young's keyboard order and Ranat's 1207-cent period. These are
+independent choices, not automatic tracking of Max's currently selected scale.
+Source degree position is rescaled into the target table; the starting key is
+69 minus two table periods (about 108 Hz), before the root multiplier. Hotelier's
+432 Hz key-69 anchor is retained, but live Fine is not copied. Cultural tuning
+names retain the source instrument's modelling caveats; they are not universal
+national or traditional scales.
+
+Regenerate the snapshot explicitly with:
+`node scripts/sync-hotelier-tunings.mjs /absolute/path/to/idk.tuning.js`.
+See [timing research](cells-microtiming-research.md) for measured uneven timing
+and candidates for the next source bank.

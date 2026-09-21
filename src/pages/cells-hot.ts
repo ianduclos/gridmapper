@@ -2,6 +2,7 @@
 import {
 	worlds,
 	tuningNames,
+	tuningLabels,
 	eventHz,
 	type Tuning,
 } from "../data/cells-hot-worlds.js"
@@ -21,6 +22,9 @@ const BUFFER_MS = 100,
 	VOICES = 6
 const worldNames = Object.keys(worlds)
 const tunings: readonly string[] = tuningNames
+const worldLabels = Object.fromEntries(
+	worldNames.map((id) => [id, worlds[id].name]),
+)
 type OutEvent = {
 	id: string
 	voice: number
@@ -36,6 +40,8 @@ export const settings: SettingSpec[] = [
 		label: "Rhythm world",
 		type: "enum",
 		options: worldNames,
+		presentation: "buttons",
+		optionLabels: worldLabels,
 		default: "horn-relay",
 	},
 	{
@@ -50,6 +56,8 @@ export const settings: SettingSpec[] = [
 		label: "Tuning world",
 		type: "enum",
 		options: [...tunings],
+		presentation: "buttons",
+		optionLabels: tuningLabels,
 		default: "tritave",
 	},
 	{
@@ -102,6 +110,8 @@ export class CellsHotPage implements Page {
 	private pulseRate = PULSE_RATE
 	private lane = 0
 	private humanizeMs = 4
+	/** Physical choice bank only; it is deliberately absent from serialize(). */
+	private bankMode: "cells" | "rhythmWorld" | "tuning" = "cells"
 	private running = false
 	private observedRun = false
 	private session = ""
@@ -155,6 +165,21 @@ export class CellsHotPage implements Page {
 	}
 	onKey(e: KeyEvent, c: PageContext) {
 		if (selectorKey(e, c) || !e.s) return
+		if (e.y === 6) {
+			if (e.x === 1) this.bankMode = "rhythmWorld"
+			else if (e.x === 2) this.bankMode = "tuning"
+			else if (e.x === 3) this.bankMode = "cells"
+			c.setDirty()
+			return
+		}
+		if (this.bankMode !== "cells" && e.y < VOICES && e.x >= 1) {
+			const options =
+				this.bankMode === "rhythmWorld" ? worldNames : tunings
+			const value = options[e.y * 15 + e.x - 1]
+			if (value) this.onOsc(`/setting/${this.bankMode}`, [value], c)
+			c.setDirty()
+			return
+		}
 		if (e.y < VOICES) {
 			if (e.x >= 1 && e.x <= 3) {
 				this.selected[e.y] = e.x - 1
@@ -229,31 +254,47 @@ export class CellsHotPage implements Page {
 		const f = makeFrame(c.size),
 			now = Date.now()
 		drawSelector(f, c)
-		for (let y = 0; y < VOICES; y++) {
-			for (let x = 1; x <= 3; x++)
-				f[ledIndex(c.size, x, y)] =
-					this.selected[y] === x - 1
-						? now < this.changedUntil[y]
-							? 7
-							: this.muted[y]
-								? 3
-								: 12
-						: 2
-			f[ledIndex(c.size, 4, y)] = this.muted[y] ? 3 : 8
-			const len = this.world.cells[y][this.selected[y]].lengthPulses,
-				phase = this.running
-					? Math.max(
-							0,
-							this.lastPulse +
-								(now - this.windowStart) / Math.max(1, this.lastPeriod),
-						)
-					: 0,
-				fill = Math.floor(((phase % len) / len) * 11)
-			for (let x = 5; x <= 15; x++)
-				f[ledIndex(c.size, x, y)] = x - 5 <= fill ? 5 : 1
-			if (this.flashes[y].some((at) => now >= at && now < at + 120))
-				f[ledIndex(c.size, 15, y)] = 15
+		if (this.bankMode !== "cells") {
+			const options =
+				this.bankMode === "rhythmWorld" ? worldNames : tunings
+			const selected =
+				this.bankMode === "rhythmWorld" ? this.rhythmWorld : this.tuning
+			for (const [i, option] of options.entries()) {
+				const x = 1 + (i % 15),
+					y = Math.floor(i / 15)
+				if (y < VOICES)
+					f[ledIndex(c.size, x, y)] = option === selected ? 12 : 3
+			}
+		} else {
+			for (let y = 0; y < VOICES; y++) {
+				for (let x = 1; x <= 3; x++)
+					f[ledIndex(c.size, x, y)] =
+						this.selected[y] === x - 1
+							? now < this.changedUntil[y]
+								? 7
+								: this.muted[y]
+									? 3
+									: 12
+							: 2
+				f[ledIndex(c.size, 4, y)] = this.muted[y] ? 3 : 8
+				const len = this.world.cells[y][this.selected[y]].lengthPulses,
+					phase = this.running
+						? Math.max(
+								0,
+								this.lastPulse +
+									(now - this.windowStart) / Math.max(1, this.lastPeriod),
+							)
+						: 0,
+					fill = Math.floor(((phase % len) / len) * 11)
+				for (let x = 5; x <= 15; x++)
+					f[ledIndex(c.size, x, y)] = x - 5 <= fill ? 5 : 1
+				if (this.flashes[y].some((at) => now >= at && now < at + 120))
+					f[ledIndex(c.size, 15, y)] = 15
+			}
 		}
+		f[ledIndex(c.size, 1, 6)] = this.bankMode === "rhythmWorld" ? 15 : 5
+		f[ledIndex(c.size, 2, 6)] = this.bankMode === "tuning" ? 15 : 5
+		f[ledIndex(c.size, 3, 6)] = this.bankMode === "cells" ? 8 : 3
 		f[ledIndex(c.size, 1, 7)] = this.running ? 15 : 5
 		f[ledIndex(c.size, 2, 7)] = this.running ? 5 : 2
 		for (let x = 4; x <= 6; x++) f[ledIndex(c.size, x, 7)] = 6
@@ -273,6 +314,7 @@ export class CellsHotPage implements Page {
 		}
 	}
 	restore(raw: unknown, c: PageContext) {
+		this.bankMode = "cells"
 		if (!isRecord(raw)) return
 		if (this.running) this.stop(c)
 		if (

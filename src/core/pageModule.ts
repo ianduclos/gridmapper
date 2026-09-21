@@ -17,12 +17,16 @@ export interface SettingSpec {
 	/** Human label for the UI (defaults to key). */
 	label?: string
 	type: "number" | "toggle" | "enum"
+	/** enum: compact button bank instead of a select menu. */
+	presentation?: "buttons"
 	/** number: range + step. */
 	min?: number
 	max?: number
 	step?: number
 	/** enum: allowed values. */
 	options?: string[]
+	/** enum: human-readable names keyed by the wire value. */
+	optionLabels?: Record<string, string>
 	default: number | boolean | string
 }
 

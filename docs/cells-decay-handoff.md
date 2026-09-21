@@ -29,3 +29,12 @@ materials: audibly/measurably distinct decays, preserved pitch, no discontinuity
 at the old gate deadline, no saved Tail mutation, no inheritance by a later
 keyboard strike, and old endings unable to cut new notes. Include a live
 Gridmapper → OSC → Max check before removing the UI's pending label.
+
+## Optional selected-scale synchronization (not implemented)
+
+Gridmapper now includes all nine Hotelier tables as independent tuning buttons.
+Automatic following remains separate future work. The existing Max grid bridge
+receives `tuninginfo(id,count,period)` but sends only page-a keyboard settings.
+A future follow mode needs `/grid/in/page/b/hotelier/tuning <id> <count> <period>`
+on every tuning change and handshake. Agree on Fine/root handling before adding
+that mode; Gridmapper currently has no receiver for this proposed message.
