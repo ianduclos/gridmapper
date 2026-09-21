@@ -14,9 +14,9 @@ import {
 	makeFrame,
 	ledIndex,
 } from "../core/types.js"
-import type { PageModule, SettingSpec } from "../core/pageModule.js"
+import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
-import { drawSelector, selectorKey } from "../util/pageSelector.js"
+import { SELECTOR_KEYS, drawSelector, selectorKey } from "../util/pageSelector.js"
 import {
 	PatternRecorder,
 	MAX_RECORD_MS,
@@ -1212,9 +1212,29 @@ export class CellsHotPage implements Page {
 		c.osc.send(`/grid/out/page/${c.slotLabel}/cells`, JSON.stringify(p))
 	}
 }
+/** The web cheat-sheet: views are the three row-6 modes. */
+export const keymap: KeySpec[] = [
+	...SELECTOR_KEYS,
+	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve." },
+	{ x: CELL_X0, y: 0, w: 3, h: VOICES, view: "cells", name: "Cells 1–3", help: "Choose the voice's cell; it comes in at the current phase. Tap the lit one to mute." },
+	{ x: 5, y: 0, w: 11, h: VOICES, view: "cells", name: "Phase", help: "The cycle's progress; the last key flashes on each onset. Dim = muted or resting." },
+	...worldNames.map((id, i): KeySpec => ({ x: 1 + (i % 15), y: Math.floor(i / 15), view: "rhythm banks", name: worlds[id].name, help: "Switch world on the next shared beat." })),
+	...tunings.map((id, i): KeySpec => ({ x: i < 5 ? i + 1 : i - 4, y: i < 5 ? 0 : 1, view: "tuning banks", name: tuningLabels[id] ?? id, help: i < 5 ? "Included tuning." : "Hotelier keyboard scale." })),
+	{ x: CELLS_VIEW_X, y: 6, name: "Cells view", help: "The main screen: voices, cells and phase." },
+	{ x: RHYTHM_VIEW_X, y: 6, name: "Rhythm banks", help: "Pick a rhythm world on the top rows." },
+	{ x: TUNING_VIEW_X, y: 6, name: "Tuning banks", help: "Pick a tuning on the top two rows." },
+	{ x: 4, y: 6, name: "Auto-evolve", help: "Every 2–4 beats, maybe swap one linked group of rows." },
+	{ x: 5, y: 6, name: "Lock editing", help: "While on, the mute keys lock rows against auto-evolve instead." },
+	{ x: 6, y: 6, name: "Recommended tuning", help: "Apply this world's recommended tuning. Lit when it's active." },
+	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it." },
+	{ x: PLAY_X, y: 7, name: "Play / stop", help: "Starts the transport at this page's tempo." },
+	{ x: 4, y: 7, w: 3, name: "Ensembles 1–3", help: "Recall all six cells at once. The live one is brighter." },
+	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves: arm, play, pause. Shift + press clears." },
+]
 export const page: PageModule = {
 	name: "cells-hot",
 	label: "Cells Hot",
 	settings,
+	keymap,
 	create: () => new CellsHotPage(),
 }

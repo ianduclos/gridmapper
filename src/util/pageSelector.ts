@@ -10,9 +10,15 @@
  */
 
 import { type KeyEvent, type LedFrame, type PageContext, type Slot, ledIndex } from "../core/types.js"
+import type { KeySpec } from "../core/pageModule.js"
 
 export const SELECTOR_COL = 0
 export const SELECTOR_SLOTS = 6 // a..f
+
+/** The selector's cheat-sheet entry; pages spread it into their keymap. */
+export const SELECTOR_KEYS: KeySpec[] = [
+	{ x: 0, y: 0, h: 6, name: "Pages a–f", help: "Jump to a page. The lit key is the page you're on." },
+]
 
 const LVL_SELF = 12
 const LVL_OTHER = 2

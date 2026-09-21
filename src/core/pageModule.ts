@@ -34,6 +34,22 @@ export interface SettingSpec {
 	default: number | boolean | string
 }
 
+/**
+ * One entry of a page's key map: the cheat-sheet the web UI shows. A span (w×h) names a
+ * block of keys at once. `view` scopes it to one of the page's modes (e.g. a bank view
+ * that reuses the voice rows); entries without it apply in every view, and a view's own
+ * entries win where they overlap.
+ */
+export interface KeySpec {
+	x: number
+	y: number
+	w?: number
+	h?: number
+	name: string
+	help?: string
+	view?: string
+}
+
 export interface PageModule {
 	/** Unique id, lowercase, used in messages + the page dropdown (e.g. "screensaver"). */
 	name: string
@@ -43,4 +59,6 @@ export interface PageModule {
 	create: () => Page
 	/** Optional declared settings (declare-now, wire-later). */
 	settings?: SettingSpec[]
+	/** Optional key map for the web cheat-sheet. Declare it from the same constants onKey uses. */
+	keymap?: KeySpec[]
 }

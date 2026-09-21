@@ -171,6 +171,23 @@
 		.cx-more { margin-top: 12px; font-size: 12px; }
 		.cx-more summary { cursor: pointer; opacity: .7; }
 		.settings button:focus-visible, .settings input:focus-visible, .settings select:focus-visible, .settings summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+		/* Key cheat-sheet popup: the focused page's grid as a labelled map. */
+		#keysDialog { border: 1px solid var(--ink); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 18px 20px; max-width: min(1060px, calc(100vw - 32px)); }
+		#keysDialog::backdrop { background: rgba(21,20,15,.35); }
+		.kd-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+		.kd-head h2 { font-size: 14px; font-weight: 500; margin: 0; }
+		.kd-views { display: flex; gap: 4px; flex-wrap: wrap; }
+		#keysClose { margin-left: auto; }
+		.kd-grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 3px; padding: 8px; background: var(--panel); border-radius: 6px; }
+		.kd-key { aspect-ratio: 1; min-width: 0; border-radius: 3px; border: 0; background: rgba(var(--key-off), .45); color: rgb(var(--key-on)); font: inherit; font-size: 9px; line-height: 1.15; padding: 3px; text-align: left; overflow: hidden; overflow-wrap: anywhere; cursor: default; }
+		.kd-key.set { background: rgba(var(--key-on), .26); }
+		.kd-key.hot { background: rgb(var(--key-on)); color: var(--ink); }
+		.kd-key:focus-visible { outline: 2px solid rgb(var(--key-on)); outline-offset: 1px; }
+		.kd-info { font-size: 12px; min-height: 34px; margin: 10px 0 6px; max-width: 80ch; }
+		.kd-info b { font-weight: 500; }
+		.kd-list { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; font-size: 11px; margin: 0; max-height: 30vh; overflow: auto; }
+		.kd-list dt { font-weight: 500; }
+		.kd-list dd { margin: 0; opacity: .7; }
 		.settings .enum-button:hover { opacity: .85; }
 		.settings .enum-button[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
 		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
@@ -201,6 +218,7 @@
 				<div class="group">
 					<span class="lbl">page</span>
 					<select class="select" id="pageSelect"></select>
+					<button class="chip" id="keysBtn" title="what each key does on this page">keys</button>
 				</div>
 				<div class="group" id="transport">
 					<span class="lbl">clock</span>
@@ -253,6 +271,13 @@
 		</aside>
 	</main>
 
+	<dialog id="keysDialog" aria-labelledby="keysTitle">
+		<div class="kd-head"><h2 id="keysTitle">Keys</h2><div id="keysViews" class="kd-views" role="tablist"></div><button class="chip" id="keysClose">close</button></div>
+		<div id="keysGrid" class="kd-grid"></div>
+		<p id="keysInfo" class="kd-info" aria-live="polite">Hover or tab to a key.</p>
+		<dl id="keysList" class="kd-list"></dl>
+	</dialog>
+
 	<script>
 		let W = 16, H = 8;
 		const gridEl = document.getElementById("grid");
@@ -274,6 +299,8 @@
 		let specsByPage = {};                          // pageName -> SettingSpec[]
 		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
 		let cellsViews = SLOT_LABELS.map(() => null);
+		let keymapsByPage = {};                        // pageName -> KeySpec[]
+		let keysView = null;
 		let cellsViewSignature = "";
 		const cellsPanel = document.createElement("section");
 		cellsPanel.className = "cells-details"; cellsPanel.setAttribute("aria-label", "Cells performance");
@@ -310,6 +337,7 @@
 		// Build the right-hand panel from the focused slot's page specs + current values.
 		function renderSettings() {
 			const page = slotPages[focusedSlot];
+			if (document.getElementById("keysDialog")?.open) renderKeys();
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
 			if (page === "cells-hot") { cellsViewSignature = ""; renderCellsView(); return; }
 			const specs = specsByPage[page] || [];
@@ -367,6 +395,59 @@
 				row.appendChild(lab); row.appendChild(input); settingsFields.appendChild(row);
 			});
 			renderCellsView();
+		}
+
+		// --- Key cheat-sheet -----------------------------------------------------
+		const keysDialog = document.getElementById("keysDialog");
+		document.getElementById("keysBtn").onclick = () => { keysView = null; renderKeys(); keysDialog.showModal(); };
+		document.getElementById("keysClose").onclick = () => keysDialog.close();
+		keysDialog.addEventListener("click", (e) => { if (e.target === keysDialog) keysDialog.close(); });
+		const spanLabel = (k) => {
+			const xs = (k.w || 1) > 1 ? `x${k.x}–${k.x + k.w - 1}` : `x${k.x}`;
+			const ys = (k.h || 1) > 1 ? `y${k.y}–${k.y + k.h - 1}` : `y${k.y}`;
+			return `${xs} ${ys}`;
+		};
+		function renderKeys() {
+			const page = slotPages[focusedSlot], map = keymapsByPage[page] || [];
+			document.getElementById("keysTitle").textContent = `Keys · ${page}`;
+			const views = [...new Set(map.filter((k) => k.view).map((k) => k.view))];
+			if (!views.includes(keysView)) keysView = views[0] || null;
+			const tabs = document.getElementById("keysViews"); tabs.replaceChildren();
+			for (const v of views) {
+				const b = document.createElement("button"); b.className = "chip" + (v === keysView ? " on" : ""); b.textContent = v;
+				b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(v === keysView));
+				b.onclick = () => { keysView = v; renderKeys(); }; tabs.appendChild(b);
+			}
+			const shown = map.filter((k) => !k.view || k.view === keysView);
+			const owner = new Array(W * H).fill(null);
+			for (const k of [...shown.filter((k) => !k.view), ...shown.filter((k) => k.view)])
+				for (let y = k.y; y < k.y + (k.h || 1); y++) for (let x = k.x; x < k.x + (k.w || 1); x++) if (x < W && y < H) owner[y * W + x] = k;
+			const grid = document.getElementById("keysGrid"), info = document.getElementById("keysInfo");
+			grid.style.gridTemplateColumns = `repeat(${W}, minmax(0, 1fr))`; grid.replaceChildren();
+			const keys = [];
+			const show = (k) => {
+				keys.forEach((el, i) => el.classList.toggle("hot", !!k && owner[i] === k));
+				info.replaceChildren();
+				if (!k) { info.textContent = "Hover or tab to a key."; return; }
+				const b = document.createElement("b"); b.textContent = k.name;
+				info.append(b, ` · ${spanLabel(k)}${k.help ? ` — ${k.help}` : ""}`);
+			};
+			owner.forEach((k, i) => {
+				const el = document.createElement("button"); el.type = "button"; el.className = "kd-key" + (k ? " set" : "");
+				const x = i % W, y = Math.floor(i / W);
+				// Label only the first key of a span, so a block reads as one control.
+				if (k && x === k.x && y === k.y) el.textContent = k.name;
+				el.setAttribute("aria-label", k ? `${k.name}, x${x} y${y}` : `unassigned, x${x} y${y}`);
+				el.onmouseenter = el.onfocus = () => show(k);
+				grid.appendChild(el); keys.push(el);
+			});
+			grid.onmouseleave = () => show(null);
+			const list = document.getElementById("keysList"); list.replaceChildren();
+			if (!map.length) { info.textContent = `${page} has no key map yet.`; return; }
+			for (const k of shown) {
+				const dt = document.createElement("dt"), dd = document.createElement("dd");
+				dt.textContent = `${k.name} (${spanLabel(k)})`; dd.textContent = k.help || ""; list.append(dt, dd);
+			}
 		}
 
 		function requestCellsView() {
@@ -807,6 +888,7 @@
 						break;
 					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
 					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
+					case "/grid/out/pagekeys": { try { keymapsByPage = JSON.parse(m.args[0]); } catch {} if (keysDialog.open) renderKeys(); break; }
 					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
 					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); requestCellsView(); break; }
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); requestCellsView(); break;

@@ -57,3 +57,4 @@ export const pageFactory = (name: string): (() => Page) | undefined => {
 
 /** Declared settings for the named page (empty if none / unknown). */
 export const pageSettings = (name: string) => registry.get(name)?.settings ?? []
+export const pageKeymap = (name: string) => registry.get(name)?.keymap ?? []

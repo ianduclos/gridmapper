@@ -278,6 +278,17 @@ values you emitted from `init()` were the defaults and are now stale.
 
 ---
 
+### 8a. Key map (the web cheat-sheet)
+
+A page may export `keymap: KeySpec[]` on its `PageModule`: `{x, y, w?, h?, name, help?, view?}`.
+The web UI's **keys** button draws it as a 16×8 map with hover help and a list. A span
+(`w`×`h`) names a block. `view` scopes an entry to one of the page's modes (cells-hot's
+rhythm and tuning bank views). Entries without it apply everywhere, and a view's entries
+win where they overlap. Build it from the same constants `onKey` uses, so moving a key
+moves its label. Pages using the column-0 selector spread `SELECTOR_KEYS`.
+`test/keymap.test.ts` checks every map stays on the grid and never overlaps within a view.
+Examples: `pages/cells-hot.ts`, `pages/set-hot.ts`.
+
 ## 9. The spec-comment header (required)
 
 Every page file starts with this block — it's the contract in prose, for the next

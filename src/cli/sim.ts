@@ -22,7 +22,7 @@ import { createPresetStore } from "../core/presetStore.js"
 import { applySystemConfig, captureSystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
-import { PAGE_TYPES, DEFAULT_PAGE, pageSettings } from "../pages/registry.js"
+import { PAGE_TYPES, DEFAULT_PAGE, pageSettings, pageKeymap } from "../pages/registry.js"
 import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel } from "../core/types.js"
 
 const PORT = Number(process.env.GRID_UI_PORT ?? 57191) // 57190 is twistermapper's UI
@@ -67,6 +67,7 @@ const presets = createPresetStore()
 
 // Static settings specs per page type (for the web panel to render controls).
 const SPECS_MAP = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageSettings(n)]))
+const KEYMAPS = Object.fromEntries(PAGE_TYPES.map((n) => [n, pageKeymap(n)]))
 
 // --- Web server ---
 let broadcastLeds: (levels: Uint8Array) => void = () => {}
@@ -84,6 +85,7 @@ const server = createGridServer({
 		send("/grid/out/size", [w, h])
 		send("/grid/out/pagetypes", PAGE_TYPES)
 		send("/grid/out/pagespecs", [JSON.stringify(SPECS_MAP)])
+		send("/grid/out/pagekeys", [JSON.stringify(KEYMAPS)])
 		send("/grid/out/focus/page", [slotLabel(pm.focusedSlot)])
 		send("/grid/out/slots", slotPages)
 		// Transport + power + persisted settings + presets, so a late-joining panel is in sync.
