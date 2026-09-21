@@ -46,6 +46,8 @@ export interface KeySpec {
 	w?: number
 	h?: number
 	name: string
+	/** Label drawn on the grid legend when `name` is too long for one key. */
+	short?: string
 	help?: string
 	view?: string
 }

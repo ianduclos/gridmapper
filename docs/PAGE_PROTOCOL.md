@@ -280,10 +280,15 @@ values you emitted from `init()` were the defaults and are now stale.
 
 ### 8a. Key map (the web cheat-sheet)
 
-A page may export `keymap: KeySpec[]` on its `PageModule`: `{x, y, w?, h?, name, help?, view?}`.
-The web UI's **keys** button draws it as a 16×8 map with hover help and a list. A span
-(`w`×`h`) names a block. `view` scopes an entry to one of the page's modes (cells-hot's
-rhythm and tuning bank views). Entries without it apply everywhere, and a view's entries
+A page may export `keymap: KeySpec[]` on its `PageModule`: `{x, y, w?, h?, name, short?, help?, view?}`.
+The web UI's **keys** toggle draws it over the web grid as a diagram: a label on single
+keys, a dotted line with end dots down a column span, arrows along a row span, and a dotted
+outline around a block. Hovering a key, or pressing it on the hardware (the sim echoes keys
+to the web as `/grid/out/keyecho x y s`, web only, never OSC), shows `name` and `help`
+under the grid. Give `short` when `name` is too long for one key. A span (`w`×`h`) names a
+block. `view` scopes an entry to one of the page's modes (cells-hot's
+rhythm and tuning bank views). The legend follows the page's current mode when its web
+view message carries `keyView`, as cells-hot's does. Entries without it apply everywhere, and a view's entries
 win where they overlap. Build it from the same constants `onKey` uses, so moving a key
 moves its label. Pages using the column-0 selector spread `SELECTOR_KEYS`.
 `test/keymap.test.ts` checks every map stays on the grid and never overlaps within a view.

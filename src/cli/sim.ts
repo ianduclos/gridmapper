@@ -42,8 +42,12 @@ function handleKey(e: KeyEvent) {
 	const i = e.y * w + e.x
 	if (e.s) held.add(i)
 	else held.delete(i)
+	broadcastKey(e)
 	pm.onKey(e)
 }
+// Web-only echo of every key (hardware or web), so the key legend can follow your hands.
+// Deliberately not OSC: Max gets notes and state, not raw keys.
+let broadcastKey: (e: KeyEvent) => void = () => {}
 
 // Runtime hotplug: a STABLE grid facade whose inner device swaps live (NullGrid → real
 // grid on plug-in). All the serialosc gotchas live in io/gridConnection.ts.
@@ -100,6 +104,7 @@ const server = createGridServer({
 	},
 })
 broadcastLeds = (levels) => server.broadcast("/grid/out/leds", [w, h, ...Array.from(levels)])
+broadcastKey = (e) => server.broadcast("/grid/out/keyecho", [e.x, e.y, e.s])
 const broadcastDevice = () => server.broadcast("/grid/out/device", [grid.id, w, h])
 
 // --- OSC to/from Max (5713x block; clear of twistermapper) ---

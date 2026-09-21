@@ -351,14 +351,14 @@ export class SetHotPage implements Page {
 
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
-	{ x: COL_ALL, y: ROW_OF.bow, h: 4, name: "All voices", help: "Set the whole row for all six voices (damp: hold)." },
+	{ x: COL_ALL, y: ROW_OF.bow, h: 4, name: "All voices", short: "All", help: "Set the whole row for all six voices (damp: hold)." },
 	{ x: VOICE_COL0, y: ROW_OF.damp, w: VOICES, name: "Damp", help: "Hold to damp that voice." },
 	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice." },
 	{ x: VOICE_COL0, y: ROW_OF.roll, w: VOICES, name: "Roll", help: "Toggle roll per voice." },
 	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice." },
 	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing." },
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–4", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears." },
-	{ x: 15, y: SHIFT1_ROW, name: "Shift 1", help: "Hold, then press a looper to clear it." },
+	{ x: 15, y: SHIFT1_ROW, name: "Shift 1", short: "Shift", help: "Hold, then press a looper to clear it." },
 ]
 
 export const page: PageModule = {
