@@ -329,7 +329,7 @@ src/
                          ctx.persist → slots.json + a chords-only merge into the active preset.
   pages/blank-hot.ts     blank + the selector (placeholder for unbuilt hotelier pages)
   pages/set-hot.ts       HOTELIER voice switches (slot f). Bottom four rows, bottom→top: damp
-                         (momentary) · freeze · bow · roll (toggles); col 2 = ALL (sets the six),
+                         (momentary) · freeze · roll · bow (toggles); col 2 = ALL (sets the six),
                          cols 4-9 = voices 1-6. Out: /grid/out/page/<slot>/voice <n> <param>
                          <1|0>, changes only. In (never echoed): /voice/<n>/<param> <1|0> sync,
                          /voice/<n>/state <0|1|2> feedback on row 3. Runtime only, sends

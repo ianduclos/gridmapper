@@ -3,7 +3,7 @@
  * Summary : Per-voice switches for hotelier's six modal voices, in the bottom four rows.
  * Input   : col 0 rows 0-5 = page selector (util/pageSelector.ts). Bottom four rows,
  *           bottom → top: DAMP (row 7, momentary — damped while held), FREEZE (row 6),
- *           BOW (row 5), ROLL (row 4) — the last three latching toggles.
+ *           ROLL (row 5), BOW (row 4) — the last three latching toggles.
  *           Col 2 = ALL: it sets all six voices in its row (a toggle turns them all ON
  *           unless all six already are, then all OFF; damp-all holds all six down).
  *           Cols 4-9 = voices 1-6. Cols 1 and 3 are gaps.
@@ -42,7 +42,7 @@ const FEEDBACK_ROW = 3
 export const PARAMS = ["damp", "freeze", "bow", "roll"] as const
 export type Param = (typeof PARAMS)[number]
 const isParam = (v: string): v is Param => (PARAMS as readonly string[]).includes(v)
-const ROW_OF: Record<Param, number> = { damp: 7, freeze: 6, bow: 5, roll: 4 }
+const ROW_OF: Record<Param, number> = { damp: 7, freeze: 6, roll: 5, bow: 4 }
 const PARAM_AT_ROW = new Map<number, Param>(PARAMS.map((p) => [ROW_OF[p], p]))
 
 const LVL_OFF = 2

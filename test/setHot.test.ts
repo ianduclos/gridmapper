@@ -28,11 +28,11 @@ function rig() {
 }
 
 describe("set-hot layout", () => {
-	it("voice keys toggle freeze/bow/roll on rows 6/5/4, voices 1-6 at cols 4-9", () => {
+	it("voice keys toggle freeze/roll/bow on rows 6/5/4, voices 1-6 at cols 4-9", () => {
 		const r = rig()
 		r.tap(4, 6)
-		r.tap(9, 5)
-		r.tap(6, 4) // roll starts armed → this disarms voice 3
+		r.tap(9, 4)
+		r.tap(6, 5) // roll starts armed → this disarms voice 3
 		expect(r.voice()).toEqual([[1, "freeze", 1], [6, "bow", 1], [3, "roll", 0]])
 		expect(r.at(4, 6)).toBe(12)
 		expect(r.at(5, 6)).toBe(2)
@@ -72,9 +72,9 @@ describe("set-hot ALL column", () => {
 
 	it("reads 'some' when partly on; roll starts all armed", () => {
 		const r = rig()
-		expect(r.at(2, 4)).toBe(12)
-		r.tap(4, 5)
-		expect(r.at(2, 5)).toBe(6)
+		expect(r.at(2, 5)).toBe(12) // roll
+		r.tap(4, 4) // bow voice 1
+		expect(r.at(2, 4)).toBe(6)
 	})
 
 	it("damp-all holds all six; a voice held alongside stays damped after", () => {
