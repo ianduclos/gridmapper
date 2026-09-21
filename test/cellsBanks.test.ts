@@ -46,9 +46,9 @@ describe("cells-hot choice banks", () => {
 		vi.useRealTimers()
 	})
 
-	it("keeps Run and Stop available in a bank", () => {
+	it("keeps the play toggle available in a bank", () => {
 		const r = makeRig()
-		r.tap(2, 6); r.tap(1, 7); r.tap(2, 7)
+		r.tap(2, 6); r.tap(1, 7); r.tap(1, 7)
 		expect(r.control).toEqual([`rate:${PULSE_RATE * 2}`, "start", "stop"])
 		expect(r.packets().map((packet) => packet.type)).toEqual(["start", "stop"])
 	})

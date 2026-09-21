@@ -29,6 +29,8 @@ export interface SettingSpec {
 	optionLabels?: Record<string, string>
 	/** Named sections within a button bank, keyed by option value. */
 	optionGroups?: Record<string, string>
+	/** One-line explanation shown under the control. */
+	help?: string
 	default: number | boolean | string
 }
 

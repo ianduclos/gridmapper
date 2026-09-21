@@ -337,6 +337,12 @@ src/
                          (row 7 = shift 1, +press clears): damp records as notes (step =
                          voice), toggles as ctl events `<param>/<voice>`; playback drives the
                          switches (latest wins, damp = hand OR loop). Loops save in presets.
+  pages/cells-hot.ts     HOTELIER hocket sequencer (slot b): six banked voices scheduled
+                         against transport deadlines → /grid/out/page/<slot>/cells (JSON).
+                         Cells OWNS TEMPO (shown as BPM, 3 pulses/beat); a transport edit is
+                         written back. Bottom row: x0 shift, x1 play toggle, x4-6 ensembles,
+                         x12-15 gesture loopers (arrangement moves only). Full contract:
+                         docs/cells-hot.md.
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
                          PER-PAGE assignable: the selector neither consumes nor draws them.
                          Pages move focus via ctx.focus and save stored content via

@@ -39,6 +39,10 @@ export type World = {
 	recommendedTuning: Tuning
 	source: string
 	roles: string[]
+	/** Performer-facing summary; first sentence stands alone as a card blurb. */
+	context?: string
+	/** One line per presetNames entry, same order. */
+	ensembleNotes?: string[]
 }
 export const hotelierTuningNames = [
  "hotelier-12edo", "hotelier-just", "hotelier-werckmeister3",
@@ -87,18 +91,31 @@ export const worlds: Record<string, World> = {
 		source:
 			"Original workshop bank; composed/inferred, not a verified traditional transcription.",
 		roles: hornRoles,
+		context:
+			"Horn relay is a workshop-composed hocket for six interlocking horn-like voices, inferred from the general idea of an interlocking horn ensemble rather than transcribed from any specific recording or score. The six rows split into a steady ground pulse, an offbeat knock, low and high seed lines, a reply voice, and a sparser splinter line, so the hocket holds together as one relay instead of a single melody. Listen for how the seed and reply parts trade the same idea back and forth while ground and knock keep the underlying pulse in place. This is composed/inferred material, not a verified traditional transcription.",
+		ensembleNotes: [
+			"Every row plays its most grounded, tightly-locked cell (ground-root, knock-offbeat, low-seed, high-seed, reply-late, splinter-sparse) for the deepest-locked version of the relay.",
+			"Thins the high, reply and splinter rows into sparser, more open cells (high-sparse, reply-arc, splinter-pair), opening more space between the interlocking hits.",
+			"Swaps in turning and returning high and splinter cells (high-turn, reply-late, splinter-return) so the interlocking cycle takes a longer path back to its start.",
+		],
 	},
 }
 
 // Numerals are source tonal degrees, not semitones. A/B enter on alternate
 // elementary pulses. Six monophonic voices reproduce the two octave-doubled
 // lines and split the single high C part by its A/B provenance.
+const amadindaEnsembleNotes = [
+	"Plays the published A and B parts as transcribed, with the shared C part reconstructed in full from both streams.",
+	"A workshop filter keeping only the lower-register A/B degrees, against the full C part; not a separate traditional variant.",
+	"A workshop filter keeping only the upper-register A/B degrees, against the full C part; not a separate traditional variant.",
+]
 function amadinda(
 	id: string,
 	name: string,
 	a: number[],
 	b: number[],
 	source: string,
+	context: string,
 ) {
 	const length = a.length * 2
 	const parts = [
@@ -165,6 +182,8 @@ function amadinda(
 			"C from A",
 			"C from B",
 		],
+		context,
+		ensembleNotes: amadindaEnsembleNotes,
 	}
 }
 amadinda(
@@ -173,6 +192,7 @@ amadinda(
 	[2, 1, 2, 2, 2, 5, 2, 1, 1, 2, 3, 5],
 	[4, 2, 5, 4, 2, 5, 4, 2, 5, 4, 2, 5],
 	"Gerd Grupe (2005), Notating African Music: Issues and Concepts, pp.94–95, fig.10. https://phaidra.kug.ac.at/detail/o:69192.pdf",
+	"Ndyegulira ekkadde is a piece for the Amadinda xylophone of Buganda, Uganda, adapted here from Gerd Grupe's 2005 published transcription (figure 10). The six rows split the two interlocking A and B parts into lower- and upper-octave doublings, plus two streams whose union reconstructs the shared high C part. Listen for A and B interlocking in fast alternation while the two C streams knit the top voice back together. This is an adaptation of the published transcription, not a recording or measured tuning.",
 )
 amadinda(
 	"amadinda-ssematimba",
@@ -180,6 +200,7 @@ amadinda(
 	[4, 5, 2, 3, 3, 5, 2, 1, 2, 5, 2, 2, 1, 4, 4, 2, 1, 1],
 	[1, 4, 3, 1, 2, 3, 4, 3, 2, 2, 5, 4, 3, 2, 4, 4, 4, 1],
 	"Gerhard Kubik (2004), Inherent patterns, pp.253–257, fig.2 and C-part extraction rule. https://journals.openedition.org/lhomme/pdf/24906",
+	"Ssematimba ne Kikwabanga is a piece for the Amadinda xylophone of Buganda, Uganda, adapted here from Gerhard Kubik's 2004 transcription (figure 2) and its rule for deriving the high C part. The six rows split the two interlocking A and B parts into lower- and upper-octave doublings, plus two streams whose union reconstructs the shared high C part. Listen for A and B interlocking in fast alternation while the two C streams knit the top voice back together. This is an adaptation of the published transcription, not a recording or measured tuning.",
 )
 
 // Virginia Mukwesha's Chakwi kushaura, Grupe fig.15. The tablature's
@@ -280,6 +301,13 @@ worlds["mbira-chakwi"] = {
 		"Right thumb",
 		"Right index A",
 		"Right index B",
+	],
+	context:
+		"Chakwi kushaura is a piece for mbira dzavadzimu performed by Virginia Mukwesha, adapted here from Gerd Grupe's 2005 tablature transcription (figures 13–15). The six rows split the 48-pulse kushaura part's playing areas, with the bass and right-index attacks each divided into two alternating voices so the full pattern spreads across all six. Listen for the split bass and right-index pairs recombining into one continuous kushaura line, with no separate kutsinhira part added. This is an adaptation of the published tablature, not a recording or measured tuning.",
+	ensembleNotes: [
+		"Plays the complete 48-pulse kushaura reconstruction as transcribed, with all four playing areas present.",
+		"Loops just the first 24 pulses of the kushaura cycle — a workshop excerpt, not a separate traditional phrase.",
+		"Loops just the second 24 pulses of the kushaura cycle — a workshop excerpt, not a separate traditional phrase.",
 	],
 }
 

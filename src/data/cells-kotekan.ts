@@ -157,4 +157,11 @@ export const kotekanWorld: World = {
 			],
 		},
 	],
+	context:
+		"Pelayon is a piece analysed by Michael Tenzer (2000) for Balinese gamelan, adapted here from his Example 1 kotekan transcription. The six rows split the printed interlocking kotekan line into alternating A/B voices — a software allocation, since the source prints one composite line, not separate polos/sangsih parts — beneath the slower neliti melody, the still slower pokok, and the jegogan/gong marking the cycle's midpoint and arrival. Listen for the fast interlocking pair building toward the shared gong arrival that closes each eight-beat cycle. This is an adaptation of the published transcription, not a recording or measured tuning.",
+	ensembleNotes: [
+		"Plays the complete eight-beat cycle across all six strata, ending at the gong arrival.",
+		"Loops just the opening four beats of the fast interlocking pair against the full slower strata.",
+		"Loops just the closing four beats of the fast interlocking pair, including its approach to the gong.",
+	],
 } satisfies EvolutionWorld

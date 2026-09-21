@@ -192,4 +192,11 @@ export const manjanin2World: World = {
 			],
 		},
 	],
+	context:
+		"Manjanin II draws on the same Rainer Polak (2010) transcription of the Drissa Kone Quartet recording as the first Manjanin bank, but takes three different lead excerpts — cycles 29–32, 65–68 and 165–168 — for contrasting lead episodes over the same steady accompaniment. The six rows split the two dununs, second jembe and lead bass/tone versus slap exactly as in the first bank, with the lead using the documented 27:33:40 mean timing and the jembe/dunun rows using their own separately documented models. Listen for the accompaniment staying essentially fixed while the lead phrase changes character across the three ensemble recalls. This is a source-derived arrangement, not a verified melodic transcription.",
+	ensembleNotes: [
+		"Keeps the full dunun/jembe foundation and uses source cycles 29–32 of the same 2006 recording, the workshop's 'poised' lead episode.",
+		"Keeps the full dunun/jembe foundation and uses source cycles 65–68, the workshop's 'pressure' lead episode.",
+		"Keeps the full dunun/jembe foundation and uses source cycles 165–168, much later in the same performance, the workshop's 'suspended' lead episode.",
+	],
 } satisfies EvolutionWorld

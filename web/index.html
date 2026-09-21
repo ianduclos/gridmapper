@@ -137,6 +137,39 @@
 		.cells-row.muted .cell-choice[aria-pressed="true"], .cells-row.resting .cell-choice[aria-pressed="true"] { opacity:.45; border-style:dashed; }
 		.cells-row { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
 		.cells-role { flex:0 0 100%; font-size:11px; margin-top:3px; }
+		/* Cells Hot panel: sections in playing order, prose you can actually read. */
+		.cx-section { border-top: 1px solid rgba(21,20,15,.18); padding: 14px 0 6px; }
+		.cx-section:first-child { border-top: 0; padding-top: 4px; }
+		.cx-title { font-size: 13px; font-weight: 500; letter-spacing: .2px; margin: 0 0 8px; }
+		.cx-now .cx-title { font-size: 16px; }
+		.cx-context { font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 6px; }
+		.cx-source { font-size: 11px; line-height: 1.5; opacity: .55; max-width: 80ch; margin: 0 0 12px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+		.cx-help { font-size: 11px; line-height: 1.5; opacity: .55; margin: 2px 0 8px; max-width: 72ch; flex: 0 0 100%; }
+		.cx-muted { font-size: 11px; opacity: .55; }
+		.cx-worlds, .cx-ensembles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+		.cx-ensembles { margin-bottom: 4px; }
+		.cx-world, .cx-ensemble {
+			font: inherit; text-align: left; color: var(--ink); background: transparent;
+			border: 1px solid rgba(21,20,15,.35); border-radius: 4px; padding: 7px 9px; cursor: pointer;
+			display: flex; flex-direction: column; gap: 3px;
+		}
+		.cx-world:hover, .cx-ensemble:hover { border-color: var(--ink); }
+		.cx-world[aria-pressed="true"], .cx-ensemble[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+		.cx-world.pending { border-style: dashed; border-color: var(--ink); }
+		.cx-world-name { font-size: 12px; font-weight: 500; }
+		.cx-world-sum { font-size: 11px; line-height: 1.45; opacity: .7; }
+		.cx-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 6px 0; }
+		.cx-field label { font-size: 12px; opacity: .8; }
+		.cx-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12px; }
+		.cx-inline .cx-field { margin: 0; }
+		.cx-inline .cx-field .cx-help { display: none; }
+		.cx-play { min-width: 64px; }
+		.cx-drag { cursor: ns-resize; touch-action: none; }
+		.cx-pair { display: inline-flex; gap: 2px; }
+		.cx-clear:disabled { opacity: .2; cursor: default; }
+		.cx-more { margin-top: 12px; font-size: 12px; }
+		.cx-more summary { cursor: pointer; opacity: .7; }
+		.settings button:focus-visible, .settings input:focus-visible, .settings select:focus-visible, .settings summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 		.settings .enum-button:hover { opacity: .85; }
 		.settings .enum-button[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
 		#clockStepLane { font: inherit; font-size: 12px; width: 38px; text-align: right;
@@ -277,6 +310,7 @@
 		function renderSettings() {
 			const page = slotPages[focusedSlot];
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
+			if (page === "cells-hot") { cellsViewSignature = ""; renderCellsView(); return; }
 			const specs = specsByPage[page] || [];
 			settingsFields.innerHTML = "";
 			if (!specs.length) { renderCellsView(); settingsNote.textContent = `no settings for ${page} yet`; return; }
@@ -337,49 +371,178 @@
 		function requestCellsView() {
 			if (slotPages[focusedSlot] === "cells-hot") send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/action/refreshView`, []);
 		}
+		// --- Cells Hot: its own panel. Settings, the live view and the loopers are drawn
+		// together in the order you play: what's on, the arrangement, tempo, tuning, sound,
+		// evolution. Every control is still a plain /grid/in/page/<slot>/... message.
+		let patternsBySlot = SLOT_LABELS.map(() => []);
 		function renderCellsView() {
-			const view = slotPages[focusedSlot] === "cells-hot" ? cellsViews[focusedSlot] : null;
-			cellsPanel.hidden = !view;
-			for (const b of settingsFields.querySelectorAll('[data-setting="rhythmWorld"]')) {
-				b.classList.toggle("pending", !!view && b.dataset.option === view.pendingWorldId);
-			}
-			const signature = JSON.stringify([focusedSlot,view]);
+			const cellsSlot = slotPages[focusedSlot] === "cells-hot";
+			cellsPanel.hidden = !cellsSlot;
+			if (!cellsSlot) return;
+			const view = cellsViews[focusedSlot];
+			const values = settingsBySlot[focusedSlot] || {};
+			const patterns = patternsBySlot[focusedSlot] || [];
+			const signature = JSON.stringify([focusedSlot, view, values, patterns]);
 			if (signature === cellsViewSignature) return;
-			cellsViewSignature = signature; cellsPanel.replaceChildren();
-			if (!view) return;
-			const sendAction = (path,args=[]) => send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}${path}`, args);
-			const button = (label, action, pressed) => {
-				const b = document.createElement("button"); b.type="button"; b.className="enum-button"; b.textContent=label;
-				if (pressed !== undefined) b.setAttribute("aria-pressed", String(pressed));
-				b.onclick=action; return b;
+			cellsViewSignature = signature;
+			// A rebuild must not eat a number you are typing.
+			const active = document.activeElement;
+			const keep = active && cellsPanel.contains(active) && active.id ? { id: active.id, value: active.value } : null;
+			settingsFields.replaceChildren(); settingsNote.textContent = "";
+			cellsPanel.replaceChildren();
+			const slot = SLOT_LABELS[focusedSlot];
+			const act = (path, args = []) => send(`/grid/in/page/${slot}${path}`, args);
+			const setVal = (key, v) => act(`/setting/${key}`, [v]);
+			const specs = Object.fromEntries((specsByPage["cells-hot"] || []).map((s) => [s.key, s]));
+			const cur = (key) => values[key] !== undefined ? values[key] : specs[key]?.default;
+			const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+			const button = (label, onClick, pressed, cls = "enum-button") => {
+				const b = make("button", cls, label); b.type = "button"; b.onclick = onClick;
+				if (pressed !== undefined) b.setAttribute("aria-pressed", String(!!pressed)); return b;
 			};
-			const heading = document.createElement("p"); heading.className="cells-heading";
-			heading.textContent = view.pendingWorldName ? `${view.worldName} → ${view.pendingWorldName} · next beat` : view.worldName;
-			cellsPanel.appendChild(heading);
-			const advice = document.createElement("div"); advice.className="cells-advice";
-			const tuningSpec = (specsByPage["cells-hot"] || []).find(s=>s.key==="tuning");
-			const name = tuningSpec?.optionLabels?.[view.recommendedTuning] || view.recommendedTuning;
-			const description = document.createElement("span");
-			description.textContent = `Recommended: ${name}${view.recommendationPending ? " · queued with world" : view.recommendationActive ? " · active" : ""}`;
-			advice.append(description, button("Apply recommendation",()=>sendAction("/action/applyRecommendation")));
-			const basis = document.createElement("p"); basis.className="cells-note"; basis.textContent=view.recommendationBasis || "";
-			cellsPanel.append(advice,basis);
-			const controls = document.createElement("div"); controls.className="enum-buttons";
-			controls.setAttribute("role","group"); controls.setAttribute("aria-label","Ensemble recalls");
-			(view.presetNames || []).forEach((name,i)=>controls.appendChild(button(name,()=>sendAction(`/ensemble/${i}`))));
-			controls.appendChild(button(view.evolving ? "Auto-evolve · on" : "Auto-evolve · off",()=>sendAction("/action/evolve"),!!view.evolving));
-			cellsPanel.appendChild(controls);
-			const rows=document.createElement("div"); rows.className="cells-rows";
-			(view.roles || []).forEach((role,r)=>{
-				const row=document.createElement("div"); row.className="cells-row"; row.classList.toggle("muted",!!view.muted?.[r]); row.classList.toggle("resting",!!view.evolvedRest?.[r]); row.setAttribute("role","group"); row.setAttribute("aria-label",`Voice ${r+1}: ${role}`);
-				const label=document.createElement("span"); label.className="cells-role"; label.textContent=`${r+1} · ${role}${view.muted?.[r] ? " · muted" : view.evolvedRest?.[r] ? " · resting" : ""}`;
-				row.appendChild(label);
-				(view.cellNames?.[r] || []).forEach((name,c)=>{ const b=button(name,()=>sendAction(`/cell/${r}/${c}`),view.selected?.[r]===c); b.classList.add("cell-choice"); row.appendChild(b); });
-				row.appendChild(button(view.locks?.[r] ? "Locked" : "Lock",()=>sendAction(`/lock/${r}`),!!view.locks?.[r]));
-				rows.appendChild(row);
+			const section = (title, hint) => {
+				const s = make("section", "cx-section"); s.append(make("h3", "cx-title", title));
+				if (hint) s.append(make("p", "cx-help", hint));
+				cellsPanel.append(s); return s;
+			};
+			const field = (key, parent) => {
+				const spec = specs[key]; if (!spec) return;
+				const row = make("div", "cx-field"), lab = make("label", "", spec.label || key), id = `cx-${key}`;
+				lab.htmlFor = id;
+				let input;
+				if (spec.type === "toggle") {
+					input = make("input"); input.type = "checkbox"; input.checked = !!cur(key);
+					input.onchange = () => setVal(key, input.checked ? 1 : 0);
+				} else if (spec.type === "enum") {
+					input = make("select", "select");
+					for (const o of spec.options || []) { const op = make("option", "", spec.optionLabels?.[o] || o); op.value = o; input.append(op); }
+					input.value = String(cur(key)); input.onchange = () => setVal(key, input.value);
+				} else {
+					input = make("input"); input.type = "number";
+					Object.assign(input, { min: spec.min, max: spec.max, step: spec.step });
+					const v = Number(cur(key)); input.value = Number.isFinite(v) ? Math.round(v * 1000) / 1000 : "";
+					input.onchange = () => { const n = Number(input.value); if (Number.isFinite(n)) setVal(key, n); };
+				}
+				input.id = id; row.append(lab, input);
+				if (spec.help) row.append(make("p", "cx-help", spec.help));
+				parent.append(row); return input;
+			};
+			settingsCtx.textContent = `slot ${slot} · cells-hot`;
+			if (!view) { cellsPanel.append(make("p", "cx-help", "Waiting for the page…")); act("/action/refreshView"); return; }
+
+			// Now playing: the world, in words.
+			const now = section(view.pendingWorldName ? `${view.worldName}, then ${view.pendingWorldName} on the next beat` : view.worldName);
+			now.classList.add("cx-now");
+			if (view.context) now.append(make("p", "cx-context", view.context));
+			if (view.source) now.append(make("p", "cx-source", view.source));
+			const worldSpec = specs.rhythmWorld;
+			const cards = make("div", "cx-worlds"); cards.setAttribute("role", "group"); cards.setAttribute("aria-label", "Rhythm world");
+			for (const id of worldSpec?.options || []) {
+				const card = button("", () => setVal("rhythmWorld", id), cur("rhythmWorld") === id, "cx-world");
+				card.append(make("span", "cx-world-name", worldSpec.optionLabels?.[id] || id));
+				const summary = (view.worldSummaries || {})[id];
+				if (summary) card.append(make("span", "cx-world-sum", summary));
+				if (id === view.pendingWorldId) card.classList.add("pending");
+				cards.append(card);
+			}
+			now.append(cards);
+
+			// Tempo and play.
+			const tempo = section("Tempo");
+			const bar = make("div", "cx-inline");
+			bar.append(button(view.running ? "Stop" : "Play", () => act("/action/play"), !!view.running, "enum-button cx-play"));
+			const bpmInput = field("bpm", bar);
+			if (bpmInput) {
+				bpmInput.classList.add("cx-drag");
+				let from = null;
+				bpmInput.addEventListener("pointerdown", (e) => { from = { y: e.clientY, v: Number(bpmInput.value) || 120 }; bpmInput.setPointerCapture(e.pointerId); });
+				bpmInput.addEventListener("pointermove", (e) => {
+					if (!from) return; e.preventDefault();
+					const v = Math.max(20, Math.min(400, from.v + (from.y - e.clientY) * (e.shiftKey ? 0.1 : 1)));
+					bpmInput.value = Math.round(v * 10) / 10;
+				});
+				const end = () => { if (!from) return; from = null; setVal("bpm", Number(bpmInput.value)); };
+				bpmInput.addEventListener("pointerup", end); bpmInput.addEventListener("pointercancel", end);
+				const beatMs = 60000 / (Number(cur("bpm")) || 1);
+				bar.append(make("span", "cx-muted", `beat ${Math.round(beatMs)} ms · pulse ${Math.round(beatMs / 3)} ms`));
+			}
+			tempo.append(bar);
+
+			// Arrangement: ensembles, then the six rows.
+			const arr = section("Arrangement", "Tap the selected cell to mute or rejoin. Another cell comes in at the current phase.");
+			const ens = make("div", "cx-ensembles"); ens.setAttribute("role", "group"); ens.setAttribute("aria-label", "Ensemble recalls");
+			(view.presetNames || []).forEach((name, i) => {
+				const b = button("", () => act(`/ensemble/${i}`), view.activeEnsemble === i, "cx-ensemble");
+				b.append(make("span", "cx-world-name", name));
+				const note = view.ensembleNotes?.[i]; if (note) b.append(make("span", "cx-world-sum", note));
+				ens.append(b);
 			});
-			cellsPanel.appendChild(rows);
-			const hint=document.createElement("p"); hint.className="cells-note"; hint.textContent="Tap the selected cell to mute or rejoin. Choosing another cell brings that voice in at the current phase."; cellsPanel.appendChild(hint);
+			arr.append(ens);
+			const rows = make("div", "cells-rows");
+			(view.roles || []).forEach((role, r) => {
+				const row = make("div", "cells-row"); row.classList.toggle("muted", !!view.muted?.[r]); row.classList.toggle("resting", !!view.evolvedRest?.[r]);
+				row.setAttribute("role", "group"); row.setAttribute("aria-label", `Voice ${r + 1}: ${role}`);
+				row.append(make("span", "cells-role", `${r + 1} · ${role}${view.muted?.[r] ? " · muted" : view.evolvedRest?.[r] ? " · resting" : ""}`));
+				(view.cellNames?.[r] || []).forEach((name, c) => { const b = button(name, () => act(`/cell/${r}/${c}`), view.selected?.[r] === c); b.classList.add("cell-choice"); row.append(b); });
+				row.append(button(view.locks?.[r] ? "Locked" : "Lock", () => act(`/lock/${r}`), !!view.locks?.[r]));
+				rows.append(row);
+			});
+			arr.append(rows);
+
+			// Loopers: the same four as the grid's bottom-right keys.
+			const loops = section("Gesture loopers", "Record cell, mute and ensemble moves. Press to arm, play, pause; the recording starts at your first move. Clear = shift (grid x0) + looper.");
+			const chips = make("div", "cx-inline");
+			const word = { empty: "empty", recording: "recording", playing: "playing", stopped: "paused" };
+			for (let i = 0; i < 4; i++) {
+				const p = patterns[i] || { state: "empty", ms: 0 };
+				const b = button(`${i + 1} · ${word[p.state] || p.state}${p.ms ? ` · ${(p.ms / 1000).toFixed(1)} s` : ""}`, () => act(`/looper/${i}`), p.state === "playing" || p.state === "recording");
+				if (p.state === "recording") b.classList.add("pending");
+				const clear = button("Clear", () => act(`/looper/${i}/clear`), undefined, "enum-button cx-clear");
+				clear.disabled = p.state === "empty";
+				const pair = make("span", "cx-pair"); pair.append(b, clear); chips.append(pair);
+			}
+			loops.append(chips);
+
+			// Tuning.
+			const tun = section("Tuning");
+			const tSpec = specs.tuning;
+			const recName = tSpec?.optionLabels?.[view.recommendedTuning] || view.recommendedTuning;
+			const adv = make("div", "cx-inline");
+			adv.append(make("span", "", `Recommended for this world: ${recName}${view.recommendationPending ? " (queued with the world)" : view.recommendationActive ? " (active)" : ""}`));
+			if (!view.recommendationActive) adv.append(button("Apply recommendation", () => act("/action/applyRecommendation")));
+			tun.append(adv);
+			if (view.recommendationBasis) tun.append(make("p", "cx-help", view.recommendationBasis));
+			if (tSpec) {
+				const groups = new Map();
+				for (const o of tSpec.options) {
+					const g = tSpec.optionGroups?.[o] || "";
+					if (!groups.has(g)) { const box = make("div", "enum-section"); box.append(make("div", "bank-title", g)); groups.set(g, box); tun.append(box); }
+					const b = button(tSpec.optionLabels?.[o] || o, () => setVal("tuning", o), cur("tuning") === o);
+					if (o === view.recommendedTuning) b.title = "Recommended for this world";
+					groups.get(g).append(b);
+				}
+			}
+			field("rootMultiplier", tun);
+
+			// Sound: gate or decay; decay's shaping only when it applies.
+			const snd = section("Note length");
+			field("durationMode", snd);
+			if (cur("durationMode") === "decay") for (const k of ["decayScale", "decayStretch", "decayThreshold"]) field(k, snd);
+
+			// Evolution.
+			const evo = section("Evolution", "Every 2–4 beats the page may swap one linked group of rows. Locked rows and anything you just touched are left alone.");
+			const ev = make("div", "cx-inline");
+			ev.append(button(view.evolving ? "Auto-evolve on" : "Auto-evolve off", () => act("/action/evolve"), !!view.evolving));
+			ev.append(button(view.lockMode ? "Lock editing on" : "Lock editing off", () => act("/action/lockMode"), !!view.lockMode));
+			evo.append(ev);
+			field("allowSilence", evo);
+
+			// Rarely touched.
+			const more = make("details", "cx-more"); more.append(make("summary", "", "Timing and routing"));
+			for (const k of ["lane", "humanizeMs"]) field(k, more);
+			cellsPanel.append(more);
+
+			if (keep) { const e = document.getElementById(keep.id); if (e) { e.value = keep.value; e.focus(); } }
 		}
 
 		// --- Transport + app settings ------------------------------------------------
@@ -661,6 +824,11 @@
 						const vm = m.path.match(/^\/grid\/out\/page\/([a-h])\/view$/);
 						if (vm) {
 							try { const idx=SLOT_LABELS.indexOf(vm[1]); cellsViews[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) renderCellsView(); } catch {}
+							break;
+						}
+						const pm = m.path.match(/^\/grid\/out\/page\/([a-h])\/patterns$/);
+						if (pm) {
+							try { const idx=SLOT_LABELS.indexOf(pm[1]); patternsBySlot[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) renderCellsView(); } catch {}
 							break;
 						}
 						// /grid/out/page/<slot>/settings <json> — slot is a letter (a..h).

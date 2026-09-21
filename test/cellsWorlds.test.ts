@@ -108,6 +108,18 @@ describe("curated rhythm worlds", () => {
 		p.restore(saved, c)
 		expect(p.serialize()).toEqual(saved)
 	})
+	it("gives every world a performer-facing context and a matching ensembleNotes line per preset", () => {
+		for (const w of Object.values(worlds)) {
+			expect(typeof w.context).toBe("string")
+			expect(w.context!.length).toBeGreaterThan(0)
+			expect(w.ensembleNotes).toBeDefined()
+			expect(w.ensembleNotes!.length).toBe(w.presetNames.length)
+			for (const note of w.ensembleNotes!) {
+				expect(typeof note).toBe("string")
+				expect(note.length).toBeGreaterThan(0)
+			}
+		}
+	})
 })
 
 it("reconstructs all 64 Chakwi attacks and corrected manual pitch mapping", () => {

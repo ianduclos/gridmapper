@@ -81,4 +81,11 @@ export const manjaninWorld: World = {
  presetNames: ["Open space · 5–8", "Turning phrase · 9–12", "Heat · 175–178"],
  recommendedTuning: "tritave", source,
  roles: ["First dunun · open", "First dunun · muted", "Second dunun", "Second jembe", "Lead · bass/tone", "Lead · slap"],
+ context:
+  "Manjanin is a jembe/dunun ensemble rhythm studied by Rainer Polak (2010) from a 2006 recording of the Drissa Kone Quartet in Bamako, Mali. The six rows split the quartet's two dununs, the second jembe's accompaniment, and the lead jembe's bass/tone versus slap strokes, using the recording's documented mean timing ratios (27:33:40 for the lead, separate models for each dunun) rather than an even pulse. Listen for the steady dunun/jembe accompaniment underpinning three contrasting lead excerpts drawn from different points in the same performance. This is a source-derived arrangement, not a verified melodic transcription.",
+ ensembleNotes: [
+  "Uses source cycles 5–8 of the 2006 Drissa Kone Quartet recording, the workshop's 'open space' lead excerpt, over the full dunun/jembe accompaniment.",
+  "Uses source cycles 9–12, immediately following, the workshop's 'turning phrase' lead excerpt, over the same accompaniment.",
+  "Uses source cycles 175–178, taken from much later in the same recording, the workshop's 'heat' lead excerpt, which also omits the final cycle's downbeat as in the published variation.",
+ ],
 }

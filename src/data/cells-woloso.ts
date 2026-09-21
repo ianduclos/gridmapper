@@ -259,4 +259,11 @@ export const wolosoWorld: World = {
 			],
 		},
 	],
+	context:
+		"Woloso-dòn is a jembe ensemble rhythm documented by Rainer Polak (2010, §§123–132) from an eight-beat example printed in Tables 19–20. The six rows split the dunun's open and muted strokes, the second jembe's bass/tone and slap strokes, and the lead's bass/tone and slap strokes, nesting a binary 58:42 accompaniment under a ternary 25:33:42 lead subdivision rather than one even grid. Listen for the lead's ternary feel sitting against the accompaniment's binary offbeat, the nested-meter effect the source study highlights. This is a source-derived arrangement, not a verified melodic transcription.",
+	ensembleNotes: [
+		"Plays the full printed Cycle 8 example across all six rows, following the dunun motif printed under Table 19.",
+		"Keeps the full accompaniment steady and loops just the first four beats of the printed lead phrase.",
+		"Keeps the full accompaniment steady and loops just the last four beats of the printed lead phrase.",
+	],
 } satisfies EvolutionWorld

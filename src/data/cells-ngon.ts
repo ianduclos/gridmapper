@@ -328,4 +328,11 @@ export const ngonWorld: World = {
 		"Interleaved fragments",
 		"Offbeat pressure",
 	],
+	context:
+		"Ngòn is a Segu Bamana ensemble rhythm analysed by Rainer Polak and Justin London (2014) for its measured, unevenly spaced beat subdivision. The six rows split a bass/stick cunba hook and its ngangan response from the accompanying kèngèbu low and high strokes and a two-part lead phrase, all placed at the study's measured corpus-mean timing (40.8:30.7:28.5) rather than an even grid. Listen for the lead's offbeat and response halves alternating against the steady hook and kèngèbu accompaniment underneath. This is a source-derived, measured-feel study, not a verified melodic transcription.",
+	ensembleNotes: [
+		"Each row plays its basic published cell: the core cunba hook, its basic ngangan response, the full kèngèbu accompaniment, and the lead's two published phrase halves.",
+		"Swaps the hook and lead rows for their shorter excerpted fragments — the regular variation and the offbeat/response fragments — while the full kèngèbu accompaniment stays steady underneath.",
+		"Brings in the cunba's optional fill strokes and the ngangan's combined basic-plus-variation response, paired with the lead's repeated-offbeat figure and thinned response for a busier, more insistent feel.",
+	],
 }

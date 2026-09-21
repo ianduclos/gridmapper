@@ -21,8 +21,10 @@ Grid coordinates below are zero-based. Column 0 remains the page selector.
 | Rhythm banks / tuning banks / cells view | x=1 / 2 / 3, y=6 |
 | Auto-evolve / lock-edit mode | x=4 / 5, y=6 |
 | Apply current or pending world's recommendation | x=6, y=6 |
-| Run / Stop | x=1 / 2, y=7 |
-| Three ensemble recalls | x=4–6, y=7 |
+| Shift (hold) | x=0, y=7 |
+| Play / stop toggle | x=1, y=7 |
+| Three ensemble recalls (the live one lit brighter) | x=4–6, y=7 |
+| Four gesture loopers | x=12–15, y=7 |
 
 In lock-edit mode, each row's mute button toggles its evolution lock. Cell
 buttons remain playable. Tuning-bank view puts five **Included tunings** on
@@ -35,9 +37,36 @@ a rhythm world never retunes automatically. Applying a pending world's
 recommendation queues it with that world. Selecting another pending world clears
 that queued recommendation. Choosing a tuning manually also cancels it.
 
+The phase bar (x=5–15) glides: its leading cell is interpolated between the empty
+and filled levels. A muted or resting row draws its bar dimmer and does not flash.
+
+## Gesture loopers
+
+The four keys at x=12–15, y=7 use set-hot's looper mechanics (`util/patternRecorder.ts`).
+Press to arm, press again to close the take and play it, then press to pause or resume.
+Hold shift (x=0, y=7) and press to clear. The take starts at your first move, not when
+you arm it. The loopers record **arrangement moves only**: cell choices, mutes and
+ensemble recalls, each as an absolute value (`cell/<row>`, `mute/<row>`, `ensemble`), so
+replaying a move is idempotent. World, tuning, tempo and locks are never recorded.
+Recording comes only from a hand, either the grid or the web panel. Playback applies moves without
+recording them, so the latest move wins. Loops keep running while the transport is
+stopped; you hear them once it runs. They are saved with the page state
+(`patterns`) and restore paused. Web routes: `/looper/<i>` and `/looper/<i>/clear`.
+Out: `/grid/out/page/b/patterns` `[{state, ms}]`.
+
+## Tempo
+
+Cells owns the tempo, shown as **BPM of the performance beat** (three pulses):
+`bpm = pulseRate × 20`, so the default `12 / 1.66` Hz is about 144.6 BPM. The stored
+field stays `pulseRate`. Both `/setting/bpm` and the legacy `/setting/pulseRate` are
+accepted. Play pushes `pulseRate × lane.div` to the transport. A transport rate edit
+from anywhere else (the web clock field, the app settings) is written back into cells
+(internal lanes only). Before this, the next Run put the old 7.23 back, which looked like
+the clock resetting.
+
 ## Phase and world changes
 
-The transport's saved pulse rate defaults to `12 / 1.66` Hz. Run applies that rate
+The saved pulse rate defaults to `12 / 1.66` Hz. Play applies that rate
 to the selected clock lane. Existing banks retain their previous speed. One shared
 performance beat is three transport pulses; each world separately declares its
 source/design pulses per performance beat (three for legacy and Mande banks,
@@ -52,7 +81,7 @@ replays, artificial entry strikes, or automatic tuning changes occur. Current
 manual mutes and evolution locks survive the transition.
 
 Individual cell choices remain immediate with the short playback-buffer delay.
-Page changes do not stop the sequencer. Stop clears the session and sequencer-owned
+Page changes do not stop the sequencer. Stopping clears the session and sequencer-owned
 notes. Restart establishes phase zero; restoring a preset never starts playback.
 Selections, manual mutes, tuning, settings and locks persist.
 
@@ -125,8 +154,8 @@ replacement packet, so Max retains fresh clock/humanization/watchdog information
 Existing sounding tails remain. The Max watchdog is `max(2000, 3 * periodMs)`.
 
 The UI receives `/grid/out/page/b/view` on changes and `/action/refreshView`.
-Controls use `/grid/in/page/b/{cell/<row>/<choice>,lock/<row>,ensemble/<index>}`
-and `/action/{evolve,lockMode,applyRecommendation}`; row and choice indices are
+Controls use `/grid/in/page/b/{cell/<row>/<choice>,mute/<row>,lock/<row>,ensemble/<index>,looper/<i>[/clear]}`
+and `/action/{play,evolve,lockMode,applyRecommendation}`; row and choice indices are
 zero-based. Existing `/setting/<key>` messages remain supported.
 
 ## Material and tuning
