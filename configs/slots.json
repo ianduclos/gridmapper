@@ -60,11 +60,25 @@
 		"b": {
 			"page": "cells-hot",
 			"config": {
-				"selected": [0, 0, 0, 0, 0, 0],
-				"muted": [false, false, false, false, false, false],
-				"phase": [0, 0, 0, 0, 0, 0],
+				"selected": [
+					0,
+					0,
+					0,
+					0,
+					1,
+					0
+				],
+				"muted": [
+					false,
+					false,
+					false,
+					false,
+					false,
+					false
+				],
 				"tuning": "tritave",
 				"rootMultiplier": 1,
+				"pulseRate": 7.228915662650602,
 				"lane": 0,
 				"humanizeMs": 4
 			}
