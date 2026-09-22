@@ -17,6 +17,7 @@ import {
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
 import { SELECTOR_KEYS, drawSelector, selectorKey } from "../util/pageSelector.js"
+import { DAMP_FROM_CELLS, DAMP_STATE } from "../core/sharedStore.js"
 import {
 	PatternRecorder,
 	MAX_RECORD_MS,
@@ -41,6 +42,10 @@ const MUTE_X = 1,
 const CELLS_VIEW_X = 1,
 	RHYTHM_VIEW_X = 2,
 	TUNING_VIEW_X = 3
+/** Damp at x0 y6 (hold = all six). Hold it with shift (x0 y7) to toggle damp mode, where
+ *  the mute column damps single voices; press either key to leave. set-hot sends it. */
+const DAMP_X = 0,
+	DAMP_Y = 6
 /** Bottom row: shift held at x0, play toggle at x1, four gesture loopers at x12-15. */
 const SHIFT_X = 0,
 	PLAY_X = 1,
@@ -257,6 +262,9 @@ export class CellsHotPage implements Page {
 	private looperLastMs = 0
 	/** The timer has no ctx of its own. */
 	private ctx: PageContext | null = null
+	private dampAllHeld = false
+	private dampMode = false
+	private dampRows = new Array(VOICES).fill(false)
 	private session = ""
 	private serial = 0
 	private originTick: number | undefined
@@ -286,8 +294,15 @@ export class CellsHotPage implements Page {
 	}
 	onBlur(c: PageContext) {
 		c.setShift(1, false)
+		// Hands let go: a held damp must not outlive leaving the page.
+		this.dampAllHeld = false
+		this.dampRows.fill(false)
+		this.publishDamp(c)
 	}
 	dispose(c: PageContext) {
+		this.dampAllHeld = false
+		this.dampRows.fill(false)
+		this.publishDamp(c)
 		if (this.running) this.stop(c)
 		for (const r of this.recorders) r.clear()
 		this.syncLooperTimer()
@@ -358,8 +373,21 @@ export class CellsHotPage implements Page {
 	}
 	onKey(e: KeyEvent, c: PageContext) {
 		if (selectorKey(e, c)) return
-		if (e.y === 7 && e.x === SHIFT_X) {
-			c.setShift(1, e.s === 1)
+		if (e.x === DAMP_X && (e.y === DAMP_Y || e.y === 7)) {
+			// Read the partner BEFORE this key updates shift.
+			const partnerHeld = e.y === DAMP_Y ? c.modifiers.shift1 : this.dampAllHeld
+			if (e.y === 7) c.setShift(1, e.s === 1)
+			this.dampChordKey(e.y === DAMP_Y, e.s === 1, partnerHeld, c)
+			return
+		}
+		if (
+			this.dampMode &&
+			this.bankMode === "cells" &&
+			e.x === MUTE_X &&
+			e.y < VOICES
+		) {
+			this.dampRows[e.y] = e.s === 1
+			this.publishDamp(c)
 			return
 		}
 		if (!e.s) return
@@ -404,6 +432,33 @@ export class CellsHotPage implements Page {
 			this.applyEnsemble(c, e.x - 4, true)
 		else if (e.y === 7 && e.x >= LOOPER_X0 && e.x < LOOPER_X0 + LOOPERS)
 			this.looperKey(c, e.x - LOOPER_X0, c.modifiers.shift1)
+	}
+	private dampChordKey(
+		isDamp: boolean,
+		down: boolean,
+		partnerHeld: boolean,
+		c: PageContext,
+	) {
+		if (down && this.dampMode) {
+			// Either key leaves damp mode.
+			this.dampMode = false
+			this.dampAllHeld = false
+			this.dampRows.fill(false)
+		} else if (down && partnerHeld) {
+			// Both held: enter damp mode. The all-damp from holding x0 y6 first is let go.
+			this.dampMode = true
+			this.dampAllHeld = false
+		} else if (isDamp) this.dampAllHeld = down && !this.dampMode
+		else return
+		this.publishDamp(c)
+		this.view(c)
+		c.setDirty()
+	}
+	private publishDamp(c: PageContext) {
+		c.shared?.set(
+			DAMP_FROM_CELLS,
+			this.dampRows.map((row) => this.dampAllHeld || row),
+		)
 	}
 	private togglePlay(c: PageContext) {
 		if (this.running) {
@@ -541,6 +596,8 @@ export class CellsHotPage implements Page {
 	render(c: PageContext): LedFrame {
 		const f = makeFrame(c.size),
 			now = Date.now()
+		// What Max is actually told (set-hot's view), so its ALL key lights ours too.
+		const damped = c.shared?.get<boolean[]>(DAMP_STATE) ?? []
 		drawSelector(f, c)
 		if (this.bankMode !== "cells") {
 			const values = this.bankMode === "rhythmWorld" ? worldNames : tunings
@@ -572,7 +629,11 @@ export class CellsHotPage implements Page {
 									? 3
 									: 12
 							: 2
-				f[ledIndex(c.size, MUTE_X, y)] = this.lockMode
+				f[ledIndex(c.size, MUTE_X, y)] = this.dampMode
+					? damped[y]
+						? 15
+						: 6
+					: this.lockMode
 					? this.locks[y]
 						? 15
 						: 4
@@ -631,6 +692,13 @@ export class CellsHotPage implements Page {
 							: LVL_REC_EMPTY
 		}
 		f[ledIndex(c.size, SHIFT_X, 7)] = c.modifiers.shift1 ? 15 : 1
+		f[ledIndex(c.size, DAMP_X, DAMP_Y)] = this.dampMode
+			? now % (BLINK_MS * 4) < BLINK_MS * 2
+				? 12
+				: 6
+			: damped.length && damped.every(Boolean)
+				? 15
+				: 3
 		return f
 	}
 	serialize() {
@@ -1204,9 +1272,12 @@ export class CellsHotPage implements Page {
 				locks: this.locks,
 				evolvedRest: this.evolvedRest,
 				evolving: this.autoEvolve,
+				dampMode: this.dampMode,
 				keyView:
 					this.bankMode === "cells"
-						? "cells"
+						? this.dampMode
+							? "damp"
+							: "cells"
 						: this.bankMode === "rhythmWorld"
 							? "rhythm banks"
 							: "tuning banks",
@@ -1235,8 +1306,12 @@ const shortWorld = (id: string) => WORLD_SHORT[id] ?? worlds[id].name.split(" �
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
 	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve." },
-	{ x: CELL_X0, y: 0, w: 3, h: VOICES, view: "cells", name: "Cells 1–3", help: "Choose the voice's cell; it comes in at the current phase. Tap the lit one to mute." },
-	{ x: 5, y: 0, w: 11, h: VOICES, view: "cells", name: "Phase", help: "The cycle's progress; the last key flashes on each onset. Dim = muted or resting." },
+	{ x: MUTE_X, y: 0, h: VOICES, view: "damp", name: "Damp voice", short: "Damp", help: "Hold to damp that voice (sent through set-hot). Press Damp or Shift to leave damp mode." },
+	...(["cells", "damp"] as const).flatMap((view): KeySpec[] => [
+		{ x: CELL_X0, y: 0, w: 3, h: VOICES, view, name: "Cells 1–3", help: "Choose the voice's cell; it comes in at the current phase. Tap the lit one to mute." },
+		{ x: 5, y: 0, w: 11, h: VOICES, view, name: "Phase", help: "The cycle's progress; the last key flashes on each onset. Dim = muted or resting." },
+	]),
+	{ x: DAMP_X, y: DAMP_Y, name: "Damp", help: "Hold to damp all six voices, in sync with set-hot. Hold together with Shift to toggle per-voice damp on column 1; press either to leave." },
 	...worldNames.map((id, i): KeySpec => ({ x: 1 + (i % 15), y: Math.floor(i / 15), view: "rhythm banks", name: worlds[id].name, short: shortWorld(id), help: "Switch world on the next shared beat." })),
 	...tunings.map((id, i): KeySpec => ({ x: i < 5 ? i + 1 : i - 4, y: i < 5 ? 0 : 1, view: "tuning banks", name: tuningLabels[id] ?? id, short: (tuningLabels[id] ?? id).replace("Hotelier · ", "").split(" ")[0], help: i < 5 ? "Included tuning." : "Hotelier keyboard scale." })),
 	{ x: CELLS_VIEW_X, y: 6, name: "Cells view", short: "Cells", help: "The main screen: voices, cells and phase." },
@@ -1245,7 +1320,7 @@ export const keymap: KeySpec[] = [
 	{ x: 4, y: 6, name: "Auto-evolve", short: "Evolve", help: "Every 2–4 beats, maybe swap one linked group of rows." },
 	{ x: 5, y: 6, name: "Lock editing", short: "Locks", help: "While on, the mute keys lock rows against auto-evolve instead." },
 	{ x: 6, y: 6, name: "Recommended tuning", short: "Rec. tuning", help: "Apply this world's recommended tuning. Lit when it's active." },
-	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it." },
+	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it. Held with Damp, toggles damp mode." },
 	{ x: PLAY_X, y: 7, name: "Play / stop", short: "Play", help: "Starts the transport at this page's tempo." },
 	{ x: 4, y: 7, w: 3, name: "Ensembles 1–3", help: "Recall all six cells at once. The live one is brighter." },
 	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves: arm, play, pause. Shift + press clears." },

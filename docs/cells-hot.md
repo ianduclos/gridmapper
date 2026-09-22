@@ -21,6 +21,7 @@ Grid coordinates below are zero-based. Column 0 remains the page selector.
 | Cells view (main) / rhythm banks / tuning banks | x=1 / 2 / 3, y=6 |
 | Auto-evolve / lock-edit mode | x=4 / 5, y=6 |
 | Apply current or pending world's recommendation | x=6, y=6 |
+| Damp all six (hold) | x=0, y=6 |
 | Shift (hold) | x=0, y=7 |
 | Play / stop toggle | x=1, y=7 |
 | Three ensemble recalls (the live one lit brighter) | x=4–6, y=7 |
@@ -39,6 +40,18 @@ that queued recommendation. Choosing a tuning manually also cancels it.
 
 The phase bar (x=5–15) glides: its leading cell is interpolated between the empty
 and filled levels. A muted or resting row draws its bar dimmer and does not flash.
+
+## Damp
+
+x=0, y=6 is a momentary damp on all six voices. Hold it together with shift (x=0, y=7), in
+either order, to toggle **damp mode**: the mute column (x=1, y=0–5) then damps single voices
+while held, and pressing damp or shift leaves the mode. Entering the mode lets go of an
+all-damp you were holding. Damp is not a new message: cells writes its keys to
+`ctx.shared` (`damp/cells`), and **set-hot stays the one sender** of
+`/grid/out/page/f/voice <n> damp <1|0>`, ORing cells' request with its own hands and
+loopers. set-hot publishes the result (`damp/set-hot`), which lights cells' damp key when all
+six are damped. set-hot must be loaded for damp to reach Max. Leaving the page releases a
+held damp. Loopers do not record damp.
 
 ## Gesture loopers
 

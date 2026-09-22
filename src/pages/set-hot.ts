@@ -45,6 +45,7 @@ import type { KeySpec, PageModule } from "../core/pageModule.js"
 import { SELECTOR_KEYS, selectorKey, drawSelector } from "../util/pageSelector.js"
 import { PatternRecorder, MAX_RECORD_MS, type PatternEvent } from "../util/patternRecorder.js"
 import { isRecord, num, bool, records } from "../util/restoreGuards.js"
+import { DAMP_FROM_CELLS, DAMP_STATE } from "../core/sharedStore.js"
 
 export const VOICES = 6
 const COL_ALL = 2
@@ -111,9 +112,19 @@ export class SetHotPage implements Page {
 	/** Voice activity from Max: 0 idle, 1 triggered, 2 ringing, plus when it triggered. */
 	private activity = new Array<number>(VOICES).fill(0)
 	private triggeredAt = new Array<number>(VOICES).fill(0)
+	/** Damp requested by other pages (cells-hot's damp keys), via ctx.shared. */
+	private remoteDamp = new Array<boolean>(VOICES).fill(false)
+	private unsubscribe: (() => void) | null = null
 
 	init(ctx: PageContext) {
 		this.ctx = ctx
+		// Another page's damp keys drive the same voices. This page stays the ONE sender of
+		// damp to Max, so both surfaces agree and nothing is sent twice.
+		this.unsubscribe =
+			ctx.shared?.subscribe(DAMP_FROM_CELLS, (v) => {
+				this.remoteDamp = Array.from({ length: VOICES }, (_, i) => Array.isArray(v) && !!v[i])
+				this.syncDamp(ctx)
+			}) ?? null
 		this.announce(ctx)
 	}
 
@@ -257,6 +268,8 @@ export class SetHotPage implements Page {
 	}
 
 	dispose(ctx: PageContext) {
+		this.unsubscribe?.()
+		this.remoteDamp.fill(false)
 		for (const r of this.recorders) r.clear()
 		this.onBlur(ctx)
 		this.syncTimer()
@@ -280,7 +293,10 @@ export class SetHotPage implements Page {
 	private dampState(): boolean[] {
 		return Array.from(
 			{ length: VOICES },
-			(_, v) => this.handDamp(v) || this.recorders.some((r) => r.sounding.has(v)),
+			(_, v) =>
+				this.handDamp(v) ||
+				this.remoteDamp[v] ||
+				this.recorders.some((r) => r.sounding.has(v)),
 		)
 	}
 
@@ -295,11 +311,14 @@ export class SetHotPage implements Page {
 		}
 		if (this.recorders.some((r) => r.state === "recording")) this.syncTimer()
 		const want = this.dampState()
+		let changed = false
 		for (let v = 0; v < VOICES; v++) {
 			if (want[v] === this.dampSent[v]) continue
 			this.dampSent[v] = want[v]
 			this.emit(ctx, v, "damp", want[v])
+			changed = true
 		}
+		if (changed) ctx.shared?.set(DAMP_STATE, [...want])
 	}
 
 	/** `byHand` = your press, which armed loopers record; loop playback passes false. */

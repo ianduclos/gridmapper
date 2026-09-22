@@ -341,7 +341,9 @@ src/
                          against transport deadlines → /grid/out/page/<slot>/cells (JSON).
                          Cells OWNS TEMPO (shown as BPM, 3 pulses/beat); a transport edit is
                          written back. Bottom row: x0 shift, x1 play toggle, x4-6 ensembles,
-                         x12-15 gesture loopers (arrangement moves only). Full contract:
+                         x12-15 gesture loopers (arrangement moves only); x0 y6 damp
+                         (+shift = per-voice damp mode on col 1), sent THROUGH set-hot via
+                         core/sharedStore.ts (the one page-to-page channel). Full contract:
                          docs/cells-hot.md.
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
                          PER-PAGE assignable: the selector neither consumes nor draws them.

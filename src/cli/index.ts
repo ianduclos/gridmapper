@@ -8,6 +8,7 @@
 //   npm run dev            (real hardware)
 //   npm run dev -- --null  (no hardware; NullGrid)
 
+import { SharedStore } from "../core/sharedStore.js"
 import { GridConnection } from "../io/gridConnection.js"
 import { createOsc } from "../io/osc.js"
 import { loadSettings } from "../core/settings.js"
@@ -124,6 +125,7 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "
 	},
 	osc: { send: emitOut },
 	setShift: (which, down) => shift.set(which, down),
+	shared: new SharedStore(),
 }
 
 const pm = new PageManager(

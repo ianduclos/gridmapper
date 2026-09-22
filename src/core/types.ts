@@ -94,6 +94,8 @@ export interface PageContext {
 	 * merges `patch` into the active preset. Not for settings or transient state.
 	 */
 	persist: (patch: Record<string, unknown>) => void
+	/** Live state shared between pages (core/sharedStore.ts). Absent in bare test rigs. */
+	shared?: import("./sharedStore.js").SharedStore
 }
 
 export interface Page {

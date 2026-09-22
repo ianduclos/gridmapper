@@ -8,6 +8,7 @@
 //
 //   npm run sim            (auto-connect to the real grid when present)
 //   npm run sim -- --null  (force the simulated grid; no auto-connect)
+import { SharedStore } from "../core/sharedStore.js"
 import { resolve as resolvePath } from "node:path"
 import { GridConnection } from "../io/gridConnection.js"
 import { createGridServer } from "../io/gridServer.js"
@@ -166,6 +167,7 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "
 	},
 	osc: { send: emitOut },
 	setShift: (which, down) => shift.set(which, down),
+	shared: new SharedStore(),
 }
 
 const pm = new PageManager(
