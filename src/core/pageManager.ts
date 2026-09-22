@@ -33,6 +33,8 @@ export class PageManager {
 	private ctxPerSlot: PageContext[] = []
 	private onFrame?: OnFrame
 	private hooks: PageHooks
+	/** Cell index → the slot that received its key-down, until the key-up arrives. */
+	private pressedOn = new Map<number, Slot>()
 
 	constructor(
 		baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "persist">,
@@ -70,6 +72,8 @@ export class PageManager {
 	 */
 	load(slot: Slot, factory: () => Page, config?: unknown) {
 		this.pages[slot]?.dispose(this.ctxPerSlot[slot])
+		// Releases of keys the old page took belong to nobody now.
+		for (const [cell, s] of this.pressedOn) if (s === slot) this.pressedOn.delete(cell)
 		const p = factory()
 		this.pages[slot] = p
 		p.init(this.ctxPerSlot[slot])
@@ -97,12 +101,19 @@ export class PageManager {
 	}
 
 	onKey(ev: KeyEvent) {
-		const slot = this.focused
+		// A key-up goes to the page that got the key-down, even if focus moved while it was
+		// held — so a page can keep a note sounding across a page switch and still hear its
+		// release, instead of having to drop everything in onBlur.
+		const cell = ev.y * 256 + ev.x
+		const origin = ev.s ? undefined : this.pressedOn.get(cell)
+		if (ev.s) this.pressedOn.set(cell, this.focused)
+		else this.pressedOn.delete(cell)
+		const slot = origin ?? this.focused
 		const p = this.pages[slot]
 		if (!p) return
 		p.onKey(ev, this.ctxPerSlot[slot])
-		// The key may have moved focus (ctx.focus). focus() already rendered and pushed the
-		// new page, so don't paint the old page's frame over it.
+		// The key may have moved focus (ctx.focus), or be a release routed to an unfocused
+		// page. Either way that page isn't on the grid, so don't paint its frame over it.
 		if (slot !== this.focused) return
 		this.desired[slot] = p.render(this.ctxPerSlot[slot]) ?? this.desired[slot]
 		this.onFrame?.(this.desired[slot], "key")

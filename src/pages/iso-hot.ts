@@ -615,12 +615,10 @@ export class IsoHotPage implements Page {
 	}
 
 	onBlur(ctx: PageContext) {
-		// Release what your hands were doing, so a page switch can't strand a note. What
-		// does NOT stop: the pattern recorders — a running loop has to survive a slot
-		// change, exactly like an onTick sequencer (docs/PAGE_PROTOCOL.md §6). Saved
-		// chords stay too; they're stored content, not runtime state.
-		this.releaseLive(ctx)
-		this.sustainLatched = false
+		// Notes keep sounding across a page switch (Ian, 2026-09-22): a held key's release is
+		// routed back here by PageManager, so nothing is stranded, and a latched sustain stays
+		// latched until you come back and let it go. Loops keep running too, like an onTick
+		// sequencer (docs/PAGE_PROTOCOL.md §6).
 		this.lastSustainTapAt = 0
 		// Drop our shifts so they don't linger after we leave the page.
 		ctx.setShift(1, false)

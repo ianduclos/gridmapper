@@ -24,6 +24,7 @@ export const SELECTOR_COL = 0
 export const SELECTOR_SLOTS: readonly Slot[] = [0, 1, 2, 3, 5] as Slot[]
 export const TWISTER_ROW = 5
 export const TWISTER_OVERLAY_PATH = "/twister/in/overlay"
+export const TWISTER_FOCUS_PATH = "/twister/in/focus/page"
 
 const LVL_SELF = 12
 const LVL_OTHER = 2

@@ -333,8 +333,9 @@ src/
                          cols 4-9 = voices 1-6. Out: /grid/out/page/<slot>/voice <n> <param>
                          <1|0>, changes only. In (never echoed): /voice/<n>/<param> <1|0> sync,
                          /voice/<n>/state <0|1|2> feedback on row 3. Switches are runtime
-                         only and send nothing at load. Col 15 rows 0-3 = 4 GESTURE LOOPERS
-                         (row 7 = shift 1, +press clears): damp records as notes (step =
+                         only and send nothing at load. Col 15 rows 0-2 = 3 GESTURE LOOPERS
+                         (col 0 row 7 = shift 1, +press clears); col 15 rows 3-7 = TWISTER
+                         PAGES a-e → /twister/in/focus/page <a-e> (lit = last pressed here): damp records as notes (step =
                          voice), toggles as ctl events `<param>/<voice>`; playback drives the
                          switches (latest wins, damp = hand OR loop). Loops save in presets.
   pages/cells-hot.ts     HOTELIER hocket sequencer (slot b): six banked voices scheduled

@@ -67,7 +67,7 @@ When each is called:
 |-------------|----------------------------------------------------------------|
 | `init`      | Once, when the page is created in a slot. Read `ctx.size`, set up state. |
 | `onFocus`   | When this slot becomes the focused one (incl. loading into the focused slot). |
-| `onBlur`    | When focus leaves this slot. Clear visual state if you want.    |
+| `onBlur`    | When focus leaves this slot. Clear visual state if you want. A key held across the switch still delivers its key-up HERE (PageManager routes a release to the page that got the press), so a held note need not be dropped on blur. |
 | `onKey`     | On every key edge, **only while focused**. Mutate state; don't draw here. |
 | `onOsc`     | When app OSC is routed to this slot (optional).                 |
 | `onTick`    | On every app-clock tick, on **every lane**, in **every** slot — focused or not (optional). |

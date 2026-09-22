@@ -133,7 +133,7 @@ describe("set-hot from Max", () => {
 	})
 })
 
-describe("set-hot loopers (col 15 rows 0-3)", () => {
+describe("set-hot loopers (col 15 rows 0-2)", () => {
 	afterEach(() => { vi.useRealTimers() })
 
 	// Looper 0: freeze voice 1 on, hold damp on voice 2 for 100ms, freeze voice 1 off. 500ms.
@@ -189,9 +189,9 @@ describe("set-hot loopers (col 15 rows 0-3)", () => {
 		r.tap(15, 0) // stop
 		expect(r.voice()).toEqual([[2, "damp", 0]])
 		expect(r.at(15, 0)).toBe(5)
-		r.key(15, 7, 1)
+		r.key(0, 7, 1)
 		r.tap(15, 0)
-		r.key(15, 7, 0)
+		r.key(0, 7, 0)
 		expect(r.at(15, 0)).toBe(1)
 		expect(lap(r)).toEqual([])
 	})
@@ -229,5 +229,25 @@ describe("set-hot loopers (col 15 rows 0-3)", () => {
 		] }] }, r.ctx)
 		const ev = (r.p.serialize() as any).patterns[0].events
 		expect(ev).toEqual([{ atMs: 10, step: 0, on: false, ctl: { id: "bow/3", value: 1 } }])
+	})
+})
+
+describe("set-hot Twister page keys (col 15 rows 3-7)", () => {
+	it("each key focuses Twister slot a-e and lights alone", () => {
+		const r = rig()
+		r.tap(15, 3)
+		r.tap(15, 7)
+		const tw = r.sent.filter((m) => m.path === "/twister/in/focus/page").map((m) => m.args)
+		expect(tw).toEqual([["a"], ["e"]])
+		expect(r.at(15, 7)).toBe(12)
+		expect(r.at(15, 3)).toBe(3)
+	})
+
+	it("shift 1 lives at col 0 row 7", () => {
+		const r = rig()
+		r.key(0, 7, 1)
+		expect(r.ctx.modifiers.shift1).toBe(true)
+		r.key(0, 7, 0)
+		expect(r.ctx.modifiers.shift1).toBe(false)
 	})
 })

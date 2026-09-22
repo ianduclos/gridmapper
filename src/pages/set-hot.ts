@@ -7,14 +7,18 @@
  *           Col 2 = ALL: it sets all six voices in its row (a toggle turns them all ON
  *           unless all six already are, then all OFF; damp-all holds all six down).
  *           Cols 4-9 = voices 1-6. Cols 1 and 3 are gaps.
- *           Col 15 rows 0-3 = 4 LOOPERS (util/patternRecorder.ts, as in isometric): one key
- *           cycles empty → rec → play → stop, SHIFT 1 (col 15 row 7) + press clears. A take
+ *           Col 15 rows 0-2 = 3 LOOPERS (util/patternRecorder.ts, as in isometric): one key
+ *           cycles empty → rec → play → stop, SHIFT 1 (col 0 row 7) + press clears. A take
  *           starts at the first gesture. Damp records as momentary notes (step = voice),
  *           the toggles as control events (`<param>/<voice>` → 1|0). Playback drives the
  *           same switches and sends the same OSC; the latest move wins, a hand press holds
  *           until a loop's next move, and a voice is damped while a hand OR a loop holds it.
  *           Only HAND gestures are recorded — loops never tap each other. Loops keep running
  *           when the page loses focus; stop/clear releases whatever damp a loop held.
+ *           Col 15 rows 3-7 = TWISTER PAGES a-e (ModelHot, TremHot, PanHot, FxHot,
+ *           VoicesHot): a press sends /twister/in/focus/page <a-e> straight to twistermapper.
+ *           The lit key is the last one pressed here — the Twister's own focus changes are
+ *           not reported back to us.
  * Output  : /grid/out/page/<slot>/voice <n 1-6> <damp|freeze|bow|roll> <1|0>, per voice
  *           and only on a CHANGE — an ALL press sends one message per voice that moved.
  * Input   : (from Max, never echoed back)
@@ -42,7 +46,7 @@ import {
 	ledIndex,
 } from "../core/types.js"
 import type { KeySpec, PageModule } from "../core/pageModule.js"
-import { SELECTOR_KEYS, selectorKey, drawSelector } from "../util/pageSelector.js"
+import { SELECTOR_KEYS, selectorKey, drawSelector, TWISTER_FOCUS_PATH } from "../util/pageSelector.js"
 import { PatternRecorder, MAX_RECORD_MS, type PatternEvent } from "../util/patternRecorder.js"
 import { isRecord, num, bool, records } from "../util/restoreGuards.js"
 import { DAMP_FROM_CELLS, DAMP_STATE } from "../core/sharedStore.js"
@@ -67,9 +71,15 @@ const LVL_RINGING = 5
 /** How long a trigger reads as a flash before falling back to "ringing". */
 const TRIGGER_MS = 150
 
-/** Loopers down the last column, and shift 1 at its foot — the isometric positions. */
-const RECORDERS = 4
+/** Loopers at the top of the last column; shift 1 on the left, in the selector's free row. */
+const RECORDERS = 3
+const SHIFT1_COL = 0
 const SHIFT1_ROW = 7
+/** Twister page keys under the loopers: row TWISTER_ROW0 + i focuses Twister slot a+i. */
+const TWISTER_ROW0 = 3
+const TWISTER_PAGES = ["ModelHot", "TremHot", "PanHot", "FxHot", "VoicesHot"] as const
+const LVL_TWISTER_OFF = 3
+const LVL_TWISTER_ON = 12
 const LVL_REC_EMPTY = 1
 const LVL_REC_ARMED = 12 // bright half of the recording blink
 const LVL_REC_STOPPED = 5
@@ -105,6 +115,8 @@ export class SetHotPage implements Page {
 	private handDampLast = new Array<boolean>(VOICES).fill(false)
 
 	private recorders = Array.from({ length: RECORDERS }, () => new PatternRecorder())
+	/** The Twister page last chosen from here (-1 = none yet). */
+	private twisterPage = -1
 	private timer: ReturnType<typeof setInterval> | null = null
 	private lastTickMs = 0
 	/** Kept for the timer, which has no ctx of its own. */
@@ -143,8 +155,16 @@ export class SetHotPage implements Page {
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		if (selectorKey(ev, ctx)) return
 		const lastCol = ctx.size.width - 1
-		if (ev.x === lastCol && ev.y === SHIFT1_ROW) {
+		if (ev.x === SHIFT1_COL && ev.y === SHIFT1_ROW) {
 			ctx.setShift(1, ev.s === 1)
+			return
+		}
+		const tw = ev.y - TWISTER_ROW0
+		if (ev.x === lastCol && tw >= 0 && tw < TWISTER_PAGES.length) {
+			if (ev.s) {
+				this.twisterPage = tw
+				ctx.osc.send(TWISTER_FOCUS_PATH, String.fromCharCode(97 + tw))
+			}
 			return
 		}
 		if (ev.x === lastCol && ev.y < RECORDERS) {
@@ -228,7 +248,10 @@ export class SetHotPage implements Page {
 				: st === "stopped" ? LVL_REC_STOPPED
 				: LVL_REC_EMPTY)
 		}
-		set(lastCol, SHIFT1_ROW, ctx.modifiers.shift1 ? LVL_HELD : LVL_SHIFT)
+		set(SHIFT1_COL, SHIFT1_ROW, ctx.modifiers.shift1 ? LVL_HELD : LVL_SHIFT)
+		for (let i = 0; i < TWISTER_PAGES.length; i++) {
+			set(lastCol, TWISTER_ROW0 + i, i === this.twisterPage ? LVL_TWISTER_ON : LVL_TWISTER_OFF)
+		}
 		for (let v = 0; v < VOICES; v++) {
 			const s = this.activity[v]
 			const flashing = s === 1 && now - this.triggeredAt[v] < TRIGGER_MS
@@ -376,8 +399,9 @@ export const keymap: KeySpec[] = [
 	{ x: VOICE_COL0, y: ROW_OF.roll, w: VOICES, name: "Roll", help: "Toggle roll per voice.", lit: LVL_OFF },
 	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0] },
-	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–4", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
-	{ x: 15, y: SHIFT1_ROW, name: "Shift 1", short: "Shift", help: "Hold, then press a looper to clear it.", lit: LVL_SHIFT },
+	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
+	{ x: 15, y: TWISTER_ROW0, h: TWISTER_PAGES.length, name: "Twister pages", short: "Twister", help: `Switch the Twister's page: ${TWISTER_PAGES.join(", ")}.`, lit: [LVL_TWISTER_ON, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF] },
+	{ x: SHIFT1_COL, y: SHIFT1_ROW, name: "Shift 1", short: "Shift", help: "Hold, then press a looper to clear it.", lit: LVL_SHIFT },
 ]
 
 export const page: PageModule = {

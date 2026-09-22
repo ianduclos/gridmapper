@@ -125,12 +125,24 @@ describe("iso-hot keyboard", () => {
 		expect(r.notes().length).toBe(before)
 	})
 
-	it("leaving the page releases held notes", () => {
+	it("a held note keeps sounding across a page change, and lifting it on the other page releases it", () => {
 		const r = rig()
 		r.key(5, 7, 1)
-		r.key(0, 1, 1)
+		r.key(0, 1, 1) // focus slot b while the note is held
+		r.key(0, 1, 0)
+		expect(r.notes().filter((m) => m.args[1] === 0)).toEqual([])
+		r.key(5, 7, 0) // key-up routed back to iso-hot in slot a
 		const offs = r.notes().filter((m) => m.args[1] === 0)
 		expect(offs.map((m) => m.args[0])).toEqual([4])
+	})
+
+	it("a latched sustain stays latched across a page change", () => {
+		const r = rig()
+		r.tap(15, 4) // sustain toggle
+		r.tap(5, 7)
+		r.tap(0, 1)
+		r.tap(0, 0) // and back
+		expect(r.notes().filter((m) => m.args[1] === 0)).toEqual([])
 	})
 })
 
