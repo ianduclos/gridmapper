@@ -3,9 +3,9 @@ project: gridmapper
 state: active
 updated: 2026-09-22
 machine: mac
-summary: Hotelier concert set live on the agent; cells-hot now has a play toggle, gesture loopers, BPM tempo it owns, damp synced through set-hot, a tabbed settings panel and an on-grid key legend in the web UI; 464 tests green, none of it yet played on hardware.
+summary: Hotelier concert set live on the agent; cells-hot now has a play toggle, gesture loopers, BPM tempo it owns, damp synced through set-hot, a tabbed settings panel and a key cheatsheet popup with per-view fake LEDs in the web UI; 465 tests green, none of it yet played on hardware.
 next:
-  - Play cells-hot on the grid before the concert (2026-09-23) — play toggle, loopers, damp + damp mode, tempo, key legend on a hardware press
+  - Kickstart the gridmapper agent at an idle moment so the cheatsheet gets the new LED looks, then play cells-hot on the grid before the concert (2026-09-23)
   - Build the cells score editor from docs/cells-editor-design.md (fresh session; confirm the Hz pitch-loop form with Ian first)
   - Listening/timing pass on cells v2 per docs/cells-v2-rollout.md
   - Decide whether to commit the dirty configs/slots.json, configs/settings.json and configs/presets/hotelier.json

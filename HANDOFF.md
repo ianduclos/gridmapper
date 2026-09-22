@@ -5,7 +5,7 @@ entries: 1
 ---
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
-- done: design settled with Ian (variants, onset + length editing, row-owned pitch loops shown as a step strip, position feel + per-hit tilt); damp, loopers, BPM, tabs and key legend shipped.
+- done: design settled with Ian (variants, onset + length editing, row-owned pitch loops shown as a step strip, position feel + per-hit tilt); damp, loopers, BPM, tabs and key cheatsheet shipped.
 - next: confirm with Ian the pitch-loop value form ("cells can be frequencies"), then build the live score view followed by editing, as the design doc lays out.
 - blockers: none; the Hz-vs-steps question is the first thing to ask.
 - context: docs/cells-editor-design.md, docs/cells-hot.md, src/pages/cells-hot.ts (`events()` is the scheduler), web/index.html (`renderCellsView`).
@@ -119,6 +119,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-22 — Claude — cheatsheet popup with fake LEDs
+- Web: the key map is a popup again (Ian: the overlay forced switching modes to read them). `cheatsheet` button top-right of page settings, shown only when the page has a keymap; one tab per view, live view marked with a dot; thicker guides. The on-grid overlay is gone.
+- `KeySpec.lit` (optional): a level, a pattern over the span, or per view (`"*"` = rest), taken from each page's render(). The replica grid paints it through the LED ramp (damp view shows Damp + Shift held). cells-hot, set-hot and the selector declare it; `test/keymap.test.ts` checks levels and view names. Doc: PAGE_PROTOCOL §8a.
+- Verified: types, 465 tests, Playwright screenshots (keymap injected; the running agent still serves the old map until restarted). Not verified: hardware key echo in the popup.
+- Next: kickstart the agent when the grid is idle; "equipentatonic" needs a `short` label (overflows its key).
 
 ### 2026-09-22 — Claude — cells-hot controls, damp, key legend, tabs
 - Grid: mute moved to x1 and cells to x2–4; row 6 is cells view x1, rhythm banks x2, tuning banks x3. Damp at x0 y6 (hold = all six), and damp + shift toggles per-voice damp on col 1. Damp is sent THROUGH set-hot via the new `core/sharedStore.ts` (the one page-to-page channel; set-hot stays the single sender).
