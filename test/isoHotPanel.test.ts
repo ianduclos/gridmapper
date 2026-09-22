@@ -39,6 +39,7 @@ function rig(opts: { rng?: () => number; config?: unknown } = {}) {
 type Rig = ReturnType<typeof rig>
 
 const openPanel = (r: Rig) => r.tap(0, 6)
+const noJitter = (r: Rig) => r.pm.routeOscToPage(0 as Slot, "/setting/tintJitterMs", [0])
 /** Hold the tint key and press keys to add their pitch classes; release doesn't toggle tint. */
 const editTriad = (r: Rig, cells: Array<[number, number]>) => {
 	r.key(1, 0, 1)
@@ -67,7 +68,8 @@ describe("iso-hot performance panel", () => {
 		let f = r.pm.renderFocused()
 		expect(at(f, 0, 6)).toBe(12)
 		expect(at(f, 8, 7)).not.toBe(15) // transposer row gone
-		expect(at(f, 1, 6)).toBe(15) // octave 0 current
+		expect(at(f, 4, 6)).toBe(15) // octave 0 current
+		expect(at(f, 1, 5)).toBe(15) // tint octave 0 current
 		expect(at(f, 2, 3)).toBe(15) // speed ×1 current
 		expect(at(f, 3, 0)).toBe(15) // 100% current
 		r.clear()
@@ -94,7 +96,7 @@ describe("iso-hot performance panel", () => {
 		const r = rig()
 		r.key(6, 7, 1) // step 5
 		openPanel(r)
-		r.tap(1, 5) // +1
+		r.tap(4, 5) // +1
 		r.key(6, 7, 0)
 		expect(r.offs()).toEqual([5])
 		r.clear()
@@ -102,12 +104,12 @@ describe("iso-hot performance panel", () => {
 		expect(r.ons()).toEqual([17])
 		r.key(6, 7, 0)
 		r.clear()
-		r.tap(1, 7) // −1
+		r.tap(4, 7) // −1
 		expect(r.sent.find((m) => m.path.endsWith("/octave"))?.args).toEqual([-1])
 		r.key(6, 7, 1)
 		expect(r.ons()).toEqual([-7])
 		r.key(6, 7, 0)
-		r.tap(1, 6) // back to 0
+		r.tap(4, 6) // back to 0
 		openPanel(r) // close: LED shows no offset in force
 		expect(at(r.pm.renderFocused(), 0, 6)).toBe(2)
 	})
@@ -170,6 +172,7 @@ describe("iso-hot performance panel", () => {
 
 	it("strum staggers notes that start together, and a note released early never starts", () => {
 		const r = rig()
+		noJitter(r)
 		openPanel(r)
 		editTriad(r, [[5, 7]]) // pitch class 4
 		r.tap(1, 0) // tint on
@@ -190,6 +193,7 @@ describe("iso-hot performance panel", () => {
 
 	it("tint: above, below and alternate, fixed per held note; off removes the T-voice", () => {
 		const r = rig()
+		noJitter(r)
 		openPanel(r)
 		editTriad(r, [[5, 7], [8, 7], [11, 7]]) // pitch classes 4, 7, 10
 		expect(r.ons()).toEqual([]) // editing plays nothing
@@ -212,6 +216,21 @@ describe("iso-hot performance panel", () => {
 		r.clear()
 		r.tap(1, 0) // tint off: the T-voices go, the fingers stay
 		expect(r.offs().sort((a, b) => a - b)).toEqual([7, 16])
+	})
+
+	it("tint octave moves only the T-voice; the T-voice starts up to tintJitterMs late", () => {
+		const r = rig({ rng: () => 0.5 })
+		openPanel(r)
+		editTriad(r, [[8, 7]]) // pitch class 7
+		r.tap(1, 0)
+		r.tap(1, 6) // tint octave −1
+		r.clear()
+		r.key(6, 7, 1) // 5 → T-voice 7 − 12 = −5, 10 ms late (0.5 × 20)
+		expect(r.ons()).toEqual([5])
+		vi.advanceTimersByTime(9)
+		expect(r.ons()).toEqual([5])
+		vi.advanceTimersByTime(2)
+		expect(r.ons()).toEqual([5, -5])
 	})
 
 	it("a T-voice shimmers on the keyboard; the played note stays steady", () => {
@@ -247,7 +266,7 @@ describe("iso-hot performance panel", () => {
 		const r = rig()
 		openPanel(r)
 		r.tap(15, 0) // arm looper 0
-		r.tap(1, 4) // octave +2 → starts the take
+		r.tap(4, 4) // octave +2 → starts the take
 		vi.advanceTimersByTime(100)
 		r.tap(2, 0) // ×4
 		r.tap(3, 7) // 12.5%
@@ -266,7 +285,7 @@ describe("iso-hot performance panel", () => {
 			{ id: "tint", value: 1 },
 		])
 		// Put everything back by hand, then let the loop replay it.
-		r.tap(1, 6); r.tap(2, 3); r.tap(3, 0); r.tap(4, 0); r.tap(1, 1); r.tap(1, 0)
+		r.tap(4, 6); r.tap(2, 3); r.tap(3, 0); r.tap(4, 0); r.tap(1, 1); r.tap(1, 0)
 		vi.advanceTimersByTime(250)
 		const s = r.state()
 		expect([s.arpSpeed, s.arpProb, s.strum, s.tintMode]).toEqual(["x4", 0.125, true, "alternate"])

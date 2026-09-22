@@ -22,13 +22,15 @@
  *          (cols 5-12 stay playable; the panel and the transposer hide each other):
  *            col 1  row 0 TINT (tap = on/off, HOLD + press keys = edit the T-triad's
  *                   pitch classes) · rows 1-3 tint mode above/below/alternate ·
- *                   rows 4-7 OCTAVE +2/+1/0/−1 (a coarse transposer in npo steps,
- *                   same rules as the transposer: a note keeps the octave it began in)
+ *                   rows 4-6 TINT OCTAVE +1/0/−1 (moves only the T-voice)
  *            col 2  ARP SPEED ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4 (rows 0-6)
  *            col 3  ARP PROBABILITY 100% … 12.5% (rows 0-7). A missed beat is a REST
  *                   that doesn't advance the arp: the due note plays on the next beat
  *            col 4  row 0 STRUM: note-ons starting together (a chord preset, a loop's
- *                   chord, a note and its T-voice) are staggered `strumMs` apart
+ *                   chord, a note and its T-voice) are staggered `strumMs` apart ·
+ *                   rows 4-7 OCTAVE +2/+1/0/−1 (a coarse transposer in npo steps,
+ *                   same rules as the transposer: a note keeps the octave it began in)
+ *          T-voices are humanized: each starts 0..`tintJitterMs` late, at random.
  *          Every panel press is recorded into armed loops as a gesture, like the arp.
  *          TINTINNABULI: each live note (fingers + chord presets) gains a T-voice, the
  *          nearest step above/below it whose pitch class is in the triad. The grid only
@@ -224,6 +226,7 @@ const CTL_ARP_PROB = "arpProb" // value = panel row, 0 = 100%
 const CTL_STRUM = "strum"
 const CTL_TINT = "tint"
 const CTL_TINT_MODE = "tintMode" // value = index into TINT_MODES
+const CTL_TINT_OCTAVE = "tintOct"
 /** Control-lane value bounds, for reading a take back from an untrusted file. */
 const CTL_BOUNDS: Record<string, [number, number]> = {
 	[CTL_OCTAVE]: [-1, 2],
@@ -232,6 +235,7 @@ const CTL_BOUNDS: Record<string, [number, number]> = {
 	[CTL_STRUM]: [0, 1],
 	[CTL_TINT]: [0, 1],
 	[CTL_TINT_MODE]: [0, 2],
+	[CTL_TINT_OCTAVE]: [-1, 1],
 }
 
 /** Performance panel: col 0 row 6 shows it over keyboard cols 1-4. */
@@ -241,8 +245,9 @@ const PANEL_W = 4
 const PANEL_TINT_COL = PANEL_X0 // row 0 tint, rows 1-3 tint mode, rows 4-7 octave
 const PANEL_SPEED_COL = PANEL_X0 + 1
 const PANEL_PROB_COL = PANEL_X0 + 2
-const PANEL_STRUM_COL = PANEL_X0 + 3 // row 0 only
-const OCTAVE_ROW_TOP = 4 // +2 at row 4 … −1 at row 7
+const PANEL_STRUM_COL = PANEL_X0 + 3 // row 0 strum, rows 4-7 octave
+const OCTAVE_ROW_TOP = 4 // +2 at row 4 … −1 at row 7, in the strum column
+const TINT_OCT_ROW_TOP = 4 // tint octave +1 at row 4 … −1 at row 6, in the tint column
 const OCTAVE_MAX = 2
 const OCTAVE_MIN = -1
 /** Arp speed choices, top row first. ×N plays N steps per beat, ÷N one every N beats. */
@@ -421,6 +426,8 @@ const SPECS: SettingSpec[] = [
 	{ key: "strumMs", label: "strum spacing (ms)", type: "number", min: 2, max: 200, step: 1, default: 25 },
 	{ key: "strumDir", label: "strum direction", type: "enum", options: ["up", "down"], default: "up" },
 	{ key: "tintMode", label: "tintinnabuli mode", type: "enum", options: [...TINT_MODES], default: "above" },
+	{ key: "tintOctave", label: "tintinnabuli octave", type: "number", min: -1, max: 1, step: 1, default: 0 },
+	{ key: "tintJitterMs", label: "tint humanize (max ms late)", type: "number", min: 0, max: 200, step: 1, default: 20 },
 	{ key: "transposeChords", label: "transpose chord presets", type: "toggle", default: true },
 	{ key: "transposeLoops", label: "transpose loop playback", type: "toggle", default: true },
 	...Array.from({ length: RECORDER_ROWS }, (_, i): SettingSpec => ({
@@ -572,6 +579,8 @@ export class IsoHotPage implements Page {
 	private pendingOn = new Map<number, ReturnType<typeof setTimeout>>()
 	private tintOn = false
 	private tintMode: TintMode = SPEC_BY_KEY.get("tintMode")!.default as TintMode
+	private tintOctave = SPEC_BY_KEY.get("tintOctave")!.default as number
+	private tintJitterMs = SPEC_BY_KEY.get("tintJitterMs")!.default as number
 	/** The T-triad, as pitch classes (step mod npo). Persisted. */
 	private tintPcs = new Set<number>()
 	/** Live M-step → the T-step it was given when it started, so a held note's T-voice never flips. */
@@ -705,7 +714,9 @@ export class IsoHotPage implements Page {
 		if (!ev.s) return
 		if (x === PANEL_TINT_COL && y >= 1 && y <= TINT_MODES.length) {
 			this.setTintMode(y - 1, ctx, true)
-		} else if (x === PANEL_TINT_COL && y >= OCTAVE_ROW_TOP && y < OCTAVE_ROW_TOP + 4) {
+		} else if (x === PANEL_TINT_COL && y >= TINT_OCT_ROW_TOP && y < TINT_OCT_ROW_TOP + 3) {
+			this.setTintOctave(1 - (y - TINT_OCT_ROW_TOP), ctx, true)
+		} else if (x === PANEL_STRUM_COL && y >= OCTAVE_ROW_TOP && y < OCTAVE_ROW_TOP + 4) {
 			this.setOctave(OCTAVE_MAX - (y - OCTAVE_ROW_TOP), ctx, true)
 		} else if (x === PANEL_SPEED_COL && y < ARP_SPEEDS.length) {
 			this.setArpSpeed(y, ctx, true)
@@ -777,6 +788,15 @@ export class IsoHotPage implements Page {
 		ctx.setDirty() // sounding T-voices keep theirs; the next note takes the new mode
 	}
 
+	private setTintOctave(o: number, ctx: PageContext, byHand: boolean) {
+		const next = clamp(Math.round(o), -1, 1)
+		if (byHand) this.recordGesture(CTL_TINT_OCTAVE, next)
+		if (next === this.tintOctave) return
+		this.tintOctave = next
+		this.emitSettings(ctx)
+		ctx.setDirty() // like the mode: sounding T-voices keep theirs
+	}
+
 	private toggleTintPc(step: number, ctx: PageContext) {
 		const pc = this.pc(step)
 		if (!this.tintPcs.delete(pc)) this.tintPcs.add(pc)
@@ -807,7 +827,7 @@ export class IsoHotPage implements Page {
 		const dir = below ? -1 : 1
 		for (let d = 1; d <= this.npo; d++) {
 			const s = m + dir * d
-			if (this.tintPcs.has(this.pc(s))) return s
+			if (this.tintPcs.has(this.pc(s))) return s + this.tintOctave * this.npo
 		}
 		return null
 	}
@@ -835,9 +855,13 @@ export class IsoHotPage implements Page {
 			cur ? LVL_PANEL_CURRENT : home ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER
 		set(PANEL_TINT_COL, 0, this.tintKeyDown || this.tintOn ? LVL_PANEL_CURRENT : this.tintPcs.size ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER)
 		TINT_MODES.forEach((m, i) => set(PANEL_TINT_COL, 1 + i, m === this.tintMode ? 11 : rampLevel(LVL_PANEL_OTHER, i)))
+		for (let r = 0; r < 3; r++) {
+			const o = 1 - r
+			set(PANEL_TINT_COL, TINT_OCT_ROW_TOP + r, pick(o === this.tintOctave, o === 0))
+		}
 		for (let r = 0; r < 4; r++) {
 			const o = OCTAVE_MAX - r
-			set(PANEL_TINT_COL, OCTAVE_ROW_TOP + r, pick(o === this.octave, o === 0))
+			set(PANEL_STRUM_COL, OCTAVE_ROW_TOP + r, pick(o === this.octave, o === 0))
 		}
 		for (let r = 0; r < ARP_SPEEDS.length; r++) set(PANEL_SPEED_COL, r, pick(r === this.arpSpeed, r === ARP_SPEED_DEFAULT))
 		const probRow = Math.round(PROB_ROWS - this.arpProb * PROB_ROWS)
@@ -1592,18 +1616,23 @@ export class IsoHotPage implements Page {
 	 * so a lone finger is never delayed — only chords, loop chords and T-voices spread.
 	 */
 	private startNotes(ctx: PageContext, keys: number[]) {
-		if (!this.strum || keys.length < 2) {
-			for (const key of keys) this.note(ctx, key, true)
-			return
+		// T-voices (that aren't also a played note) are humanized: 0..tintJitterMs late.
+		const tSteps = new Set<number>()
+		if (this.tintJitterMs > 0) for (const t of this.tintOf.values()) if (!this.tintOf.has(t)) tSteps.add(t)
+		const strum = this.strum && keys.length > 1
+		if (strum) {
+			const sign = this.strumDir === "down" ? -1 : 1
+			keys.sort((a, b) => sign * (stepOf(a) - stepOf(b)) || a - b)
 		}
-		const sign = this.strumDir === "down" ? -1 : 1
-		keys.sort((a, b) => sign * (stepOf(a) - stepOf(b)) || a - b)
 		keys.forEach((key, n) => {
-			if (n === 0) return this.note(ctx, key, true)
+			const late =
+				(strum ? n * this.strumMs : 0) +
+				(tSteps.has(stepOf(key)) ? Math.round(this.rng() * this.tintJitterMs) : 0)
+			if (late <= 0) return this.note(ctx, key, true)
 			this.pendingOn.set(key, setTimeout(() => {
 				if (!this.pendingOn.delete(key)) return
 				this.note(ctx, key, true)
-			}, n * this.strumMs))
+			}, late))
 		})
 	}
 
@@ -1756,6 +1785,7 @@ export class IsoHotPage implements Page {
 				else if (id === CTL_STRUM) this.setStrum(value > 0, ctx, false)
 				else if (id === CTL_TINT) this.setTint(value > 0, ctx, false)
 				else if (id === CTL_TINT_MODE) this.setTintMode(value, ctx, false)
+				else if (id === CTL_TINT_OCTAVE) this.setTintOctave(value, ctx, false)
 			}
 		}
 		// Free-run the arp only while the transport is stopped; otherwise onTick owns it.
@@ -1932,6 +1962,8 @@ export class IsoHotPage implements Page {
 		else if (key === "arpRate") this.arpRate = v
 		else if (key === "arpDiv") this.arpDiv = v
 		else if (key === "strumMs") this.strumMs = v
+		else if (key === "tintOctave") this.tintOctave = v
+		else if (key === "tintJitterMs") this.tintJitterMs = v
 		return true
 	}
 
@@ -1962,6 +1994,8 @@ export class IsoHotPage implements Page {
 			strumMs: this.strumMs,
 			strumDir: this.strumDir,
 			tintMode: this.tintMode,
+			tintOctave: this.tintOctave,
+			tintJitterMs: this.tintJitterMs,
 			transposeChords: this.transposeChords,
 			transposeLoops: this.transposeLoops,
 			...Object.fromEntries(
@@ -1994,9 +2028,10 @@ export const keymap: KeySpec[] = [
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
 	{ x: KEYS_X0, y: 7, w: KEYS_W - KEYS_X0, view: "transposer", name: "Transpose −7…+4", short: "Transpose", help: "Col 8 = no transpose. A note keeps the transposition it started with. Loops record moves as gestures.", lit: Array.from({ length: KEYS_W - KEYS_X0 }, (_, i) => (i + KEYS_X0 === TRANSPOSE_ZERO_COL ? LVL_TR_CURRENT : LVL_TR_OTHER)) },
-	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off (T-voices shimmer on the keyboard). Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off (T-voices shimmer on the keyboard, and start up to tintJitterMs late). Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
 	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
-	{ x: PANEL_TINT_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
+	{ x: PANEL_TINT_COL, y: TINT_OCT_ROW_TOP, h: 3, view: "panel", name: "Tint octave +1 · 0 · −1", short: "T oct", help: "Moves only the T-voice by an octave, so it can sit away from the melody.", lit: pick(3, 1, 1) },
+	{ x: PANEL_STRUM_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
 	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
 	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "A missed beat rests without advancing; the due note plays on the next beat.", lit: pick(PROB_ROWS, 0, 0) },
 	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
