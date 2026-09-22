@@ -334,10 +334,11 @@ src/
                          <1|0>, changes only. In (never echoed): /voice/<n>/<param> <1|0> sync,
                          /voice/<n>/state <0|1|2> feedback on row 3. Switches are runtime
                          only and send nothing at load. Col 15 rows 0-2 = 3 GESTURE LOOPERS
-                         (col 0 row 7 = shift 1, +press clears); col 15 rows 3-7 = TWISTER
-                         PAGES a-e → /twister/in/focus/page <a-e> (lit = last pressed here): damp records as notes (step =
+                         (col 0 row 7 = shift 1, +press clears): damp records as notes (step =
                          voice), toggles as ctl events `<param>/<voice>`; playback drives the
                          switches (latest wins, damp = hand OR loop). Loops save in presets.
+                         Col 15 rows 3-7 = TWISTER PAGES a-e → /twister/in/focus/page <a-e>
+                         (lit = last pressed here; the Twister doesn't report its focus back).
   pages/cells-hot.ts     HOTELIER hocket sequencer (slot b): six banked voices scheduled
                          against transport deadlines → /grid/out/page/<slot>/cells (JSON).
                          Cells OWNS TEMPO (shown as BPM, 3 pulses/beat); a transport edit is
