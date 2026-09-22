@@ -192,24 +192,39 @@
 		.cx-tab:hover { opacity: 1; }
 		.cx-tab[aria-selected="true"] { opacity: 1; font-weight: 500; border-bottom-color: var(--ink); }
 		.cx-panel > .cx-section:first-child { border-top: 0; }
-		/* Key legend over the web grid: thin dotted guides, small quiet labels. */
-		#grid { position: relative; }
-		#legend { position: absolute; inset: 0; pointer-events: none; }
-		#legend .lg-lines { position: absolute; left: 0; top: 0; overflow: visible; }
-		#legend .lg-lines .lg-dash { stroke: rgba(236,233,225,.5); stroke-width: 1.2; stroke-dasharray: 1 4; stroke-linecap: round; fill: none; }
-		#legend .lg-lines circle, #legend .lg-lines path { fill: rgba(236,233,225,.7); }
-		.lg-pill {
+		/* Cheatsheet popup: the focused page's key map drawn diagram-style on a replica grid. */
+		.settings .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+		.settings .title-row .chip { font-size: 11px; padding: 3px 8px; margin-top: -3px; opacity: .7; }
+		.settings .title-row .chip:hover { opacity: 1; }
+		#keysDialog { border: 1px solid var(--ink); border-radius: 8px; background: var(--bg); color: var(--ink); padding: 18px 20px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); }
+		#keysDialog::backdrop { background: rgba(21,20,15,.4); }
+		.kd-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+		.kd-head h2 { font-size: 14px; font-weight: 500; margin: 0; }
+		.kd-views { display: flex; gap: 4px; flex-wrap: wrap; }
+		.kd-views .chip.live::after { content: " \25CF"; font-size: 9px; vertical-align: 1px; }
+		#keysClose { margin-left: auto; }
+		.kd-grid { position: relative; display: grid; gap: 6px; padding: 14px; background: var(--panel); border-radius: 8px; width: max-content; }
+		.kd-cell { width: 54px; height: 54px; border-radius: 3px; background: rgb(var(--key-off)); }
+		.kd-cell.set { background: rgb(66, 63, 58); }
+		.kd-layer { position: absolute; inset: 0; pointer-events: none; }
+		.kd-lines { position: absolute; left: 0; top: 0; overflow: visible; }
+		.kd-lines .kd-dash { stroke: rgba(236,233,225,.85); stroke-width: 2.2; stroke-dasharray: 2 5; stroke-linecap: round; fill: none; }
+		.kd-lines circle, .kd-lines path { fill: rgb(236,233,225); }
+		.kd-pill {
 			position: absolute; transform: translate(-50%, -50%);
 			background: var(--bg); color: var(--ink); border-radius: 3px;
-			font-size: 10.5px; font-weight: 500; line-height: 1.2; letter-spacing: .2px;
+			font-size: 11.5px; font-weight: 500; line-height: 1.2; letter-spacing: .2px;
 			padding: 2px 6px; text-align: center; white-space: normal; overflow-wrap: normal;
 			box-shadow: 0 0 0 1px rgba(12,11,9,.6);
 			transition: background .08s, color .08s;
 		}
-		.lg-pill.lg-single { background: rgba(236,233,225,.9); padding: 2px 3px; font-size: 9.5px; letter-spacing: 0; }
-		.lg-pill.hot { background: var(--ink); color: var(--bg); box-shadow: 0 0 0 1px rgb(var(--key-on)); }
-		.readout.lg-info { opacity: 1; font-size: 13px; letter-spacing: .2px; line-height: 1.45; max-width: 740px; }
-		.readout.lg-info b { font-weight: 500; }
+		.kd-pill.kd-single { padding: 2px 3px; font-size: 10.5px; letter-spacing: 0; }
+		.kd-pill.hot { background: var(--ink); color: var(--bg); box-shadow: 0 0 0 1.5px rgb(var(--key-on)); }
+		.kd-info { font-size: 13px; line-height: 1.45; min-height: 38px; margin: 12px 0 8px; max-width: 90ch; }
+		.kd-info b { font-weight: 500; }
+		.kd-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 12px; margin: 0; max-height: 28vh; overflow: auto; }
+		.kd-list dt { font-weight: 500; }
+		.kd-list dd { margin: 0; opacity: .75; }
 		.settings button:focus-visible, .settings input:focus-visible, .settings select:focus-visible, .settings summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 		.settings .enum-button:hover { opacity: .85; }
 		.settings .enum-button[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
@@ -241,7 +256,6 @@
 				<div class="group">
 					<span class="lbl">page</span>
 					<select class="select" id="pageSelect"></select>
-					<button class="chip" id="keysBtn" aria-pressed="false" title="label every key on the grid">keys</button>
 				</div>
 				<div class="group" id="transport">
 					<span class="lbl">clock</span>
@@ -255,7 +269,7 @@
 			<div id="grid"></div>
 			<div class="readout" id="readout">&nbsp;</div>
 			<div class="settings wide">
-				<div class="title">page settings</div>
+				<div class="title-row"><div class="title">page settings</div><button class="chip" id="keysBtn" hidden title="what each key does on this page, in every view">cheatsheet</button></div>
 				<div class="ctx" id="settingsCtx">—</div>
 				<div id="settingsFields"></div>
 				<div class="note" id="settingsNote"></div>
@@ -294,6 +308,13 @@
 		</aside>
 	</main>
 
+	<dialog id="keysDialog" aria-labelledby="keysTitle">
+		<div class="kd-head"><h2 id="keysTitle">Cheatsheet</h2><div id="keysViews" class="kd-views" role="tablist"></div><button class="chip" id="keysClose">close</button></div>
+		<div id="keysGrid" class="kd-grid"></div>
+		<p id="keysInfo" class="kd-info" aria-live="polite"></p>
+		<dl id="keysList" class="kd-list"></dl>
+	</dialog>
+
 	<script>
 		let W = 16, H = 8;
 		const gridEl = document.getElementById("grid");
@@ -316,8 +337,6 @@
 		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
 		let cellsViews = SLOT_LABELS.map(() => null);
 		let keymapsByPage = {};                        // pageName -> KeySpec[]
-		let legendOn = false;
-		try { legendOn = localStorage.getItem("key-legend") === "1"; } catch {}
 		let cellsViewSignature = "";
 		const cellsPanel = document.createElement("section");
 		cellsPanel.className = "cells-details"; cellsPanel.setAttribute("aria-label", "Cells performance");
@@ -354,7 +373,7 @@
 		// Build the right-hand panel from the focused slot's page specs + current values.
 		function renderSettings() {
 			const page = slotPages[focusedSlot];
-			renderLegend();
+			renderKeys();
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
 			if (page === "cells-hot") { cellsViewSignature = ""; renderCellsView(); return; }
 			const specs = specsByPage[page] || [];
@@ -414,76 +433,102 @@
 			renderCellsView();
 		}
 
-		// --- Key legend: the focused page's key map drawn over the web grid, diagram-style.
-		// Single keys get a label; a column span a dotted line with end dots; a row span a
-		// line with arrows; a block a dotted outline. Hover a key, or press one on the
-		// hardware (the sim echoes keys to the web), for its full description.
+		// --- Cheatsheet: the focused page's key map drawn on a replica grid in a popup,
+		// diagram-style. Single keys get a label; a column span a dotted line with end dots;
+		// a row span a line with arrows; a block a dotted outline. One tab per view, so
+		// alternate modes read without switching to them; it opens on the live view. Hover
+		// a key, or press one on the hardware (the sim echoes keys to the web), for its help.
 		const keysBtn = document.getElementById("keysBtn");
-		keysBtn.onclick = () => { legendOn = !legendOn; try { localStorage.setItem("key-legend", legendOn ? "1" : "0"); } catch {} renderLegend(); };
-		let legendOwner = [], legendPills = new Map(), legendHot = null, legendHotTimer = null;
+		const keysDialog = document.getElementById("keysDialog");
+		const keysGrid = document.getElementById("keysGrid");
+		const keysInfo = document.getElementById("keysInfo");
+		let keysView = null, keysPinned = false;       // pinned: a tab was chosen by hand
+		let keysOwner = [], keysPills = new Map(), keysHot = null, keysHotTimer = null;
+		keysBtn.onclick = () => { keysPinned = false; keysHot = null; keysDialog.showModal(); renderKeys(); };
+		document.getElementById("keysClose").onclick = () => keysDialog.close();
+		keysDialog.addEventListener("click", (e) => { if (e.target === keysDialog) keysDialog.close(); });
 		const spanLabel = (k) => {
 			const xs = (k.w || 1) > 1 ? `x${k.x}–${k.x + k.w - 1}` : `x${k.x}`;
 			const ys = (k.h || 1) > 1 ? `y${k.y}–${k.y + k.h - 1}` : `y${k.y}`;
 			return `${xs} ${ys}`;
 		};
-		function showLegendInfo(k) {
-			if (!legendOn) return;
-			readoutEl.replaceChildren();
-			readoutEl.classList.toggle("lg-info", !!k);
-			if (!k) { readoutEl.textContent = " "; return; }
+		function showKeyInfo(k) {
+			keysInfo.replaceChildren();
+			if (!k) { keysInfo.textContent = "Hover a key, or press one on the grid."; return; }
 			const b = document.createElement("b"); b.textContent = k.name;
-			readoutEl.append(b, `  ${spanLabel(k)}${k.help ? `  ${k.help}` : ""}`);
+			keysInfo.append(b, `  ${spanLabel(k)}${k.help ? ` — ${k.help}` : ""}`);
 		}
-		function legendKey(x, y, s) {
-			if (!legendOn) return;
-			const k = legendOwner[y * W + x]; if (!k) return;
-			clearTimeout(legendHotTimer);
-			if (legendHot && legendHot !== k) legendPills.get(legendHot)?.classList.remove("hot");
-			legendHot = k; legendPills.get(k)?.classList.add("hot"); showLegendInfo(k);
-			if (!s) legendHotTimer = setTimeout(() => { legendPills.get(k)?.classList.remove("hot"); legendHot = null; }, 500);
+		function keyEcho(x, y, s) {
+			if (!keysDialog.open) return;
+			const k = keysOwner[y * W + x]; if (!k) return;
+			clearTimeout(keysHotTimer);
+			if (keysHot && keysHot !== k) keysPills.get(keysHot)?.classList.remove("hot");
+			keysHot = k; keysPills.get(k)?.classList.add("hot"); showKeyInfo(k);
+			if (!s) keysHotTimer = setTimeout(() => { keysPills.get(k)?.classList.remove("hot"); keysHot = null; }, 500);
 		}
-		function renderLegend() {
-			keysBtn.setAttribute("aria-pressed", String(legendOn)); keysBtn.classList.toggle("on", legendOn);
-			let layer = document.getElementById("legend");
-			if (!legendOn || !cells.length) { layer?.remove(); legendOwner = []; legendPills = new Map(); readoutEl.classList.remove("lg-info"); return; }
-			if (!layer) { layer = document.createElement("div"); layer.id = "legend"; layer.setAttribute("aria-hidden", "true"); }
-			if (layer.parentNode !== gridEl) gridEl.appendChild(layer);
-			layer.replaceChildren();
-			const map = keymapsByPage[slotPages[focusedSlot]] || [];
+		function renderKeys() {
+			const page = slotPages[focusedSlot], map = keymapsByPage[page] || [];
+			keysBtn.hidden = !map.length;
+			if (!keysDialog.open) return;
+			if (!map.length) { keysDialog.close(); return; }
+			document.getElementById("keysTitle").textContent = `Cheatsheet · ${page}`;
 			const views = [...new Set(map.filter((k) => k.view).map((k) => k.view))];
-			const want = cellsViews[focusedSlot]?.keyView;
-			const view = views.includes(want) ? want : views[0] || null;
-			// Page-wide entries first, so the current view's entries win where they overlap.
-			const shown = [...map.filter((k) => !k.view), ...map.filter((k) => k.view === view)];
-			legendOwner = new Array(W * H).fill(null);
-			for (const k of shown) for (let y = k.y; y < k.y + (k.h || 1); y++) for (let x = k.x; x < k.x + (k.w || 1); x++) if (x < W && y < H) legendOwner[y * W + x] = k;
+			const live = cellsViews[focusedSlot]?.keyView;
+			if (!keysPinned || !views.includes(keysView)) keysView = views.includes(live) ? live : views[0] || null;
+			const tabs = document.getElementById("keysViews"); tabs.replaceChildren();
+			for (const v of views) {
+				const b = document.createElement("button"); b.className = "chip" + (v === keysView ? " on" : "") + (v === live ? " live" : "");
+				b.textContent = v; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(v === keysView));
+				if (v === live) b.title = "the view the grid is showing now";
+				b.onclick = () => { keysView = v; keysPinned = true; renderKeys(); }; tabs.appendChild(b);
+			}
+			// Page-wide entries first, so the view's own entries win where they overlap.
+			const shown = [...map.filter((k) => !k.view), ...map.filter((k) => k.view === keysView)];
+			keysOwner = new Array(W * H).fill(null);
+			for (const k of shown) for (let y = k.y; y < k.y + (k.h || 1); y++) for (let x = k.x; x < k.x + (k.w || 1); x++) if (x < W && y < H) keysOwner[y * W + x] = k;
+			keysGrid.style.gridTemplateColumns = `repeat(${W}, 54px)`;
+			const cellEls = keysOwner.map((k) => {
+				const c = document.createElement("div"); c.className = "kd-cell" + (k ? " set" : "");
+				c.onmouseenter = () => showKeyInfo(k); return c;
+			});
+			keysGrid.replaceChildren(...cellEls);
+			keysGrid.onmouseleave = () => { if (!keysHot) showKeyInfo(null); };
+			const layer = document.createElement("div"); layer.className = "kd-layer"; layer.setAttribute("aria-hidden", "true");
+			keysGrid.append(layer);
 			const NS = "http://www.w3.org/2000/svg";
 			const svg = document.createElementNS(NS, "svg");
-			svg.setAttribute("class", "lg-lines"); svg.setAttribute("width", gridEl.clientWidth); svg.setAttribute("height", gridEl.clientHeight);
+			svg.setAttribute("class", "kd-lines"); svg.setAttribute("width", keysGrid.clientWidth); svg.setAttribute("height", keysGrid.clientHeight);
 			const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const [a, v] of Object.entries(attrs)) e.setAttribute(a, v); svg.append(e); return e; };
-			const box = (x, y) => { const c = cells[y * W + x]; return { l: c.offsetLeft, t: c.offsetTop, w: c.offsetWidth, h: c.offsetHeight }; };
+			const box = (x, y) => { const c = cellEls[y * W + x]; return { l: c.offsetLeft, t: c.offsetTop, w: c.offsetWidth, h: c.offsetHeight }; };
 			layer.append(svg);
-			legendPills = new Map();
+			keysPills = new Map();
 			for (const k of shown) {
-				if (!legendOwner.includes(k)) continue; // fully covered by a view's own entries
+				if (!keysOwner.includes(k)) continue; // fully covered by the view's own entries
 				const w = k.w || 1, h = k.h || 1, a = box(k.x, k.y), b = box(k.x + w - 1, k.y + h - 1);
 				const x0 = a.l + a.w / 2, y0 = a.t + a.h / 2, x1 = b.l + b.w / 2, y1 = b.t + b.h / 2;
-				const pill = document.createElement("span"); pill.className = "lg-pill"; pill.textContent = k.short || k.name;
+				const pill = document.createElement("span"); pill.className = "kd-pill"; pill.textContent = k.short || k.name;
 				let maxW = b.l + b.w - a.l - 8;
-				if (w === 1 && h === 1) { pill.classList.add("lg-single"); maxW = a.w + 12; }
+				if (w === 1 && h === 1) { pill.classList.add("kd-single"); maxW = a.w + 12; }
 				else if (w === 1) {
-					el("line", { x1: x0, y1: y0, x2: x1, y2: y1, class: "lg-dash" });
-					el("circle", { cx: x0, cy: y0, r: 2.4 }); el("circle", { cx: x1, cy: y1, r: 2.4 });
+					el("line", { x1: x0, y1: y0, x2: x1, y2: y1, class: "kd-dash" });
+					el("circle", { cx: x0, cy: y0, r: 3.4 }); el("circle", { cx: x1, cy: y1, r: 3.4 });
 					maxW = a.w + 14;
 				} else if (h === 1) {
-					el("line", { x1: x0 - a.w / 2 + 6, y1: y0, x2: x1 + b.w / 2 - 6, y2: y1, class: "lg-dash" });
-					el("path", { d: `M${x0 - a.w / 2 + 3},${y0} l6,-3.5 v7 z` }); el("path", { d: `M${x1 + b.w / 2 - 3},${y1} l-6,-3.5 v7 z` });
+					el("line", { x1: x0 - a.w / 2 + 8, y1: y0, x2: x1 + b.w / 2 - 8, y2: y1, class: "kd-dash" });
+					el("path", { d: `M${x0 - a.w / 2 + 3},${y0} l8,-4.5 v9 z` }); el("path", { d: `M${x1 + b.w / 2 - 3},${y1} l-8,-4.5 v9 z` });
 				} else {
-					el("rect", { x: a.l - 4, y: a.t - 4, width: b.l + b.w - a.l + 8, height: b.t + b.h - a.t + 8, rx: 7, class: "lg-dash" });
+					el("rect", { x: a.l - 4, y: a.t - 4, width: b.l + b.w - a.l + 8, height: b.t + b.h - a.t + 8, rx: 7, class: "kd-dash" });
 				}
 				pill.style.left = `${(x0 + x1) / 2}px`; pill.style.top = `${(y0 + y1) / 2}px`; pill.style.maxWidth = `${maxW}px`;
-				if (k === legendHot) pill.classList.add("hot");
-				layer.append(pill); legendPills.set(k, pill);
+				if (k === keysHot) pill.classList.add("hot");
+				layer.append(pill); keysPills.set(k, pill);
+			}
+			if (!keysHot) showKeyInfo(null);
+			const list = document.getElementById("keysList"); list.replaceChildren();
+			for (const k of shown) {
+				if (!keysOwner.includes(k)) continue;
+				const dt = document.createElement("dt"), dd = document.createElement("dd");
+				dt.textContent = `${k.name} (${spanLabel(k)})`; dd.textContent = k.help || ""; list.append(dt, dd);
 			}
 		}
 
@@ -911,7 +956,6 @@
 			return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 		}
 
-		gridEl.addEventListener("mouseleave", () => { if (!legendHot) showLegendInfo(null); });
 		function buildGrid(w, h) {
 			W = w; H = h;
 			gridEl.style.gridTemplateColumns = `repeat(${w}, 46px)`;
@@ -922,7 +966,6 @@
 					const c = document.createElement("div");
 					c.className = "cell";
 					c.dataset.x = x; c.dataset.y = y;
-					c.addEventListener("mouseenter", () => showLegendInfo(legendOwner[y * w + x]));
 					gridEl.appendChild(c);
 					cells.push(c);
 				}
@@ -931,7 +974,7 @@
 			requestAnimationFrame(() => {
 				const panel = document.querySelector(".settings.wide");
 				if (panel) panel.style.width = `${gridEl.offsetWidth}px`;
-				renderLegend();
+				renderKeys();
 			});
 		}
 
@@ -956,8 +999,8 @@
 						break;
 					case "/grid/out/size": buildGrid(m.args[0], m.args[1]); break;
 					case "/grid/out/pagetypes": pageTypes = m.args; buildPageOptions(); break;
-					case "/grid/out/pagekeys": { try { keymapsByPage = JSON.parse(m.args[0]); } catch {} renderLegend(); break; }
-					case "/grid/out/keyecho": legendKey(m.args[0], m.args[1], m.args[2]); break;
+					case "/grid/out/pagekeys": { try { keymapsByPage = JSON.parse(m.args[0]); } catch {} renderKeys(); break; }
+					case "/grid/out/keyecho": keyEcho(m.args[0], m.args[1], m.args[2]); break;
 					case "/grid/out/pagespecs": { try { specsByPage = JSON.parse(m.args[0]); } catch {} renderSettings(); break; }
 					case "/grid/out/focus/page": { const i = SLOT_LABELS.indexOf(m.args[0]); if (i >= 0) focusedSlot = i; renderToolbar(); requestCellsView(); break; }
 					case "/grid/out/slots": slotPages = m.args; renderToolbar(); requestCellsView(); break;
@@ -978,7 +1021,7 @@
 					default: {
 						const vm = m.path.match(/^\/grid\/out\/page\/([a-h])\/view$/);
 						if (vm) {
-							try { const idx=SLOT_LABELS.indexOf(vm[1]); cellsViews[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) { renderCellsView(); renderLegend(); } } catch {}
+							try { const idx=SLOT_LABELS.indexOf(vm[1]); cellsViews[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) { renderCellsView(); renderKeys(); } } catch {}
 							break;
 						}
 						const pm = m.path.match(/^\/grid\/out\/page\/([a-h])\/patterns$/);
