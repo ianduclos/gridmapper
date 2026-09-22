@@ -184,8 +184,8 @@ import {
 	ledIndex,
 } from "../core/types.js"
 import type { ClockState } from "../core/clock.js"
-import type { PageModule, SettingSpec } from "../core/pageModule.js"
-import { selectorKey, drawSelector } from "../util/pageSelector.js"
+import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
+import { selectorKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelector.js"
 import { clamp } from "../util/scale.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
 import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
@@ -1963,9 +1963,46 @@ export class IsoHotPage implements Page {
 	}
 }
 
+// Cheat-sheet looks, from render() at the defaults: the scale map of a block of keys.
+const keyboardLit = (x0: number, w: number, h: number) =>
+	Array.from({ length: h }, (_, y) =>
+		Array.from({ length: w }, (_, i) => {
+			const step = stepAt(x0 + i - KEYS_X0, y, 8, 5)
+			return isRootOf(step, 0) ? LVL_ROOT : isInScale(step, 0, DEFAULT_SCALE) ? LVL_NORMAL : LVL_OUT
+		}),
+	).flat()
+const pick = (n: number, cur: number, home: number) =>
+	Array.from({ length: n }, (_, r) => (r === cur ? LVL_PANEL_CURRENT : r === home ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER))
+
+/** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
+export const keymap: KeySpec[] = [
+	...SELECTOR_KEYS,
+	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Performance panel", short: "Panel", help: "Show the octave / arp speed / probability / strum / tint panel on cols 1-4. Dim-bright when a non-default value is in force while hidden. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
+	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
+	{ x: KEYS_X0, y: 7, w: KEYS_W - KEYS_X0, view: "transposer", name: "Transpose −7…+4", short: "Transpose", help: "Col 8 = no transpose. A note keeps the transposition it started with. Loops record moves as gestures.", lit: Array.from({ length: KEYS_W - KEYS_X0 }, (_, i) => (i + KEYS_X0 === TRANSPOSE_ZERO_COL ? LVL_TR_CURRENT : LVL_TR_OTHER)) },
+	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off. Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 2, 3] },
+	{ x: PANEL_TINT_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
+	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
+	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "A missed beat rests without advancing; the due note plays on the next beat.", lit: pick(PROB_ROWS, 0, 0) },
+	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_X0 + PANEL_W, y: 0, w: KEYS_W - PANEL_X0 - PANEL_W, h: 8, view: "panel", name: "Keyboard", help: "Still playable beside the panel. While Tint is held, presses edit the triad instead.", lit: keyboardLit(PANEL_X0 + PANEL_W, KEYS_W - PANEL_X0 - PANEL_W, 8) },
+	{ x: KEYS_W, y: 0, h: 8, name: "Chord presets", short: "Chords", help: "Press: play the saved chord. With the sustain toggle on: save what's ringing (same slot again releases). Shift 1 + press clears.", lit: [LVL_PRESET_FULL, LVL_PRESET_FULL, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY] },
+	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Where live notes go. Shift 2 + press multi-selects; Shift 1 + press edits which loopers feed it.", lit: [LVL_TRACK_ON, 2, 3, 4] },
+	{ x: KEYS_W + 1, y: ARP_ROW_START, h: ARP_BUTTONS.length, name: "Arp: up · down · palindrome · urn", short: "Arp", help: "Arpeggiate the held chord; press the lit one to stop.", lit: [1, 2, 3, 4] },
+	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
+	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Sustain toggle", short: "Sus. tog", help: "Latching sustain; also arms the chord presets for saving.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SUSTAIN_PEDAL_ROW, name: "Sustain pedal", short: "Pedal", help: "Momentary sustain; double-tap to latch.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold + track: multi-select tracks.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear. Hold + track: routing edit.", lit: LVL_SHIFT },
+]
+
 export const page: PageModule = {
 	name: "iso-hot",
 	label: "Iso Hot",
 	create: () => new IsoHotPage(),
 	settings: SPECS,
+	keymap,
 }

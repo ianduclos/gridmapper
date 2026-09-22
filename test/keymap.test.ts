@@ -37,5 +37,6 @@ describe("page key maps", () => {
 	it("covers cells-hot and set-hot", () => {
 		expect(pageKeymap("cells-hot").length).toBeGreaterThan(10)
 		expect(pageKeymap("set-hot").length).toBeGreaterThan(5)
+		expect(pageKeymap("iso-hot").length).toBeGreaterThan(10)
 	})
 })
