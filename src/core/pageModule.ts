@@ -34,6 +34,9 @@ export interface SettingSpec {
 	default: number | boolean | string
 }
 
+/** LED levels 0–15 over a key span, row-major, repeated when shorter than the span. */
+export type KeyLit = number | readonly number[]
+
 /**
  * One entry of a page's key map: the cheat-sheet the web UI shows. A span (w×h) names a
  * block of keys at once. `view` scopes it to one of the page's modes (e.g. a bank view
@@ -50,6 +53,12 @@ export interface KeySpec {
 	short?: string
 	help?: string
 	view?: string
+	/**
+	 * How the key typically looks, so the cheat-sheet's replica grid reads like the hardware:
+	 * one level or a pattern, or per view (keyed by view name, `"*"` for the rest). Unset = dark.
+	 * Take the levels from the page's own render().
+	 */
+	lit?: KeyLit | Readonly<Record<string, KeyLit>>
 }
 
 export interface PageModule {

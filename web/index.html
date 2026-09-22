@@ -205,7 +205,6 @@
 		#keysClose { margin-left: auto; }
 		.kd-grid { position: relative; display: grid; gap: 6px; padding: 14px; background: var(--panel); border-radius: 8px; width: max-content; }
 		.kd-cell { width: 54px; height: 54px; border-radius: 3px; background: rgb(var(--key-off)); }
-		.kd-cell.set { background: rgb(66, 63, 58); }
 		.kd-layer { position: absolute; inset: 0; pointer-events: none; }
 		.kd-lines { position: absolute; left: 0; top: 0; overflow: visible; }
 		.kd-lines .kd-dash { stroke: rgba(236,233,225,.85); stroke-width: 2.2; stroke-dasharray: 2 5; stroke-linecap: round; fill: none; }
@@ -487,8 +486,16 @@
 			keysOwner = new Array(W * H).fill(null);
 			for (const k of shown) for (let y = k.y; y < k.y + (k.h || 1); y++) for (let x = k.x; x < k.x + (k.w || 1); x++) if (x < W && y < H) keysOwner[y * W + x] = k;
 			keysGrid.style.gridTemplateColumns = `repeat(${W}, 54px)`;
-			const cellEls = keysOwner.map((k) => {
-				const c = document.createElement("div"); c.className = "kd-cell" + (k ? " set" : "");
+			// Fake LEDs: each key's declared typical level in this view, through the same ramp.
+			const litOf = (k, i) => {
+				let lit = k?.lit;
+				if (lit && typeof lit === "object" && !Array.isArray(lit)) lit = lit[keysView] ?? lit["*"];
+				if (Array.isArray(lit)) lit = lit.length ? lit[i % lit.length] : 0;
+				return typeof lit === "number" ? lit : 0;
+			};
+			const cellEls = keysOwner.map((k, i) => {
+				const c = document.createElement("div"); c.className = "kd-cell";
+				if (k) { const x = i % W, y = Math.floor(i / W); c.style.background = levelColor(litOf(k, (y - k.y) * (k.w || 1) + (x - k.x))); }
 				c.onmouseenter = () => showKeyInfo(k); return c;
 			});
 			keysGrid.replaceChildren(...cellEls);

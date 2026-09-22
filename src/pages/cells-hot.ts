@@ -1302,28 +1302,33 @@ const WORLD_SHORT: Record<string, string> = {
 	kotekan: "Pelayon",
 }
 const shortWorld = (id: string) => WORLD_SHORT[id] ?? worlds[id].name.split(" — ")[0]
-/** The web cheat-sheet: views are the three row-6 modes. */
+// Cheat-sheet looks, from render(): a cell chosen per row, phase bars part-way through.
+const CELLS_LIT = Array.from({ length: VOICES }, (_, y) => [0, 1, 2].map((x) => (x === y % 3 ? 12 : 2))).flat()
+const PHASE_LIT = Array.from({ length: VOICES }, (_, y) =>
+	Array.from({ length: 11 }, (_, i) => playheadLevel(i, [3.5, 7.2, 1.6, 9.8, 5.1, 0.4][y], y === 4)),
+).flat()
+/** The web cheat-sheet: views are the row-6 modes, plus damp mode. */
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
-	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve." },
-	{ x: MUTE_X, y: 0, h: VOICES, view: "damp", name: "Damp voice", short: "Damp", help: "Hold to damp that voice (sent through set-hot). Press Damp or Shift to leave damp mode." },
+	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve.", lit: [8, 8, 8, 8, 3, 8] },
+	{ x: MUTE_X, y: 0, h: VOICES, view: "damp", name: "Damp voice", short: "Damp", help: "Hold to damp that voice (sent through set-hot). Press Damp or Shift to leave damp mode.", lit: [6, 15, 6, 6, 6, 6] },
 	...(["cells", "damp"] as const).flatMap((view): KeySpec[] => [
-		{ x: CELL_X0, y: 0, w: 3, h: VOICES, view, name: "Cells 1–3", help: "Choose the voice's cell; it comes in at the current phase. Tap the lit one to mute." },
-		{ x: 5, y: 0, w: 11, h: VOICES, view, name: "Phase", help: "The cycle's progress; the last key flashes on each onset. Dim = muted or resting." },
+		{ x: CELL_X0, y: 0, w: 3, h: VOICES, view, name: "Cells 1–3", help: "Choose the voice's cell; it comes in at the current phase. Tap the lit one to mute.", lit: CELLS_LIT },
+		{ x: 5, y: 0, w: 11, h: VOICES, view, name: "Phase", help: "The cycle's progress; the last key flashes on each onset. Dim = muted or resting.", lit: PHASE_LIT },
 	]),
-	{ x: DAMP_X, y: DAMP_Y, name: "Damp", help: "Hold to damp all six voices, in sync with set-hot. Hold together with Shift to toggle per-voice damp on column 1; press either to leave." },
-	...worldNames.map((id, i): KeySpec => ({ x: 1 + (i % 15), y: Math.floor(i / 15), view: "rhythm banks", name: worlds[id].name, short: shortWorld(id), help: "Switch world on the next shared beat." })),
-	...tunings.map((id, i): KeySpec => ({ x: i < 5 ? i + 1 : i - 4, y: i < 5 ? 0 : 1, view: "tuning banks", name: tuningLabels[id] ?? id, short: (tuningLabels[id] ?? id).replace("Hotelier · ", "").split(" ")[0], help: i < 5 ? "Included tuning." : "Hotelier keyboard scale." })),
-	{ x: CELLS_VIEW_X, y: 6, name: "Cells view", short: "Cells", help: "The main screen: voices, cells and phase." },
-	{ x: RHYTHM_VIEW_X, y: 6, name: "Rhythm banks", short: "Rhythm", help: "Pick a rhythm world on the top rows." },
-	{ x: TUNING_VIEW_X, y: 6, name: "Tuning banks", short: "Tuning", help: "Pick a tuning on the top two rows." },
-	{ x: 4, y: 6, name: "Auto-evolve", short: "Evolve", help: "Every 2–4 beats, maybe swap one linked group of rows." },
-	{ x: 5, y: 6, name: "Lock editing", short: "Locks", help: "While on, the mute keys lock rows against auto-evolve instead." },
-	{ x: 6, y: 6, name: "Recommended tuning", short: "Rec. tuning", help: "Apply this world's recommended tuning. Lit when it's active." },
-	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it. Held with Damp, toggles damp mode." },
-	{ x: PLAY_X, y: 7, name: "Play / stop", short: "Play", help: "Starts the transport at this page's tempo." },
-	{ x: 4, y: 7, w: 3, name: "Ensembles 1–3", help: "Recall all six cells at once. The live one is brighter." },
-	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves: arm, play, pause. Shift + press clears." },
+	{ x: DAMP_X, y: DAMP_Y, name: "Damp", help: "Hold to damp all six voices, in sync with set-hot. Hold together with Shift to toggle per-voice damp on column 1; press either to leave.", lit: { damp: 12, "*": 3 } },
+	...worldNames.map((id, i): KeySpec => ({ x: 1 + (i % 15), y: Math.floor(i / 15), view: "rhythm banks", name: worlds[id].name, short: shortWorld(id), help: "Switch world on the next shared beat.", lit: i === 0 ? 12 : 3 })),
+	...tunings.map((id, i): KeySpec => ({ x: i < 5 ? i + 1 : i - 4, y: i < 5 ? 0 : 1, view: "tuning banks", name: tuningLabels[id] ?? id, short: (tuningLabels[id] ?? id).replace("Hotelier · ", "").split(" ")[0], help: i < 5 ? "Included tuning." : "Hotelier keyboard scale.", lit: i === 0 ? 12 : 3 })),
+	{ x: CELLS_VIEW_X, y: 6, name: "Cells view", short: "Cells", help: "The main screen: voices, cells and phase.", lit: { cells: 8, damp: 8, "*": 3 } },
+	{ x: RHYTHM_VIEW_X, y: 6, name: "Rhythm banks", short: "Rhythm", help: "Pick a rhythm world on the top rows.", lit: { "rhythm banks": 15, "*": 5 } },
+	{ x: TUNING_VIEW_X, y: 6, name: "Tuning banks", short: "Tuning", help: "Pick a tuning on the top two rows.", lit: { "tuning banks": 15, "*": 5 } },
+	{ x: 4, y: 6, name: "Auto-evolve", short: "Evolve", help: "Every 2–4 beats, maybe swap one linked group of rows.", lit: 4 },
+	{ x: 5, y: 6, name: "Lock editing", short: "Locks", help: "While on, the mute keys lock rows against auto-evolve instead.", lit: 4 },
+	{ x: 6, y: 6, name: "Recommended tuning", short: "Rec. tuning", help: "Apply this world's recommended tuning. Lit when it's active.", lit: 12 },
+	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it. Held with Damp, toggles damp mode.", lit: { damp: 15, "*": 1 } },
+	{ x: PLAY_X, y: 7, name: "Play / stop", short: "Play", help: "Starts the transport at this page's tempo.", lit: 15 },
+	{ x: 4, y: 7, w: 3, name: "Ensembles 1–3", help: "Recall all six cells at once. The live one is brighter.", lit: [12, 6, 6] },
+	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves: arm, play, pause. Shift + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 ]
 export const page: PageModule = {
 	name: "cells-hot",

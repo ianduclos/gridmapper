@@ -20,6 +20,20 @@ describe("page key maps", () => {
 			}
 		}
 	})
+	it("declares LED looks as levels 0–15, keyed only by the page's own views", () => {
+		for (const name of PAGE_TYPES) {
+			const map = pageKeymap(name)
+			const views = new Set(map.map((k) => k.view).filter(Boolean))
+			for (const k of map) {
+				if (k.lit === undefined) continue
+				const perView = typeof k.lit === "object" && !Array.isArray(k.lit) ? (k.lit as Record<string, unknown>) : { "*": k.lit }
+				for (const [view, lit] of Object.entries(perView)) {
+					expect(view === "*" || views.has(view), `${name}: ${k.name} lit for unknown view ${view}`).toBe(true)
+					for (const v of [lit].flat() as number[]) expect(Number.isInteger(v) && v >= 0 && v <= 15, `${name}: ${k.name} level ${v}`).toBe(true)
+				}
+			}
+		}
+	})
 	it("covers cells-hot and set-hot", () => {
 		expect(pageKeymap("cells-hot").length).toBeGreaterThan(10)
 		expect(pageKeymap("set-hot").length).toBeGreaterThan(5)
