@@ -1,8 +1,14 @@
 ---
 project: gridmapper
-updated: 2026-09-21
-entries: 0
+updated: 2026-09-22
+entries: 1
 ---
+
+### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
+- done: design settled with Ian (variants, onset + length editing, row-owned pitch loops shown as a step strip, position feel + per-hit tilt); damp, loopers, BPM, tabs and key legend shipped.
+- next: confirm with Ian the pitch-loop value form ("cells can be frequencies"), then build the live score view followed by editing, as the design doc lays out.
+- blockers: none; the Hz-vs-steps question is the first thing to ask.
+- context: docs/cells-editor-design.md, docs/cells-hot.md, src/pages/cells-hot.ts (`events()` is the scheduler), web/index.html (`renderCellsView`).
 
 # gridmapper — Session Handoff
 
@@ -113,6 +119,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-22 — Claude — cells-hot controls, damp, key legend, tabs
+- Grid: mute moved to x1 and cells to x2–4; row 6 is cells view x1, rhythm banks x2, tuning banks x3. Damp at x0 y6 (hold = all six), and damp + shift toggles per-voice damp on col 1. Damp is sent THROUGH set-hot via the new `core/sharedStore.ts` (the one page-to-page channel; set-hot stays the single sender).
+- Web: `keymap: KeySpec[]` per page → the **keys** toggle draws a diagram legend over the web grid that follows `keyView`. The sim echoes keys to the web as `/grid/out/keyecho` (web only). Cells panel is now tabbed (Arrangement · Sound · Evolution · World · More, with Tempo pinned) with a readability pass.
+- Verified: types, 464 tests, Playwright screenshots against the isolated `--null` sim copy. Not verified: hardware and audio.
+- Next: the score editor (open handoff entry above). Playwright is now installed globally (npm + pip) with Chromium.
 
 ### 2026-09-21 — Claude — cells-hot: play toggle, loopers, BPM, panel
 - Bottom row: x0 shift, x1 play toggle, x12-15 gesture loopers (cell/mute/ensemble moves; shift+press clears; saved in page state). Playhead dims on silent rows, edge glides.

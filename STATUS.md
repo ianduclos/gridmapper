@@ -1,16 +1,16 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-09-21
+updated: 2026-09-22
 machine: mac
-summary: The hotelier concert set is live on the agent — iso-hot, set-hot and cells-hot v2 (richer banks, shaped decay, evolution) now running against Hotelier's installed Max half; 447 tests green, cells v2 not yet listened to on the live rig.
+summary: Hotelier concert set live on the agent; cells-hot now has a play toggle, gesture loopers, BPM tempo it owns, damp synced through set-hot, a tabbed settings panel and an on-grid key legend in the web UI; 464 tests green, none of it yet played on hardware.
 next:
-  - Listening/timing pass on cells v2 per docs/cells-v2-rollout.md (press Start on page B first)
-  - Play hotelier on the grid before the concert (2026-09-23) — selector, transposer, looped moves, chord persistence across a restart
-  - Decide whether to commit the dirty configs/slots.json and configs/presets/hotelier.json
-  - Build the Max patch side against docs/max-handshake.md, including /grid/out/page/<slot>/transpose
+  - Play cells-hot on the grid before the concert (2026-09-23) — play toggle, loopers, damp + damp mode, tempo, key legend on a hardware press
+  - Build the cells score editor from docs/cells-editor-design.md (fresh session; confirm the Hz pitch-loop form with Ian first)
+  - Listening/timing pass on cells v2 per docs/cells-v2-rollout.md
+  - Decide whether to commit the dirty configs/slots.json, configs/settings.json and configs/presets/hotelier.json
   - Single-instance guard; twistermapper clock bridge
-handoff_for: null
+handoff_for: claude-gridmapper
 ---
 
 # gridmapper — status

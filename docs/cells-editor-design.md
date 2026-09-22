@@ -1,4 +1,4 @@
-# Cells score editor: design (agreed 2026-09-21, not built)
+# Cells score editor: design (agreed 2026-09-21/22, not built)
 
 A live mini-score in the web panel for cells-hot, where you can edit your own variants
 of cells. These decisions were settled with Ian in a design session. Build from this doc.
@@ -45,10 +45,16 @@ of cells. These decisions were settled with Ian in a design session. Build from 
 
 ## Open items (decide while building)
 
-- The horn-relay world has no `pitchStep` (fixed pitch per voice). Its pitch loop needs
-  a defined meaning: probably a degree offset from the voice's pitch in the current
-  tuning. That needs a small `eventHz` change.
-- Pitch-loop editing UI: step list vs a small piano-roll strip under each row.
+- **Pitch values: Ian's direction (2026-09-22) is "cells can be frequencies — almost
+  makes more sense".** A pitch-loop entry may be an absolute frequency (Hz), which is the
+  natural meaning for horn-relay's fixed-pitch voices and possibly for every world. Confirm
+  the exact form with Ian before building. Options: Hz only; Hz or tuning step per entry;
+  or steps displayed with their Hz. Hz entries bypass `eventHz`'s tuning lookup (but
+  `rootMultiplier` should still apply), so a tuning change leaves them alone. Say so
+  in the UI.
+- **Pitch-loop UI: step strip (decided).** A row of small boxes under each rhythm strip, one
+  per entry: drag up or down, or type; + adds and − removes an entry. The loop length stays
+  visible next to the rhythm length.
 - Whether an edit to a playing cell takes effect at the playback-buffer cutoff (like a
   cell switch) or at the cell's next cycle start. Recommendation: at the cutoff, for
   consistency.
