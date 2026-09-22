@@ -214,6 +214,22 @@ describe("iso-hot performance panel", () => {
 		expect(r.offs().sort((a, b) => a - b)).toEqual([7, 16])
 	})
 
+	it("a T-voice shimmers on the keyboard; the played note stays steady", () => {
+		const r = rig()
+		openPanel(r)
+		editTriad(r, [[8, 7]]) // pitch class 7
+		r.tap(1, 0)
+		r.key(6, 7, 1) // 5 → T-voice 7, at (8, 7)
+		vi.setSystemTime(0)
+		const a = r.pm.renderFocused()
+		vi.setSystemTime(300)
+		const b = r.pm.renderFocused()
+		expect(new Set([at(a, 8, 7), at(b, 8, 7)])).toEqual(new Set([12, 4]))
+		expect(at(a, 6, 7)).toBe(15)
+		expect(at(b, 6, 7)).toBe(15)
+		expect(at(a, 15, 7)).toBe(6) // shift 1 idles apart from the sidebar
+	})
+
 	it("the triad persists, restores, and clears when npo changes", () => {
 		const r = rig()
 		openPanel(r)

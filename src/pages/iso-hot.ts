@@ -280,6 +280,8 @@ const LVL_ARP_CHORD = 9 // a chord member the arp is not currently voicing
 const LVL_ARP_HELD = 12 // ... with a finger on it
 const LVL_ARP_VOICE = 15 // the note being voiced RIGHT NOW
 const LVL_SHIFT = 1 // control keys are faint markers
+const LVL_SHIFT_IDLE = 6 // ... except the two shifts, which stand apart from the column
+const LVL_TINT_LO = 4 // the dim half of a T-voice's shimmer
 
 // Chord preset column. "armed" = the sustain toggle is on, so a press SAVES rather
 // than plays; the whole column brightens so you can see which mode you're in.
@@ -1130,6 +1132,11 @@ export class IsoHotPage implements Page {
 		// preset would capture while it plays.
 		const arpOn = this.arp.isOn
 		const f = makeFrame(this.size)
+		// T-voices shimmer so they read apart from the notes you played. A T-voice that is
+		// also one of your own notes is just a note.
+		const tSteps = new Set<number>()
+		for (const t of this.tintOf.values()) if (!this.tintOf.has(t)) tSteps.add(t)
+		const shimmerLo = Date.now() % (BLINK_MS * 2) >= BLINK_MS
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = KEYS_X0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
@@ -1139,6 +1146,7 @@ export class IsoHotPage implements Page {
 				// that would play it now, i.e. at the current transposition.
 				const sounding = step + this.offset()
 				if (this.litSteps.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
+				if (shimmerLo && tSteps.has(sounding) && this.litSteps.has(sounding)) lvl = LVL_TINT_LO
 				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
 				if (arpOn && this.voicedSteps.has(sounding)) lvl = LVL_ARP_VOICE
 				if (this.tintKeyDown && this.panelShown && this.tintPcs.has(this.pc(sounding))) lvl = LVL_TINT_EDIT
@@ -1152,8 +1160,10 @@ export class IsoHotPage implements Page {
 			const mark = (row: number, on: boolean) => {
 				f[ledIndex(this.size, cx, row)] = on ? LVL_HELD : LVL_SHIFT
 			}
-			mark(SHIFT1_ROW, ctx.modifiers.shift1)
-			mark(SHIFT2_ROW, ctx.modifiers.shift2)
+			// Shifts idle brighter than the rest of the sidebar's dim keys, so they are
+			// findable by eye; the sustains keep the faint marker.
+			f[ledIndex(this.size, cx, SHIFT1_ROW)] = ctx.modifiers.shift1 ? LVL_HELD : LVL_SHIFT_IDLE
+			f[ledIndex(this.size, cx, SHIFT2_ROW)] = ctx.modifiers.shift2 ? LVL_HELD : LVL_SHIFT_IDLE
 			mark(SUSTAIN_PEDAL_ROW, this.sustainPedal)
 			mark(SUSTAIN_TOGGLE_ROW, this.sustainToggle)
 		}
@@ -1984,7 +1994,7 @@ export const keymap: KeySpec[] = [
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
 	{ x: KEYS_X0, y: 7, w: KEYS_W - KEYS_X0, view: "transposer", name: "Transpose −7…+4", short: "Transpose", help: "Col 8 = no transpose. A note keeps the transposition it started with. Loops record moves as gestures.", lit: Array.from({ length: KEYS_W - KEYS_X0 }, (_, i) => (i + KEYS_X0 === TRANSPOSE_ZERO_COL ? LVL_TR_CURRENT : LVL_TR_OTHER)) },
-	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off. Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off (T-voices shimmer on the keyboard). Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
 	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
 	{ x: PANEL_TINT_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
 	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
@@ -1997,8 +2007,8 @@ export const keymap: KeySpec[] = [
 	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Sustain toggle", short: "Sus. tog", help: "Latching sustain; also arms the chord presets for saving.", lit: LVL_SHIFT },
 	{ x: KEYS_W + 2, y: SUSTAIN_PEDAL_ROW, name: "Sustain pedal", short: "Pedal", help: "Momentary sustain; double-tap to latch.", lit: LVL_SHIFT },
-	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold + track: multi-select tracks.", lit: LVL_SHIFT },
-	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear. Hold + track: routing edit.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold + track: multi-select tracks.", lit: LVL_SHIFT_IDLE },
+	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear. Hold + track: routing edit.", lit: LVL_SHIFT_IDLE },
 ]
 
 export const page: PageModule = {
