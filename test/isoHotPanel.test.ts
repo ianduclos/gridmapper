@@ -249,6 +249,26 @@ describe("iso-hot performance panel", () => {
 		expect(at(a, 15, 7)).toBe(6) // shift 1 idles apart from the sidebar
 	})
 
+	it("panel state is written through (debounced) and comes back on restore", () => {
+		const r = rig()
+		openPanel(r)
+		r.tap(4, 5) // octave +1
+		r.tap(2, 1) // ×3
+		r.tap(3, 2) // 75%
+		r.tap(4, 0) // strum
+		r.tap(1, 2) // below
+		r.tap(1, 4) // tint octave +1
+		r.tap(1, 0) // tint on
+		r.pm.routeOscToPage(0 as Slot, "/setting/tintJitterMs", [300])
+		expect(r.persisted.filter((p) => "octave" in p)).toEqual([])
+		vi.advanceTimersByTime(500)
+		const saved = r.persisted.filter((p) => "octave" in p)
+		expect(saved.length).toBe(1)
+		expect(saved[0]).toMatchObject({ octave: 1, tintOn: true, arpSpeed: "x3", arpProb: 0.75, strum: true, tintMode: "below", tintOctave: 1, tintJitterMs: 300 })
+		const r2 = rig({ config: { ...saved[0] } })
+		expect(r2.state()).toMatchObject(saved[0])
+	})
+
 	it("the triad persists, restores, and clears when npo changes", () => {
 		const r = rig()
 		openPanel(r)

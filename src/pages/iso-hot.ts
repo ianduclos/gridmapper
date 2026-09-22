@@ -35,8 +35,8 @@
  *          TINTINNABULI: each live note (fingers + chord presets) gains a T-voice, the
  *          nearest step above/below it whose pitch class is in the triad. The grid only
  *          sends steps, so the triad survives temperament changes; it clears when `npo`
- *          changes. Loops record the T-voice as played. Octave and tint on/off are
- *          performance state (0/off on load); the triad persists like the chords.
+ *          changes. Loops record the T-voice as played. The whole panel (octave and tint
+ *          on/off included) and the triad persist to the active preset, like the chords.
  *          Saved chords PERSIST (ctx.persist) on every save/clear.
  *          Everything else is isometric as of the fork.
  * Summary : Isomorphic keyboard on cols 1-12 — a pure integer "step field".
@@ -263,6 +263,9 @@ const LVL_PANEL_DEFAULT = 8 // where "home" is, when you're elsewhere
 // reads as a row of dead control keys.
 const LVL_PANEL_OTHER = 4
 const LVL_TINT_EDIT = 12 // a triad pitch class, while editing
+const PERSIST_DEBOUNCE_MS = 400
+/** Settings that belong to the panel, and so are written through when changed over OSC. */
+const PANEL_SETTINGS = new Set(["arpSpeed", "arpProb", "strum", "strumMs", "strumDir", "tintMode", "tintOctave", "tintJitterMs"])
 const BASE_STEP = 0 // bottom-left cell = step 0
 
 // Four tiers that have to be told apart AT A GLANCE on a varibright grid, so they are
@@ -565,7 +568,7 @@ export class IsoHotPage implements Page {
 	/** Per-recorder loop quantum, in lane ticks. 0 = off (the default). */
 	private quant = new Array<number>(RECORDER_ROWS).fill(0)
 
-	// Performance panel (col 0 row 6). Octave and tint on/off are performance state.
+	// Performance panel (col 0 row 6). All of it persists to the active preset.
 	private panelShown = false
 	private octave = 0
 	private arpSpeed = ARP_SPEED_DEFAULT
@@ -587,6 +590,7 @@ export class IsoHotPage implements Page {
 	private tintOf = new Map<number, number>()
 	private tintAltBelow = false // alternate mode: the next new note goes below
 	private tintKeyDown = false // the tint key is held: keyboard presses edit the triad
+	private persistTimer: ReturnType<typeof setTimeout> | null = null
 	private tintEdited = false // ... and did, so its release doesn't also toggle tint
 
 	/** Injectable so probability tests are deterministic. Returns [0, 1). */
@@ -741,6 +745,7 @@ export class IsoHotPage implements Page {
 		this.octave = next
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/octave`, this.octave)
 		ctx.setDirty()
+		this.schedulePersist(ctx)
 	}
 
 	private setArpSpeed(idx: number, ctx: PageContext, byHand: boolean) {
@@ -751,6 +756,7 @@ export class IsoHotPage implements Page {
 		this.clearSubSteps()
 		this.emitSettings(ctx)
 		ctx.setDirty()
+		this.schedulePersist(ctx)
 	}
 
 	private setArpProbRow(row: number, ctx: PageContext, byHand: boolean) {
@@ -761,6 +767,7 @@ export class IsoHotPage implements Page {
 		this.arpProb = next
 		this.emitSettings(ctx)
 		ctx.setDirty()
+		this.schedulePersist(ctx)
 	}
 
 	private setStrum(on: boolean, ctx: PageContext, byHand: boolean) {
@@ -769,6 +776,7 @@ export class IsoHotPage implements Page {
 		this.strum = on
 		this.emitSettings(ctx)
 		ctx.setDirty()
+		this.schedulePersist(ctx)
 	}
 
 	private setTint(on: boolean, ctx: PageContext, byHand: boolean) {
@@ -777,6 +785,7 @@ export class IsoHotPage implements Page {
 		this.tintOn = on
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tint`, on ? 1 : 0)
 		this.commit(ctx) // T-voices appear or go now, under the held notes
+		this.schedulePersist(ctx)
 	}
 
 	private setTintMode(idx: number, ctx: PageContext, byHand: boolean) {
@@ -786,6 +795,7 @@ export class IsoHotPage implements Page {
 		this.tintMode = next
 		this.emitSettings(ctx)
 		ctx.setDirty() // sounding T-voices keep theirs; the next note takes the new mode
+		this.schedulePersist(ctx)
 	}
 
 	private setTintOctave(o: number, ctx: PageContext, byHand: boolean) {
@@ -795,6 +805,34 @@ export class IsoHotPage implements Page {
 		this.tintOctave = next
 		this.emitSettings(ctx)
 		ctx.setDirty() // like the mode: sounding T-voices keep theirs
+		this.schedulePersist(ctx)
+	}
+
+	/**
+	 * Panel state is written through to the active preset, so it survives a restart.
+	 * Debounced: a loop replaying panel moves must not hit the disk on every gesture.
+	 */
+	private schedulePersist(ctx: PageContext) {
+		if (this.persistTimer) clearTimeout(this.persistTimer)
+		this.persistTimer = setTimeout(() => {
+			this.persistTimer = null
+			ctx.persist(this.panelState())
+		}, PERSIST_DEBOUNCE_MS)
+	}
+
+	private panelState() {
+		return {
+			octave: this.octave,
+			tintOn: this.tintOn,
+			arpSpeed: ARP_SPEEDS[this.arpSpeed],
+			arpProb: this.arpProb,
+			strum: this.strum,
+			strumMs: this.strumMs,
+			strumDir: this.strumDir,
+			tintMode: this.tintMode,
+			tintOctave: this.tintOctave,
+			tintJitterMs: this.tintJitterMs,
+		}
 	}
 
 	private toggleTintPc(step: number, ctx: PageContext) {
@@ -1142,6 +1180,7 @@ export class IsoHotPage implements Page {
 			this.tintPcs.clear()
 			this.tintChanged(ctx)
 		}
+		if (PANEL_SETTINGS.has(key)) this.schedulePersist(ctx)
 		this.emitSettings(ctx)
 	}
 
@@ -1275,6 +1314,8 @@ export class IsoHotPage implements Page {
 			patterns: this.recorders.map((r) => r.snapshot()),
 			...this.trackState(),
 			...this.tintState(),
+			octave: this.octave,
+			tintOn: this.tintOn,
 		}
 	}
 
@@ -1374,6 +1415,9 @@ export class IsoHotPage implements Page {
 		if (config.tintPcs !== undefined) {
 			this.tintPcs = intSet(config.tintPcs, 0, this.npo - 1)
 		}
+		// Panel values that aren't page settings: the octave and whether tint is on.
+		this.octave = Math.round(num(config.octave, 0, OCTAVE_MIN, OCTAVE_MAX))
+		this.tintOn = bool(config.tintOn, false)
 
 		this.syncTimer() // a restored arp mode may need the free-running timer
 		this.announce(ctx) // init() announced the defaults; they are stale now
@@ -1386,6 +1430,8 @@ export class IsoHotPage implements Page {
 		this.commit(ctx)
 		this.clearSubSteps()
 		this.clearPending()
+		if (this.persistTimer) clearTimeout(this.persistTimer) // the slot is going; so is its state
+		this.persistTimer = null
 		this.syncTimer()
 		this.ctx = null
 	}
