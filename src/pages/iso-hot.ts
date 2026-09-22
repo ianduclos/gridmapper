@@ -253,8 +253,10 @@ const PROB_ROWS = 8 // row r = (8 − r)/8
 export const TINT_MODES = ["above", "below", "alternate"] as const
 export type TintMode = (typeof TINT_MODES)[number]
 const LVL_PANEL_CURRENT = 15
-const LVL_PANEL_DEFAULT = 6 // where "home" is, when you're elsewhere
-const LVL_PANEL_OTHER = 2
+const LVL_PANEL_DEFAULT = 8 // where "home" is, when you're elsewhere
+// Well above the right column's idle shift/sustain markers (1), so the open panel never
+// reads as a row of dead control keys.
+const LVL_PANEL_OTHER = 4
 const LVL_TINT_EDIT = 12 // a triad pitch class, while editing
 const BASE_STEP = 0 // bottom-left cell = step 0
 
@@ -830,7 +832,7 @@ export class IsoHotPage implements Page {
 		const pick = (cur: boolean, home: boolean) =>
 			cur ? LVL_PANEL_CURRENT : home ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER
 		set(PANEL_TINT_COL, 0, this.tintKeyDown || this.tintOn ? LVL_PANEL_CURRENT : this.tintPcs.size ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER)
-		TINT_MODES.forEach((m, i) => set(PANEL_TINT_COL, 1 + i, m === this.tintMode ? 11 : rampLevel(1, i)))
+		TINT_MODES.forEach((m, i) => set(PANEL_TINT_COL, 1 + i, m === this.tintMode ? 11 : rampLevel(LVL_PANEL_OTHER, i)))
 		for (let r = 0; r < 4; r++) {
 			const o = OCTAVE_MAX - r
 			set(PANEL_TINT_COL, OCTAVE_ROW_TOP + r, pick(o === this.octave, o === 0))
@@ -1983,7 +1985,7 @@ export const keymap: KeySpec[] = [
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
 	{ x: KEYS_X0, y: 7, w: KEYS_W - KEYS_X0, view: "transposer", name: "Transpose −7…+4", short: "Transpose", help: "Col 8 = no transpose. A note keeps the transposition it started with. Loops record moves as gestures.", lit: Array.from({ length: KEYS_W - KEYS_X0 }, (_, i) => (i + KEYS_X0 === TRANSPOSE_ZERO_COL ? LVL_TR_CURRENT : LVL_TR_OTHER)) },
 	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off. Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
-	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 2, 3] },
+	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
 	{ x: PANEL_TINT_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
 	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
 	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "A missed beat rests without advancing; the due note plays on the next beat.", lit: pick(PROB_ROWS, 0, 0) },
