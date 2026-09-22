@@ -427,7 +427,7 @@ const SPECS: SettingSpec[] = [
 	{ key: "strumDir", label: "strum direction", type: "enum", options: ["up", "down"], default: "up" },
 	{ key: "tintMode", label: "tintinnabuli mode", type: "enum", options: [...TINT_MODES], default: "above" },
 	{ key: "tintOctave", label: "tintinnabuli octave", type: "number", min: -1, max: 1, step: 1, default: 0 },
-	{ key: "tintJitterMs", label: "tint humanize (max ms late)", type: "number", min: 0, max: 200, step: 1, default: 20 },
+	{ key: "tintJitterMs", label: "tint humanize (max ms late)", type: "number", min: 0, max: 500, step: 1, default: 20 },
 	{ key: "transposeChords", label: "transpose chord presets", type: "toggle", default: true },
 	{ key: "transposeLoops", label: "transpose loop playback", type: "toggle", default: true },
 	...Array.from({ length: RECORDER_ROWS }, (_, i): SettingSpec => ({
