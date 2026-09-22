@@ -77,7 +77,7 @@ describe("hotelier page selector (column 0)", () => {
 		const f = r.pm.renderFocused()
 		expect(at(f, 0, 0)).toBe(12)
 		for (let y = 1; y < 6; y++) expect(at(f, 0, y)).toBe(2)
-		expect(at(f, 0, 6)).toBe(0) // unassigned in iso-hot
+		expect(at(f, 0, 6)).toBe(2) // iso-hot's performance-panel toggle, idle
 		expect(at(f, 0, 7)).toBe(2) // iso-hot's transposer toggle, idle
 	})
 })
@@ -85,8 +85,9 @@ describe("hotelier page selector (column 0)", () => {
 describe("iso-hot keyboard", () => {
 	it("column 0 never plays; the keyboard's home (step 0) is column 1, bottom row", () => {
 		const r = rig()
-		r.key(0, 6, 1)
+		r.tap(0, 6) // opens the performance panel (no note) ...
 		expect(r.notes()).toEqual([])
+		r.tap(0, 6) // ... and closes it, giving column 1 back to the keyboard
 		r.key(1, 7, 1)
 		expect(r.notes()[0].args.slice(0, 2)).toEqual([0, 1])
 		r.key(1, 7, 0)

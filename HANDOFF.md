@@ -120,6 +120,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-09-22 — Claude — iso-hot performance panel (col 0 row 6)
+- **What:** col 0 row 6 opens a 4-column panel over keyboard cols 1-4 (it and the transposer hide each other): tint on/off + hold-to-edit triad, tint mode above/below/alternate, octave −1…+2 (coarse transposer in npo steps, stamped per note), arp speed ×4…÷4 (sub-tick timers on the clock, arpRate/factor free-running), arp probability in eighths (a miss rests without advancing), strum toggle (web: `strumMs`, `strumDir`). All panel moves are loop gestures; restore guard clamps the new ids. Triad persists (`tintPcs`), clears on npo change. New out messages `/octave`, `/tint`, `/tintset` (additive; Max ignores them). Files: `src/pages/iso-hot.ts`, `test/isoHotPanel.test.ts`, `test/hotelier.test.ts`.
+- **Verified:** tsc clean, 476 tests. Defaults-off leaves the note stream unchanged. **Not** played on hardware; agent **not** restarted (needs Ian's go — a kickstart drops running loops).
+- **Next:** Ian plays it; decide whether loops should record the T-voice (current) or add it at playback.
+
 ### 2026-09-22 — Claude — cheatsheet popup with fake LEDs
 - Web: the key map is a popup again (Ian: the overlay forced switching modes to read them). `cheatsheet` button top-right of page settings, shown only when the page has a keymap; one tab per view, live view marked with a dot; thicker guides. The on-grid overlay is gone.
 - `KeySpec.lit` (optional): a level, a pattern over the span, or per view (`"*"` = rest), taken from each page's render(). The replica grid paints it through the LED ramp (damp view shows Damp + Shift held). cells-hot, set-hot and the selector declare it; `test/keymap.test.ts` checks levels and view names. Doc: PAGE_PROTOCOL §8a.
