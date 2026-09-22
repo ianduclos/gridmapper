@@ -3,9 +3,9 @@ project: gridmapper
 state: active
 updated: 2026-09-22
 machine: mac
-summary: Hotelier concert set live on the agent; iso-hot now has a persistent performance panel (octave, arp speed/probability, strum, tintinnabuli with its own octave and humanize) and a cheatsheet, and the grid selector puts set-hot on row 4 with a Twister page-chooser key on row 5; 481 tests green, none of it yet played on hardware.
+summary: Hotelier concert set live on the agent; held iso-hot notes and a latched sustain now survive a page switch, and set-hot's last column switches the Twister's five pages (3 loopers left, shift 1 moved to col 0 row 7); 484 tests green, none of it yet played on hardware.
 next:
-  - Play iso-hot's panel and the Twister key (0 5) on the hardware before the concert (2026-09-23)
+  - Play on hardware before the concert (2026-09-23): iso-hot's panel, notes held across a page switch, the Twister key (0 5) and set-hot's Twister page keys (col 15 rows 3-7)
   - Decide whether loops should keep the tint humanize delay on playback, and whether a released note should cancel its late T-voice
   - Build the cells score editor from docs/cells-editor-design.md (fresh session; confirm the Hz pitch-loop form with Ian first)
   - Decide whether to commit the dirty configs/slots.json, configs/settings.json and configs/presets/hotelier.json

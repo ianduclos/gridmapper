@@ -120,6 +120,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-09-22 — Claude — held notes across page switch, set-hot Twister page keys
+- **Key-up routing** (`core/pageManager.ts`): a release goes to the slot that got the press, even after focus moved (cleared when a slot is reloaded). iso-hot's `onBlur` no longer drops held notes or a latched sustain; other pages still clean up on blur as before.
+- **set-hot col 15:** rows 0-2 = 3 loopers (was 4; no saved loop lost), rows 3-7 = Twister pages a-e (ModelHot…VoicesHot) → `/twister/in/focus/page <a-e>` straight to twistermapper; lit = last pressed here (no feedback from the Twister). Shift 1 moved to col 0 row 7.
+- **Verified:** tsc clean, 484 tests; agent restarted (`kickstart -k`), grid reconnected. **Not** played on hardware.
+
 ### 2026-09-22 — Claude — iso-hot performance panel, cheatsheet, selector remap
 - **Panel (col 0 row 6)** over keyboard cols 1-4, hides/is hidden by the transposer. Col 1: tint on/off (hold + keys edits the triad's pitch classes), tint mode above/below/alternate (rows 1-3), tint octave +1/0/−1 (rows 4-6). Col 2: arp speed ×4…÷4 (sub-tick timers on the clock, arpRate/factor free-running). Col 3: arp probability in eighths (a miss rests without advancing). Col 4: strum (row 0), octave +2…−1 (rows 4-7). T-voices shimmer on the keyboard and start 0..`tintJitterMs` (≤500) late; strum/jitter use a pending-on map so an early release never sends an orphan off. All panel moves are loop gestures (restore guard clamps them). Panel state + triad write through to the active preset (400 ms debounce); triad clears on npo change. New out msgs `/octave`, `/tint`, `/tintset` (Max ignores).
 - **Cheatsheet** for iso-hot (views keyboard / transposer / panel). Shifts idle at 6, panel idle 4 / home 8.
