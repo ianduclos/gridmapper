@@ -42,7 +42,7 @@ function rig() {
 }
 
 describe("hotelier page selector (column 0)", () => {
-	it("a press on rows 0-5 focuses slots a-f and announces it", () => {
+	it("a press on rows 0-3 focuses slots a-d and announces it", () => {
 		const r = rig()
 		r.key(0, 3, 1)
 		expect(r.pm.focusedSlot).toBe(3)
@@ -63,6 +63,24 @@ describe("hotelier page selector (column 0)", () => {
 		expect(r.announced).toEqual([])
 	})
 
+	it("row 4 is slot f (set-hot keeps Max's page/f address); slot e is off the column", () => {
+		const r = rig()
+		r.key(0, 4, 1)
+		expect(r.pm.focusedSlot).toBe(5)
+	})
+
+	it("row 5 holds the Twister's page chooser open and never switches pages", () => {
+		const r = rig()
+		const tw = () => r.sent.filter((m) => m.path === "/twister/in/overlay").map((m) => m.args[0])
+		r.key(0, 5, 1)
+		expect(tw()).toEqual([1])
+		expect(at(r.pm.renderFocused(), 0, 5)).toBe(15)
+		r.key(0, 5, 0)
+		expect(tw()).toEqual([1, 0])
+		expect(r.pm.focusedSlot).toBe(0)
+		expect(r.notes()).toEqual([])
+	})
+
 	it("switching paints the NEW page, not the old one", () => {
 		const r = rig()
 		r.key(0, 2, 1)
@@ -76,7 +94,8 @@ describe("hotelier page selector (column 0)", () => {
 		const r = rig()
 		const f = r.pm.renderFocused()
 		expect(at(f, 0, 0)).toBe(12)
-		for (let y = 1; y < 6; y++) expect(at(f, 0, y)).toBe(2)
+		for (let y = 1; y < 5; y++) expect(at(f, 0, y)).toBe(2)
+		expect(at(f, 0, 5)).toBe(5) // the Twister key
 		expect(at(f, 0, 6)).toBe(2) // iso-hot's performance-panel toggle, idle
 		expect(at(f, 0, 7)).toBe(2) // iso-hot's transposer toggle, idle
 	})

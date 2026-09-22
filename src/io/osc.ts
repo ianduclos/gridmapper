@@ -19,6 +19,15 @@ export type Osc = {
 	close: () => void
 }
 
+/**
+ * A send-only socket to a second app (twistermapper). Bound to an ephemeral local port so it
+ * never competes with the main socket for 57131.
+ */
+export function createOscSender(remotePort: number): Pick<Osc, "send"> {
+	const o = createOsc({ localPort: 0, remotePort })
+	return { send: o.send }
+}
+
 export function createOsc(opts?: {
 	localAddress?: string // default 0.0.0.0
 	localPort?: number // default 57131

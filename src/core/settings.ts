@@ -29,6 +29,8 @@ export type Settings = {
 	osc: {
 		inPort: number
 		outPort: number
+		/** twistermapper's OSC in-port: /twister/in/... messages from pages go here, not to Max. */
+		twisterPort: number
 	}
 	clock: {
 		/** Master internal rate in Hz. */
@@ -49,7 +51,7 @@ export type Settings = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-	osc: { inPort: 57131, outPort: 57130 },
+	osc: { inPort: 57131, outPort: 57130, twisterPort: 57121 },
 	clock: { rate: 20, lanes: DEFAULT_LANES.map((l) => ({ ...l })), echo: false },
 	idle: { connectedMin: 240, disconnectedMin: 15, caffeinate: false },
 }
@@ -113,6 +115,7 @@ export function loadSettings(path = SETTINGS_PATH): Settings {
 		osc: {
 			inPort: cleanPort(oscNode.inPort, DEFAULT_SETTINGS.osc.inPort),
 			outPort: cleanPort(oscNode.outPort, DEFAULT_SETTINGS.osc.outPort),
+			twisterPort: cleanPort(oscNode.twisterPort, DEFAULT_SETTINGS.osc.twisterPort),
 		},
 		clock: {
 			rate: clampRate(clockNode.rate ?? DEFAULT_SETTINGS.clock.rate),

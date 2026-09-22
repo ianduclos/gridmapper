@@ -10,7 +10,7 @@
 
 import { SharedStore } from "../core/sharedStore.js"
 import { GridConnection } from "../io/gridConnection.js"
-import { createOsc } from "../io/osc.js"
+import { createOsc, createOscSender } from "../io/osc.js"
 import { loadSettings } from "../core/settings.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
@@ -81,8 +81,15 @@ const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc
 // /settings reply is kept off the wire so a patch that sends and listens can't feed back
 // on itself. Headless, there is no second listener, so the reply simply goes nowhere —
 // the sim keeps its web UI fed (see cli/sim.ts). The router decides when; this is how.
+// Pages may address twistermapper directly (e.g. the grid's Twister key): /twister/in/...
+// goes to its in-port instead of Max.
+const twisterOsc = createOscSender(settings.osc.twisterPort)
 let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	if (path.startsWith("/twister/in/")) {
+		twisterOsc.send(path, ...args)
+		return
+	}
 	if (!suppressOscEcho) osc.send(path, ...args)
 }
 const withOscEchoSuppressed = (fn: () => void) => {

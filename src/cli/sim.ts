@@ -12,7 +12,7 @@ import { SharedStore } from "../core/sharedStore.js"
 import { resolve as resolvePath } from "node:path"
 import { GridConnection } from "../io/gridConnection.js"
 import { createGridServer } from "../io/gridServer.js"
-import { createOsc } from "../io/osc.js"
+import { createOsc, createOscSender } from "../io/osc.js"
 import { loadSettings } from "../core/settings.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
@@ -118,8 +118,16 @@ const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc
 // /settings reply is kept off the UDP wire so a patch that sends and listens can't feed
 // back on itself — but the web UI still gets it, because it isn't what sent the message.
 // The router decides when; this decides how (see core/oscRouter.ts).
+// Pages may address twistermapper directly (e.g. the grid's Twister key): /twister/in/...
+// goes to its in-port instead of Max.
+const twisterOsc = createOscSender(settings.osc.twisterPort)
 let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	if (path.startsWith("/twister/in/")) {
+		twisterOsc.send(path, ...args)
+	server.broadcast(path, args)
+		return
+	}
 	if (!suppressOscEcho) osc.send(path, ...args)
 	server.broadcast(path, args)
 }
