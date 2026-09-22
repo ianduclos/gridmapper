@@ -3,11 +3,11 @@ project: gridmapper
 state: active
 updated: 2026-09-22
 machine: mac
-summary: Hotelier concert set live on the agent; cells-hot now has a play toggle, gesture loopers, BPM tempo it owns, damp synced through set-hot, a tabbed settings panel and a key cheatsheet popup with per-view fake LEDs in the web UI; 465 tests green, none of it yet played on hardware.
+summary: Hotelier concert set live on the agent; iso-hot now has a persistent performance panel (octave, arp speed/probability, strum, tintinnabuli with its own octave and humanize) and a cheatsheet, and the grid selector puts set-hot on row 4 with a Twister page-chooser key on row 5; 481 tests green, none of it yet played on hardware.
 next:
-  - Kickstart the gridmapper agent at an idle moment so the cheatsheet gets the new LED looks, then play cells-hot on the grid before the concert (2026-09-23)
+  - Play iso-hot's panel and the Twister key (0 5) on the hardware before the concert (2026-09-23)
+  - Decide whether loops should keep the tint humanize delay on playback, and whether a released note should cancel its late T-voice
   - Build the cells score editor from docs/cells-editor-design.md (fresh session; confirm the Hz pitch-loop form with Ian first)
-  - Listening/timing pass on cells v2 per docs/cells-v2-rollout.md
   - Decide whether to commit the dirty configs/slots.json, configs/settings.json and configs/presets/hotelier.json
   - Single-instance guard; twistermapper clock bridge
 handoff_for: claude-gridmapper
