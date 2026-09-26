@@ -18,11 +18,7 @@ import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
 import { SELECTOR_KEYS, drawSelector, selectorKey } from "../util/pageSelector.js"
 import { DAMP_FROM_CELLS, DAMP_STATE } from "../core/sharedStore.js"
-import {
-	PatternRecorder,
-	MAX_RECORD_MS,
-	type PatternEvent,
-} from "../util/patternRecorder.js"
+import { CycleLooper, MAX_LOOP_CYCLES, type LoopEvent } from "../util/cycleLooper.js"
 
 export const PULSE_RATE = 12 / 1.66
 const BUFFER_MS = 100,
@@ -51,9 +47,12 @@ const SHIFT_X = 0,
 	PLAY_X = 1,
 	LOOPER_X0 = 12,
 	LOOPERS = 4,
-	LOOPER_TIMER_MS = 5,
 	BLINK_MS = 220,
-	MAX_PATTERN_EVENTS = 20_000
+	MAX_PATTERN_EVENTS = 20_000,
+	/** Live-layout writes are batched: a tempo drag must not hit the disk per step. */
+	PERSIST_MS = 400,
+	/** The phase bars flash this long when a new world lands. */
+	LAND_FLASH_MS = 150
 const LVL_REC_EMPTY = 1,
 	LVL_REC_ARMED = 12,
 	LVL_REC_STOPPED = 5,
@@ -89,6 +88,19 @@ type WorldMeta = {
 	evolutionGroups?: Array<{ rows: number[]; choices: number[][] }>
 }
 const meta = (id: string) => worlds[id] as (typeof worlds)[string] & WorldMeta
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
+/**
+ * The world's full cycle in performance pulses: the one span where every cell of every
+ * row realigns (the LCM of all its cell lengths). 8–16 beats for the current banks.
+ * Gesture loops lock to whole multiples of it.
+ */
+export function worldCyclePulses(id: string): number {
+	const w = worlds[id],
+		lengths = w.cells.flat().map((cell) => Math.round(cell.lengthPulses))
+	const lcm = lengths.reduce((a, b) => (a / gcd(a, b)) * b, 1)
+	return (lcm * PERFORMANCE_PULSES_PER_BEAT) / (meta(id).pulsesPerBeat ?? 3)
+}
+const MAX_CYCLE = Math.max(...Object.keys(worlds).map(worldCyclePulses))
 type OutEvent = {
 	id: string
 	voice: number
@@ -212,6 +224,26 @@ export const settings: SettingSpec[] = [
 		default: false,
 	},
 	{
+		key: "evolveActivity",
+		label: "Evolution activity",
+		help: "How often a change opportunity actually changes something (0 = never, 1 = every time).",
+		type: "number",
+		min: 0,
+		max: 1,
+		step: 0.05,
+		default: 0.5,
+	},
+	{
+		key: "restChance",
+		label: "Rest chance",
+		help: "With silence allowed: the chance a change rests a group instead of swapping it.",
+		type: "number",
+		min: 0,
+		max: 1,
+		step: 0.05,
+		default: 0.25,
+	},
+	{
 		key: "humanizeMs",
 		label: "Humanize ms",
 		help: "Random timing spread applied by Max, up to this many ms.",
@@ -236,6 +268,8 @@ export class CellsHotPage implements Page {
 	private lockMode = false
 	private autoEvolve = false
 	private allowSilence = false
+	private evolveActivity = 0.5
+	private restChance = 0.25
 	private evolvedRest = new Array(VOICES).fill(false)
 	private nextEvolveBeat = 0
 	private rng = 1
@@ -251,17 +285,17 @@ export class CellsHotPage implements Page {
 	private decayStretch = 1
 	private decayThreshold = 1
 	private bankMode: "cells" | "rhythmWorld" | "tuning" = "cells"
+	/** Cells' own session is sounding. The transport can run without it (Play gates cells only). */
 	private running = false
+	/** Play is on: the session starts whenever the transport does. Only the Play key clears it. */
+	private playOn = true
+	/** Joined a transport already running: wait for its next beat before phase zero. */
+	private joinOnBeat = false
 	private observedRun = false
 	private observedRate = 0
-	private recorders = Array.from(
-		{ length: LOOPERS },
-		() => new PatternRecorder(),
-	)
-	private looperTimer: ReturnType<typeof setInterval> | null = null
-	private looperLastMs = 0
-	/** The timer has no ctx of its own. */
-	private ctx: PageContext | null = null
+	private loopers = Array.from({ length: LOOPERS }, () => new CycleLooper())
+	private persistTimer: ReturnType<typeof setTimeout> | null = null
+	private worldLandedAt = 0
 	private dampAllHeld = false
 	private dampMode = false
 	private dampRows = new Array(VOICES).fill(false)
@@ -284,7 +318,6 @@ export class CellsHotPage implements Page {
 		)
 	}
 	init(c: PageContext) {
-		this.ctx = c
 		this.observedRun = c.clock.running
 		this.observedRate = c.clock.rate
 		this.announce(c)
@@ -304,16 +337,17 @@ export class CellsHotPage implements Page {
 		this.dampRows.fill(false)
 		this.publishDamp(c)
 		if (this.running) this.stop(c)
-		for (const r of this.recorders) r.clear()
-		this.syncLooperTimer()
+		for (const l of this.loopers) l.clear()
+		if (this.persistTimer) clearTimeout(this.persistTimer)
+		this.persistTimer = null
 	}
 	onClock(s: Readonly<PageContext["clock"]>, c: PageContext) {
 		const rateChanged = s.rate !== this.observedRate
 		this.observedRate = s.rate
 		if (s.running !== this.observedRun) {
 			this.observedRun = s.running
-			if (s.running) this.start(c)
-			else this.stop(c)
+			if (s.running && this.playOn) this.start(c, false)
+			else if (!s.running) this.stop(c)
 			return
 		}
 		// Cells owns the tempo; the transport is its second editor. A rate change that
@@ -331,7 +365,11 @@ export class CellsHotPage implements Page {
 	}
 	onTick(tick: number, lane: number, c: PageContext, deadlineMs = Date.now()) {
 		if (lane !== this.lane || !this.running) return
-		if (this.originTick === undefined) this.originTick = tick
+		if (this.originTick === undefined) {
+			// Lane ticks count from 1 at transport start, so beats fall on 1, 4, 7...
+			if (this.joinOnBeat && (tick - 1) % PERFORMANCE_PULSES_PER_BEAT) return
+			this.originTick = tick
+		}
 		const p = tick - this.originTick,
 			period = this.period(c),
 			now = Date.now()
@@ -369,6 +407,7 @@ export class CellsHotPage implements Page {
 				cutoffMs: deadlineMs + BUFFER_MS,
 				events,
 			})
+		this.playLoops(c, p, period, deadlineMs)
 		c.setDirty()
 	}
 	onKey(e: KeyEvent, c: PageContext) {
@@ -380,11 +419,13 @@ export class CellsHotPage implements Page {
 			this.dampChordKey(e.y === DAMP_Y, e.s === 1, partnerHeld, c)
 			return
 		}
+		// A held per-voice damp is released wherever its release lands, even after a view
+		// change moved the column's meaning; otherwise it sticks until damp mode ends.
 		if (
-			this.dampMode &&
-			this.bankMode === "cells" &&
 			e.x === MUTE_X &&
-			e.y < VOICES
+			e.y < VOICES &&
+			((this.dampMode && this.bankMode === "cells") ||
+				(!e.s && this.dampRows[e.y]))
 		) {
 			this.dampRows[e.y] = e.s === 1
 			this.publishDamp(c)
@@ -460,16 +501,26 @@ export class CellsHotPage implements Page {
 			this.dampRows.map((row) => this.dampAllHeld || row),
 		)
 	}
+	/**
+	 * Play gates CELLS only. On: start the transport at cells' tempo if it is stopped, or
+	 * join it on its next beat if it is already running. Off: silence cells and leave the
+	 * transport to the other pages that follow it.
+	 */
 	private togglePlay(c: PageContext) {
 		if (this.running) {
-			c.clockControl?.stop()
+			this.playOn = false
 			this.stop(c)
+			return
+		}
+		this.playOn = true
+		if (c.clock.running) {
+			this.start(c, true)
 			return
 		}
 		c.clockControl?.setRate(
 			this.pulseRate * (c.clock.lanes[this.lane]?.div ?? 1),
 		)
-		this.start(c)
+		this.start(c, false)
 		c.clockControl?.start()
 	}
 	onOsc(path: string, args: any[], c: PageContext) {
@@ -546,7 +597,7 @@ export class CellsHotPage implements Page {
 			return
 		}
 		const setting =
-			/^\/setting\/(rhythmWorld|durationMode|decayScale|decayStretch|decayThreshold|tuning|rootMultiplier|pulseRate|bpm|lane|allowSilence|humanizeMs)$/.exec(
+			/^\/setting\/(rhythmWorld|durationMode|decayScale|decayStretch|decayThreshold|tuning|rootMultiplier|pulseRate|bpm|lane|allowSilence|evolveActivity|restChance|humanizeMs)$/.exec(
 				path,
 			)
 		if (!setting) return
@@ -568,7 +619,11 @@ export class CellsHotPage implements Page {
 		else if (key === "allowSilence") {
 			this.allowSilence = bool(v, this.allowSilence)
 			if (!this.allowSilence) this.evolvedRest.fill(false)
-		} else if (key === "tuning" && tunings.includes(v))
+		} else if (key === "evolveActivity")
+			this.evolveActivity = num(v, this.evolveActivity, 0, 1)
+		else if (key === "restChance")
+			this.restChance = num(v, this.restChance, 0, 1)
+		else if (key === "tuning" && tunings.includes(v))
 			this.tuning = v as Tuning
 		else if (key === "rootMultiplier")
 			this.rootMultiplier = num(v, this.rootMultiplier, 0.25, 4)
@@ -589,7 +644,8 @@ export class CellsHotPage implements Page {
 			}
 		} else if (key === "humanizeMs")
 			this.humanizeMs = int(v, this.humanizeMs, 0, 4)
-		if (key !== "rhythmWorld") this.replaceAll(c)
+		if (key !== "rhythmWorld" && key !== "evolveActivity" && key !== "restChance")
+			this.replaceAll(c)
 		this.persist(c)
 		this.announce(c)
 	}
@@ -598,6 +654,10 @@ export class CellsHotPage implements Page {
 			now = Date.now()
 		// What Max is actually told (set-hot's view), so its ALL key lights ours too.
 		const damped = c.shared?.get<boolean[]>(DAMP_STATE) ?? []
+		const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
+		// A new world just landed: every phase bar flashes once, on the audible beat.
+		const landing =
+			now >= this.worldLandedAt && now < this.worldLandedAt + LAND_FLASH_MS
 		drawSelector(f, c)
 		if (this.bankMode !== "cells") {
 			const values = this.bankMode === "rhythmWorld" ? worldNames : tunings
@@ -654,7 +714,9 @@ export class CellsHotPage implements Page {
 					fill = this.running ? ((phase % len) / len) * 11 : 0,
 					silent = this.silent(y)
 				for (let x = 5; x <= 15; x++)
-					f[ledIndex(c.size, x, y)] = playheadLevel(x - 5, fill, silent)
+					f[ledIndex(c.size, x, y)] = landing
+						? 10
+						: playheadLevel(x - 5, fill, silent)
 				if (
 					!silent &&
 					this.flashes[y].some((at) => now >= at && now < at + 120)
@@ -662,7 +724,15 @@ export class CellsHotPage implements Page {
 					f[ledIndex(c.size, 15, y)] = 15
 			}
 		f[ledIndex(c.size, CELLS_VIEW_X, 6)] = this.bankMode === "cells" ? 8 : 3
-		f[ledIndex(c.size, RHYTHM_VIEW_X, 6)] = this.bankMode === "rhythmWorld" ? 15 : 5
+		// A queued world blinks the rhythm-bank key until it lands (at most about a beat).
+		f[ledIndex(c.size, RHYTHM_VIEW_X, 6)] =
+			this.pendingWorldId && this.bankMode === "cells"
+				? blinkOn
+					? 15
+					: 5
+				: this.bankMode === "rhythmWorld"
+					? 15
+					: 5
 		f[ledIndex(c.size, TUNING_VIEW_X, 6)] = this.bankMode === "tuning" ? 15 : 5
 		f[ledIndex(c.size, 4, 6)] = this.autoEvolve ? 15 : 4
 		f[ledIndex(c.size, 5, 6)] = this.lockMode ? 15 : 4
@@ -677,9 +747,8 @@ export class CellsHotPage implements Page {
 		const active = this.activeEnsemble()
 		for (let x = 4; x <= 6; x++)
 			f[ledIndex(c.size, x, 7)] = active === x - 4 ? 12 : 6
-		const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
 		for (let i = 0; i < LOOPERS; i++) {
-			const st = this.recorders[i].state
+			const st = this.loopers[i].state
 			f[ledIndex(c.size, LOOPER_X0 + i, 7)] =
 				st === "recording"
 					? blinkOn
@@ -714,11 +783,13 @@ export class CellsHotPage implements Page {
 			bpm: Math.round(pulseRateToBpm(this.pulseRate) * 1000) / 1000,
 			lane: this.lane,
 			allowSilence: this.allowSilence,
+			evolveActivity: this.evolveActivity,
+			restChance: this.restChance,
 			humanizeMs: this.humanizeMs,
 			decayScale: this.decayScale,
 			decayStretch: this.decayStretch,
 			decayThreshold: this.decayThreshold,
-			patterns: this.recorders.map((r) => r.snapshot()),
+			patterns: this.loopers.map((l) => l.snapshot()),
 		}
 	}
 	restore(raw: unknown, c: PageContext) {
@@ -727,6 +798,8 @@ export class CellsHotPage implements Page {
 		this.lockMode = false
 		this.evolvedRest.fill(false)
 		this.protectedUntilBeat.fill(0)
+		// Restoring never plays: the session stops (the Play key shows it) and the transport
+		// is left to the other pages. Play stays armed, so the next transport start resumes.
 		if (this.running) this.stop(c)
 		if (!isRecord(raw)) {
 			this.view(c)
@@ -751,6 +824,8 @@ export class CellsHotPage implements Page {
 		this.pulseRate = num(raw.pulseRate, this.pulseRate, 0.1, 200)
 		this.lane = int(raw.lane, this.lane, 0, 3)
 		this.allowSilence = bool(raw.allowSilence, this.allowSilence)
+		this.evolveActivity = num(raw.evolveActivity, this.evolveActivity, 0, 1)
+		this.restChance = num(raw.restChance, this.restChance, 0, 1)
 		this.humanizeMs = int(raw.humanizeMs, this.humanizeMs, 0, 4)
 		this.decayScale = num(raw.decayScale, this.decayScale, 0.25, 4)
 		this.decayStretch = num(raw.decayStretch, this.decayStretch, 1, 8)
@@ -760,29 +835,32 @@ export class CellsHotPage implements Page {
 				num(raw.bpm, pulseRateToBpm(this.pulseRate), BPM_MIN, BPM_MAX),
 			)
 		if (raw.patterns !== undefined) this.restorePatterns(raw.patterns)
-		this.syncLooperTimer()
 		this.announce(c)
 	}
+	/** Loops in pulses. The older wall-clock (`lengthMs`) form has no cycle position, so it is dropped. */
 	private restorePatterns(value: unknown) {
 		const raw = Array.isArray(value) ? value : []
 		for (let i = 0; i < LOOPERS; i++) {
 			const node = isRecord(raw[i]) ? raw[i] : {}
-			this.recorders[i].restore({
-				lengthMs: num(node.lengthMs, 0, 0, MAX_RECORD_MS),
+			const maxLength = MAX_LOOP_CYCLES * MAX_CYCLE
+			const lengthPulses = num(node.lengthPulses, 0, 0, maxLength)
+			this.loopers[i].restore({
+				lengthPulses,
+				anchor: num(node.anchor, 0, 0, maxLength),
+				cycle: num(node.cycle, lengthPulses, 0, maxLength),
 				events: records(
 					node.events,
 					MAX_PATTERN_EVENTS,
-					(e): PatternEvent | undefined => {
-						const atMs = num(e.atMs, -1, 0, MAX_RECORD_MS)
-						const ctl = isRecord(e.ctl) ? e.ctl : undefined
-						if (atMs < 0 || !ctl || typeof ctl.id !== "string") return undefined
-						const target = parseCtl(ctl.id)
+					(e): LoopEvent | undefined => {
+						const atPulse = num(e.atPulse, -1, 0, maxLength)
+						if (atPulse < 0 || typeof e.id !== "string") return undefined
+						const target = parseCtl(e.id)
 						if (!target) return undefined
 						const max = target.kind === "mute" ? 1 : 2
-						const value = Number(ctl.value)
+						const value = Number(e.value)
 						if (!Number.isInteger(value) || value < 0 || value > max)
 							return undefined
-						return { atMs, step: 0, on: false, ctl: { id: ctl.id, value } }
+						return { atPulse, id: e.id, value }
 					},
 				),
 			})
@@ -791,9 +869,10 @@ export class CellsHotPage implements Page {
 	private period(c: PageContext) {
 		return (1000 * (c.clock.lanes[this.lane]?.div ?? 1)) / c.clock.rate
 	}
-	private start(c: PageContext) {
+	private start(c: PageContext, joinOnBeat: boolean) {
 		if (this.running) return
 		this.running = true
+		this.joinOnBeat = joinOnBeat
 		this.originTick = undefined
 		this.preparedEnd = 0
 		this.flashes = Array.from({ length: VOICES }, () => [])
@@ -812,6 +891,10 @@ export class CellsHotPage implements Page {
 	private stop(c: PageContext) {
 		if (!this.running) return
 		this.emit(c, { type: "stop", session: this.session })
+		// A take still recording closes on what it has; its pulses end with this session.
+		for (const l of this.loopers)
+			if (l.state === "recording" && l.events.length) l.close(undefined)
+		this.emitPatterns(c)
 		this.running = false
 		this.originTick = undefined
 		this.preparedEnd = 0
@@ -871,6 +954,7 @@ export class CellsHotPage implements Page {
 		)
 			return false
 		this.switchWorld(this.pendingWorldId)
+		this.worldLandedAt = deadlineMs + BUFFER_MS
 		this.revisions = this.revisions.map((v) => v + 1)
 		this.flashes = this.flashes.map((a) =>
 			a.filter((at) => at < deadlineMs + BUFFER_MS),
@@ -907,12 +991,10 @@ export class CellsHotPage implements Page {
 			events,
 		})
 	}
-	private replaceAll(c: PageContext) {
+	private replaceAll(c: PageContext, at?: number) {
 		if (!this.running || !this.preparedEnd) return
-		const cutoffMs = Math.max(
-			Date.now() + BUFFER_MS,
-			this.deadlineMs + BUFFER_MS,
-		)
+		const cutoffMs =
+			at ?? Math.max(Date.now() + BUFFER_MS, this.deadlineMs + BUFFER_MS)
 		this.revisions = this.revisions.map((v) => v + 1)
 		this.flashes = this.flashes.map((a) => a.filter((at) => at < cutoffMs))
 		const events = this.events(
@@ -1000,7 +1082,7 @@ export class CellsHotPage implements Page {
 		const beat = pulse / PERFORMANCE_PULSES_PER_BEAT
 		if (beat < this.nextEvolveBeat) return
 		this.nextEvolveBeat = beat + 2 + Math.floor(this.random() * 3)
-		if (this.random() < 0.5) return
+		if (this.random() < 1 - this.evolveActivity) return
 		this.evolve(c, false)
 	}
 	private evolve(c: PageContext, _manual: boolean) {
@@ -1020,7 +1102,7 @@ export class CellsHotPage implements Page {
 		if (!candidates.length) return
 		const group = candidates[Math.floor(this.random() * candidates.length)]
 		const resting = group.rows.some((row) => this.evolvedRest[row])
-		const rest = this.allowSilence && !resting && this.random() < 0.25
+		const rest = this.allowSilence && !resting && this.random() < this.restChance
 		const options = group.choices.filter(
 			(tuple) =>
 				tuple.length === group.rows.length &&
@@ -1086,80 +1168,79 @@ export class CellsHotPage implements Page {
 		this.recordGesture(`mute/${row}`, this.muted[row] ? 1 : 0)
 	}
 	/** Re-send one row (and its linked group's cleared rests) after its choice changed. */
-	private applyRow(c: PageContext, row: number) {
+	private applyRow(c: PageContext, row: number, at?: number) {
 		const changed = this.clearGroupRest(row)
 		this.protectGroup(row)
-		const cutoff = Date.now() + BUFFER_MS
+		const cutoff = at ?? Date.now() + BUFFER_MS
 		for (const r of new Set([row, ...changed])) this.replace(c, r, cutoff)
 		c.setDirty()
 	}
+	/** A hand move, recorded by any armed looper at its exact pulse. Needs cells playing. */
 	private recordGesture(id: string, value: number) {
-		const now = Date.now()
-		for (const r of this.recorders) r.recordControl(id, value, now)
-		if (this.recorders.some((r) => r.state === "recording"))
-			this.syncLooperTimer()
+		if (!this.running || this.originTick === undefined) return
+		const pulse = this.performancePulse(),
+			cycle = worldCyclePulses(this.rhythmWorld)
+		for (const l of this.loopers) l.record(id, value, pulse, cycle)
 	}
 	private looperKey(c: PageContext, i: number, clear: boolean) {
-		const r = this.recorders[i]
-		if (clear) r.clear()
-		else r.press(Date.now())
-		this.syncLooperTimer()
+		const l = this.loopers[i]
+		if (clear) l.clear()
+		else
+			l.press(
+				this.running && this.originTick !== undefined
+					? this.performancePulse()
+					: undefined,
+			)
 		this.emitPatterns(c)
-		if (clear || r.state === "playing") this.persist(c)
+		this.persist(c)
 	}
-	private syncLooperTimer() {
-		const needed = this.recorders.some((r) => r.isRunning)
-		if (needed && !this.looperTimer) {
-			this.looperLastMs = Date.now()
-			this.looperTimer = setInterval(() => this.onLooperTimer(), LOOPER_TIMER_MS)
-		} else if (!needed && this.looperTimer) {
-			clearInterval(this.looperTimer)
-			this.looperTimer = null
-		}
-	}
-	/** Advance the loopers; exposed to tests through `now`. */
-	onLooperTimer(now = Date.now()) {
-		const c = this.ctx
-		if (!c) return
-		const dt = now - this.looperLastMs
-		this.looperLastMs = now
-		const before = this.recorders.map((r) => r.state)
-		let changed = false
-		for (const r of this.recorders) {
-			r.advance(now, dt)
-			const fired = r.takeControls()
-			// Ensemble first: a cell move in the same window lands on top of it.
-			const ensemble = fired.get("ensemble")
-			if (ensemble !== undefined) {
-				this.applyEnsemble(c, ensemble, false)
-				changed = true
-			}
-			for (const [id, value] of fired) {
-				const t = parseCtl(id)
-				if (!t || t.kind === "ensemble") continue
+	/**
+	 * Loop moves due in this tick's window [p, p+1) land at their exact pulse: each one's
+	 * cutoff is that pulse's onset time, so the notes before it keep the old cell.
+	 * Ensembles apply before cell and mute moves at the same pulse.
+	 */
+	private playLoops(c: PageContext, p: number, period: number, deadlineMs: number) {
+		let stateChanged = false
+		for (const l of this.loopers) stateChanged = l.tick(p) || stateChanged
+		const due = this.loopers
+			.flatMap((l) => l.due(p, p + 1))
+			.sort(
+				(a, b) =>
+					a.pulse - b.pulse ||
+					Number(b.id === "ensemble") - Number(a.id === "ensemble"),
+			)
+		let moved = false
+		for (const e of due) {
+			const at = deadlineMs + BUFFER_MS + (e.pulse - p) * period
+			const t = parseCtl(e.id)
+			if (!t) continue
+			if (t.kind === "ensemble") this.applyEnsemble(c, e.value, false, at)
+			else {
 				if (t.kind === "cell") {
-					if (this.selected[t.row] === value) continue
-					this.selected[t.row] = value
+					if (this.selected[t.row] === e.value) continue
+					this.selected[t.row] = e.value
 				} else {
-					if (this.muted[t.row] === (value !== 0)) continue
-					this.muted[t.row] = value !== 0
+					if (this.muted[t.row] === (e.value !== 0)) continue
+					this.muted[t.row] = e.value !== 0
 				}
-				this.applyRow(c, t.row)
-				changed = true
+				this.applyRow(c, t.row, at)
 			}
+			moved = true
 		}
-		if (changed) this.view(c)
-		if (this.recorders.some((r, i) => r.state !== before[i])) {
+		if (moved) this.view(c)
+		if (stateChanged) {
 			this.emitPatterns(c)
 			this.persist(c)
 		}
-		this.syncLooperTimer()
 	}
 	private emitPatterns(c: PageContext) {
 		c.osc.send(
 			`/grid/out/page/${c.slotLabel}/patterns`,
 			JSON.stringify(
-				this.recorders.map((r) => ({ state: r.state, ms: Math.round(r.loopMs) })),
+				this.loopers.map((l) => ({
+					state: l.state,
+					beats: l.lengthPulses / PERFORMANCE_PULSES_PER_BEAT,
+				})),
 			),
 		)
 	}
@@ -1196,13 +1277,18 @@ export class CellsHotPage implements Page {
 		for (const r of changed) this.evolvedRest[r] = false
 		return changed
 	}
-	private applyEnsemble(c: PageContext, index: number, byHand: boolean) {
+	private applyEnsemble(
+		c: PageContext,
+		index: number,
+		byHand: boolean,
+		at?: number,
+	) {
 		const ensemble = this.world.presets[index]
 		if (!ensemble) return
 		this.evolvedRest.fill(false)
 		this.selected = [...ensemble]
 		for (let row = 0; row < VOICES; row++) this.protectGroup(row)
-		this.replaceAll(c)
+		this.replaceAll(c, at)
 		if (byHand) {
 			this.recordGesture("ensemble", index)
 			this.persist(c)
@@ -1220,8 +1306,17 @@ export class CellsHotPage implements Page {
 		this.flashes = this.flashes.map((a) => a.filter((at) => at + 120 > now))
 		for (const e of events) this.flashes[e.voice - 1].push(e.onsetMs)
 	}
+	/**
+	 * Refresh the LIVE layout (slots.json) only, batched. The empty patch is deliberate:
+	 * nothing cells does merges into the saved preset. Presets change from the web panel's
+	 * save, never as a side effect of playing.
+	 */
 	private persist(c: PageContext) {
-		c.persist(this.serialize())
+		if (this.persistTimer) return
+		this.persistTimer = setTimeout(() => {
+			this.persistTimer = null
+			c.persist({})
+		}, PERSIST_MS)
 	}
 	private announce(c: PageContext) {
 		c.osc.send(`/grid/out/page/${c.slotLabel}/type`, "cells-hot")
@@ -1326,9 +1421,9 @@ export const keymap: KeySpec[] = [
 	{ x: 5, y: 6, name: "Lock editing", short: "Locks", help: "While on, the mute keys lock rows against auto-evolve instead.", lit: 4 },
 	{ x: 6, y: 6, name: "Recommended tuning", short: "Rec. tuning", help: "Apply this world's recommended tuning. Lit when it's active.", lit: 12 },
 	{ x: SHIFT_X, y: 7, name: "Shift", help: "Hold, then press a looper to clear it. Held with Damp, toggles damp mode.", lit: { damp: 15, "*": 1 } },
-	{ x: PLAY_X, y: 7, name: "Play / stop", short: "Play", help: "Starts the transport at this page's tempo.", lit: 15 },
+	{ x: PLAY_X, y: 7, name: "Play / stop", short: "Play", help: "Starts or stops cells. Starts the transport at this page's tempo if it is stopped; stopping leaves the transport running for other pages.", lit: 15 },
 	{ x: 4, y: 7, w: 3, name: "Ensembles 1–3", help: "Recall all six cells at once. The live one is brighter.", lit: [12, 6, 6] },
-	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves: arm, play, pause. Shift + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
+	{ x: LOOPER_X0, y: 7, w: LOOPERS, name: "Loopers 1–4", help: "Record cell, mute and ensemble moves while cells plays: arm, close, then play/pause. Loops lock to whole world cycles. Shift + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 ]
 export const page: PageModule = {
 	name: "cells-hot",

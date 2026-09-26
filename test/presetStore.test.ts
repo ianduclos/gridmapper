@@ -118,6 +118,21 @@ describe("createPresetStore", () => {
 		expect(rebooted.active().slots.a).toEqual({ page: "isometric" })
 	})
 
+	it("an empty persist patch refreshes slots.json but leaves the preset file alone", () => {
+		const store = createPresetStore(dir)
+		const cfg = layout({ b: "cells-hot" })
+		cfg.slots.b.config = { tuning: "tritave" }
+		store.write("live", cfg)
+		store.setActive(cfg, "live")
+		const before = readFileSync(join(dir, "presets", "live.json"), "utf8")
+		const changed = layout({ b: "cells-hot" })
+		changed.slots.b.config = { tuning: "beating" }
+		store.persistSlot(changed, "b", {})
+		expect(readFileSync(join(dir, "presets", "live.json"), "utf8")).toBe(before)
+		expect((store.active().slots.b.config as any).tuning).toBe("beating")
+		expect(store.activeName()).toBe("live")
+	})
+
 	it("clears the marker when the layout diverges", () => {
 		const store = createPresetStore(dir)
 		store.setActive(layout({ a: "isometric" }), "keys")

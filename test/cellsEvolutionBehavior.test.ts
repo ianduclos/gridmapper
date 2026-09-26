@@ -209,4 +209,25 @@ describe("Cells Hot seeded evolution behavior", () => {
 		r.tick((scheduled + 1) * 3)
 		expect(r.view().worldId).toBe("ngon")
 	})
+
+	it("activity sets how often an opportunity changes anything", () => {
+		const changes = (activity: number) => {
+			const r = rig(0x51a7)
+			r.page.onOsc("/setting/evolveActivity", [activity], r.c)
+			const history = runBeats(r, 200)
+			return history.filter((s, i) => i && JSON.stringify(s) !== JSON.stringify(history[i - 1])).length
+		}
+		expect(changes(0)).toBe(0)
+		expect(changes(1)).toBeGreaterThan(changes(0.5))
+	})
+
+	it("rest chance 0 never rests, even with silence allowed", () => {
+		const r = rig(0x51a7, true)
+		r.page.onOsc("/setting/restChance", [0], r.c)
+		for (let beat = 0; beat <= 300; beat++) {
+			r.tick(beat * 3)
+			expect(r.view().evolvedRest.some(Boolean)).toBe(false)
+		}
+		expect(r.page.serialize()).toMatchObject({ evolveActivity: 0.5, restChance: 0 })
+	})
 })

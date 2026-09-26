@@ -49,7 +49,8 @@ describe("cells-hot choice banks", () => {
 	it("keeps the play toggle available in a bank", () => {
 		const r = makeRig()
 		r.tap(3, 6); r.tap(1, 7); r.tap(1, 7)
-		expect(r.control).toEqual([`rate:${PULSE_RATE * 2}`, "start", "stop"])
+		// Play gates cells only: stopping leaves the transport to the other pages.
+		expect(r.control).toEqual([`rate:${PULSE_RATE * 2}`, "start"])
 		expect(r.packets().map((packet) => packet.type)).toEqual(["start", "stop"])
 	})
 

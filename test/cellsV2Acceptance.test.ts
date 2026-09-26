@@ -166,7 +166,7 @@ describe("World boundaries and deadline acceptance", () => {
 		expect(q.events.find((e: any) => e.voice === 1).durationMs).toBeCloseTo(
 			52.5,
 		)
-		expect(r.saved.at(-1).rhythmWorld).toBe("kotekan")
+		expect((r.p.serialize() as any).rhythmWorld).toBe("kotekan")
 		const ids = r
 			.packets()
 			.flatMap((q) => q.events ?? [])
@@ -191,7 +191,7 @@ describe("World boundaries and deadline acceptance", () => {
 		r.action("/setting/rhythmWorld", ["kotekan"])
 		r.action("/action/applyRecommendation")
 		for (let n = 5; n <= 7; n++) r.tick(n)
-		expect(r.saved.at(-1)).toMatchObject({
+		expect(r.p.serialize()).toMatchObject({
 			rhythmWorld: "kotekan",
 			tuning: "pentatonic-model",
 		})

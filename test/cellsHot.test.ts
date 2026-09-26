@@ -197,9 +197,11 @@ describe("cells-hot", () => {
 it("persists choices/settings without playback and flashes only after onsets", () => {
  vi.useFakeTimers();vi.setSystemTime(1000);const r=rig();
  expect((r.p.serialize() as any).selected).toEqual([0,0,0,0,1,0]);
- r.tap(3,2);expect(r.saved.at(-1).selected[2]).toBe(1);
- r.p.onOsc('/setting/rootMultiplier',[1.5],r.c);expect(r.saved.at(-1).rootMultiplier).toBe(1.5);
- expect(r.saved.at(-1).running).toBeUndefined();r.tap(2,2);
+ r.tap(3,2);expect((r.p.serialize() as any).selected[2]).toBe(1);
+ r.p.onOsc('/setting/rootMultiplier',[1.5],r.c);expect((r.p.serialize() as any).rootMultiplier).toBe(1.5);
+ expect((r.p.serialize() as any).running).toBeUndefined();
+ // Live layout only, batched: one empty patch, so nothing merges into the saved preset.
+ expect(r.saved).toEqual([]);vi.advanceTimersByTime(400);expect(r.saved).toEqual([{}]);vi.setSystemTime(1000);r.tap(2,2);
  r.p.onClock({...clock,running:true},r.c);r.p.onTick(1,0,r.c);
  expect(r.p.render(r.c)[ledIndex(r.c.size,15,2)]).not.toBe(15);
  const onset=r.packets().at(-1).events.find((e:any)=>e.voice===3).onsetMs;vi.setSystemTime(onset+1);expect(r.p.render(r.c)[ledIndex(r.c.size,15,2)]).toBe(15);

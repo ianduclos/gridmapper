@@ -61,8 +61,9 @@ export interface PresetStore {
 	 * A page's STORED CONTENT changed (e.g. a saved chord). Persist the live layout to
 	 * slots.json, keeping the marker, and merge `patch` into that slot's config in the
 	 * active preset file too — only those keys, so the rest of the live state (loops,
-	 * settings) is not silently baked into the preset. Skipped when no preset is active or
-	 * the preset holds a different page in that slot.
+	 * settings) is not silently baked into the preset. Skipped when no preset is active,
+	 * the preset holds a different page in that slot, or the patch is empty — an empty
+	 * patch means "refresh the live layout only" (cells-hot uses nothing else).
 	 */
 	persistSlot(live: SystemConfig, slot: SlotLabel, patch: Record<string, unknown>): void
 	/** Snapshot messages for a newly-connected client (web onConnect / Max boot). */
@@ -159,7 +160,8 @@ export function createPresetStore(configsDir = resolvePath(process.cwd(), "confi
 		persistSlot(live, slot, patch) {
 			const name = activePreset
 			this.setActive(live, name)
-			if (name === null) return
+			// An empty patch refreshes the live layout only (cells-hot's arrangement).
+			if (name === null || !Object.keys(patch).length) return
 			const cfg = this.read(name)
 			const entry = cfg?.slots[slot]
 			if (!cfg || !entry || entry.page !== live.slots[slot]?.page) return

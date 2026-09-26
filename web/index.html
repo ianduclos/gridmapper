@@ -694,12 +694,12 @@
 			arr.append(rows);
 
 			// Loopers: the same four as the grid's bottom-right keys.
-			const loops = section("Gesture loopers", "Record cell, mute and ensemble moves. Press to arm, play, pause; the recording starts at your first move. Clear = shift (grid x0) + looper.", "arrange");
+			const loops = section("Gesture loopers", "Record cell, mute and ensemble moves while cells plays. Press to arm, close, then play or pause. A take starts on the world cycle before your first move and closes to the nearest whole cycle, so it restates exactly against the cells. Clear = shift (grid x0) + looper.", "arrange");
 			const chips = make("div", "cx-inline");
 			const word = { empty: "empty", recording: "recording", playing: "playing", stopped: "paused" };
 			for (let i = 0; i < 4; i++) {
-				const p = patterns[i] || { state: "empty", ms: 0 };
-				const b = button(`${i + 1} · ${word[p.state] || p.state}${p.ms ? ` · ${(p.ms / 1000).toFixed(1)} s` : ""}`, () => act(`/looper/${i}`), p.state === "playing" || p.state === "recording");
+				const p = patterns[i] || { state: "empty", beats: 0 };
+				const b = button(`${i + 1} · ${word[p.state] || p.state}${p.beats ? ` · ${+p.beats.toFixed(2)} beats` : ""}`, () => act(`/looper/${i}`), p.state === "playing" || p.state === "recording");
 				if (p.state === "recording") b.classList.add("pending");
 				const clear = button("Clear", () => act(`/looper/${i}/clear`), undefined, "enum-button cx-clear");
 				clear.disabled = p.state === "empty";
@@ -739,7 +739,9 @@
 			ev.append(button(view.evolving ? "Auto-evolve on" : "Auto-evolve off", () => act("/action/evolve"), !!view.evolving));
 			ev.append(button(view.lockMode ? "Lock editing on" : "Lock editing off", () => act("/action/lockMode"), !!view.lockMode));
 			evo.append(ev);
+			field("evolveActivity", evo);
 			field("allowSilence", evo);
+			if (cur("allowSilence")) field("restChance", evo);
 
 			const more = section("Timing and routing", undefined, "more");
 			for (const k of ["lane", "humanizeMs"]) field(k, more);

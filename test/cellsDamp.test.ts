@@ -78,4 +78,19 @@ describe("cells-hot damp, synced through set-hot", () => {
 		r.set.onKey({ x: 2, y: 7, s: 1 }, r.sc)
 		expect(r.cells.render(r.cc)[ledIndex(r.cc.size, 0, 6)]).toBe(15)
 	})
+	it("a held voice damp still releases after a view change moves column 1", () => {
+		const r = rig()
+		r.key(0, 7, 1)
+		r.key(0, 6, 1) // damp mode
+		r.key(0, 6, 0)
+		r.key(0, 7, 0)
+		r.key(1, 2, 1) // hold voice 3's damp
+		r.key(2, 6, 1) // open the rhythm banks: column 1 now picks worlds
+		r.key(1, 2, 0) // ...but this release still lets voice 3 go
+		expect(r.damp()).toEqual([
+			[3, "damp", 1],
+			[3, "damp", 0],
+		])
+		expect((r.cells.serialize() as any).rhythmWorld).toBe("horn-relay") // not a world pick
+	})
 })
