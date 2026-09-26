@@ -1,14 +1,14 @@
 ---
 project: gridmapper
-updated: 2026-09-22
+updated: 2026-09-27
 entries: 1
 ---
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
-- done: design settled with Ian (variants, onset + length editing, row-owned pitch loops shown as a step strip, position feel + per-hit tilt); damp, loopers, BPM, tabs and key cheatsheet shipped.
-- next: confirm with Ian the pitch-loop value form ("cells can be frequencies"), then build the live score view followed by editing, as the design doc lays out.
-- blockers: none; the Hz-vs-steps question is the first thing to ask.
-- context: docs/cells-editor-design.md, docs/cells-hot.md, src/pages/cells-hot.ts (`events()` is the scheduler), web/index.html (`renderCellsView`).
+- done: design settled with Ian; open items resolved 2026-09-27 (step-or-Hz entries, edits land at the cutoff, variant lengths divide the world cycle, pitch loops per world + row); phased build plan written.
+- next: phase 1 of the build plan: the live score view, plus the static `/world` packet split.
+- blockers: none.
+- context: docs/cells-editor-design.md (Decisions 6–10 + Build plan), docs/cells-hot.md, src/pages/cells-hot.ts (`events()` is the scheduler), web/index.html (`renderCellsView`). Cycle-locked loopers (b14f81f) define the world cycle that variant lengths must divide.
 
 # gridmapper — Session Handoff
 
