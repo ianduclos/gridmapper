@@ -1,14 +1,13 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-09-22
+updated: 2026-09-27
 machine: mac
-summary: Hotelier concert set live on the agent; held iso-hot notes and a latched sustain now survive a page switch, and set-hot's last column switches the Twister's five pages (3 loopers left, shift 1 moved to col 0 row 7); 484 tests green, none of it yet played on hardware.
+summary: cells-hot gained cycle-locked loopers, a Play key that no longer stops the shared transport, evolution knobs, a live web score view (editor phase 1) and four new source-checked banks; 534 tests green, none of it yet restarted onto the agent or heard.
 next:
-  - Play on hardware before the concert (2026-09-23): iso-hot's panel, notes held across a page switch, the Twister key (0 5) and set-hot's Twister page keys (col 15 rows 3-7)
-  - Decide whether loops should keep the tint humanize delay on playback, and whether a released note should cancel its late T-voice
-  - Build the cells score editor from docs/cells-editor-design.md (fresh session; confirm the Hz pitch-loop form with Ian first)
-  - Decide whether to commit the dirty configs/slots.json, configs/settings.json and configs/presets/hotelier.json
+  - Restart the agent (kickstart -k) and audition the new work: score view, loopers, Play, and the four banks (Nyamaropa offset, Sikuri at 61-70 BPM, Tshikona, Kecak)
+  - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
+  - Decide whether to revert the cells-drifted slot b in configs/presets/hotelier.json and commit the dirty configs/*.json
   - Single-instance guard; twistermapper clock bridge
 handoff_for: claude-gridmapper
 ---

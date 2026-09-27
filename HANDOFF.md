@@ -120,6 +120,14 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-09-27 — Claude — cells-hot review fixes, cycle loopers, score view, four banks
+- **Review fixes:** cells persists with an EMPTY patch (live `slots.json` only, batched 400 ms; `presetStore.persistSlot` skips the preset on `{}`), so playing never rewrites a saved preset. A held per-voice damp releases after a view change. Play gates cells only: it starts a stopped transport, joins a running one on its next beat, and never stops it; a preset load stops the session only.
+- **Loopers** (`util/cycleLooper.ts`): record in pulses and lock to whole world cycles (the LCM of the world's cell lengths, `worldCyclePulses`); each move replays at its exact pulse. Record only while cells plays. The old ms-format loops are dropped on restore. Out: `/patterns [{state, beats}]`.
+- **Evolution** `evolveActivity` and `restChance` settings. World cues: the rhythm-bank key blinks while a world is queued, and the phase bars flash when it lands.
+- **Editor phase 1:** the web score canvas. Static world data moves to web-only `/grid/ui/page/<slot>/world` (`UI_ONLY_PREFIX`, never on UDP); `/view` goes from 3.9 KB to 0.7 KB plus a `phase` anchor. Plan and decisions 6–10: `docs/cells-editor-design.md`.
+- **Banks:** Nyamaropa, Sikuri, Tshikona and Kecak, drafted by 4 parallel research agents; every source was re-read against the data before registering. Ledger: `docs/cells-sources.md`; dossiers: `docs/cells-research-*.md`.
+- **Verified:** tsc clean, 534 tests; score seen in headless Chrome against an isolated sim copy. **Not** restarted onto the agent, played on hardware, or heard.
+
 ### 2026-09-22 — Claude — held notes across page switch, set-hot Twister page keys
 - **Key-up routing** (`core/pageManager.ts`): a release goes to the slot that got the press, even after focus moved (cleared when a slot is reloaded). iso-hot's `onBlur` no longer drops held notes or a latched sustain; other pages still clean up on blur as before.
 - **set-hot col 15:** rows 0-2 = 3 loopers (was 4; no saved loop lost), rows 3-7 = Twister pages a-e (ModelHot…VoicesHot) → `/twister/in/focus/page <a-e>` straight to twistermapper; lit = last pressed here (no feedback from the Twister). Shift 1 moved to col 0 row 7.
