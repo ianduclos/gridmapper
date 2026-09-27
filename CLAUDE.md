@@ -155,6 +155,14 @@ twister's `/twister/...` vocabulary:
   In: `/grid/in/wake` · `/grid/in/sleep` · `/grid/in/heartbeat` (deliberately inert — the
   router's activity stamp already did the work, so a Max `[metro]` has an address it can
   hit forever that can never trigger anything else). Out: `/grid/out/idle <json>`.
+- **Power (implemented).** `/grid/in/power [0|1]` sets it; with no argument it TOGGLES.
+  `/grid/in/power/get` re-emits. Out: `/grid/out/power <0|1>` (also in every snapshot).
+  OFF captures the layout, disposes every page (no page timer/looper/sequencer left),
+  stops the clock, blanks then RELEASES the grid, stops discovery, and holds the render
+  loop asleep (`IdleManager.hold`, so no activity can wake it). Only the OSC + web listeners
+  stay up, and the router drops everything except power and ping. ON reloads the captured
+  layout through `applySystemConfig` (as a preset load: loops come back paused, clock
+  stopped) and resumes hotplug. Lives in `core/appRuntime.ts`; the web header has the toggle.
 - **Live settings (implemented).** `/grid/in/settings/<section>/<key> <value>` — clamped,
   applied to the running clock/idle, and persisted to `configs/settings.json` (debounced,
   atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`

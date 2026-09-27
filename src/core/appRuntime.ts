@@ -9,13 +9,15 @@
  *   - AppClock          the one transport, ticking every loaded page (off by default)
  *   - IdleManager       stops the render loop after inactivity; wakes on any event
  *   - SettingsStore     live, persisted config; changes here reach the clock/idle at once
- *   - the /grid/out/{clock,idle,settings} echoes for Max and the web UI
+ *   - power             a hard off: no pages, no clock, no render loop, no grid I/O
+ *   - the /grid/out/{clock,idle,settings,power} echoes for Max and the web UI
  */
 
 import { AppClock, type ClockState, type LaneState } from "./clock.js"
 import { IdleManager } from "./idleManager.js"
 import { SettingsStore, minToMs, type Settings } from "./settings.js"
 import type { PageManager } from "./pageManager.js"
+import { applySystemConfig, captureSystemConfig, type SystemConfig } from "./systemConfig.js"
 import type { RenderLoop } from "../render/renderLoop.js"
 
 /** While asleep the discovery watcher backs right off (2s → 30s). */
@@ -26,7 +28,16 @@ export interface AppRuntimeOpts {
 	pm: PageManager
 	loop: RenderLoop
 	/** The grid connection (only the bits the runtime needs). */
-	conn: { isConnected(): boolean; setPollMs(ms: number): void }
+	conn: {
+		isConnected(): boolean
+		setPollMs(ms: number): void
+		start(): void
+		stop(): void
+		detach(): void
+		grid: { ledLevelAll(level: number): void }
+	}
+	/** Live per-slot page names (shared with the router), for power's capture/reload. */
+	slotPages: string[]
 	/** Boot settings (core/settings.ts loadSettings()). */
 	settings: Settings
 	/** App-out channel — Max, plus the web UI in the sim. */
@@ -39,6 +50,13 @@ export interface AppRuntime {
 	clock: AppClock
 	idle: IdleManager
 	settings: SettingsStore
+	/**
+	 * Power. Off captures the layout, disposes every page, stops the clock, blanks and
+	 * releases the grid, stops discovery and holds the render loop asleep: nothing runs
+	 * but the OSC and web listeners, so /grid/in/power can turn it back on. On reloads the
+	 * captured layout (as a preset load does; loops come back paused, the clock stopped).
+	 */
+	power: { readonly on: boolean; set(on: boolean): void }
 	/** Live view of the transport for PageContext.clock (getters, never a snapshot). */
 	clockView: Readonly<ClockState>
 	/** State messages for a newly-connected client (web onConnect / Max hello). */
@@ -98,6 +116,40 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 	})
 	idle.start()
 
+	let powered = true
+	let saved: SystemConfig | undefined
+	const power = {
+		get on() {
+			return powered
+		},
+		set(on: boolean) {
+			if (on === powered) {
+				emit("/grid/out/power", powered ? 1 : 0)
+				return
+			}
+			const target = { pm, slotPages: opts.slotPages }
+			if (!on) {
+				saved = captureSystemConfig(target)
+				clock.stop()
+				pm.unloadAll()
+				idle.hold(true) // before the detach below, whose repaint would wake the loop
+				try { conn.grid.ledLevelAll(0) } catch {}
+				conn.stop()
+				conn.detach()
+				powered = false
+			} else {
+				powered = true
+				idle.hold(false)
+				if (saved) applySystemConfig(saved, target)
+				saved = undefined
+				conn.start()
+				idle.wake()
+			}
+			console.log(`[power] ${powered ? "on" : "off"}`)
+			emit("/grid/out/power", powered ? 1 : 0)
+		},
+	}
+
 	// The transport always boots stopped — only its rate/lanes/echo are persisted.
 	const clockView: ClockState = {
 		get running() { return clock.running },
@@ -110,11 +162,13 @@ export function createAppRuntime(opts: AppRuntimeOpts): AppRuntime {
 		clock,
 		idle,
 		settings,
+		power,
 		clockView,
 		snapshot: () => [
 			{ path: "/grid/out/clock", args: [JSON.stringify(clock.state)] },
 			{ path: "/grid/out/idle", args: [JSON.stringify(idle.state)] },
 			{ path: "/grid/out/settings", args: [settings.json()] },
+			{ path: "/grid/out/power", args: [powered ? 1 : 0] },
 		],
 		close() {
 			clock.close()

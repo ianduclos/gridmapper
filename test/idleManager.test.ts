@@ -140,4 +140,18 @@ describe("IdleManager", () => {
 		const s = idle.state
 		expect(s).toMatchObject({ asleep: false, caffeinated: false, connected: true, sleepAfterMs: 240 * MIN })
 	})
+	it("a hold (power off) sleeps and nothing wakes it until released", () => {
+		const { idle, loop, wakes } = setup({ caffeinate: false }, true)
+		idle.hold(true)
+		expect(loop.running).toBe(false)
+		idle.activity()
+		idle.wake()
+		idle.setPolicy({ caffeinate: true })
+		expect(loop.running).toBe(false)
+		expect(wakes()).toBe(0)
+		idle.hold(false)
+		expect(loop.running).toBe(false) // releasing does not wake by itself
+		idle.wake()
+		expect(loop.running).toBe(true)
+	})
 })

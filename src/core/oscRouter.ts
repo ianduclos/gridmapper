@@ -59,6 +59,8 @@ export interface OscRouterOpts {
 	clock?: AppClock
 	/** Sleep policy — every inbound message counts as activity. */
 	idle?: IdleManager
+	/** Power switch (appRuntime). While off, only power and ping are answered. */
+	power?: { readonly on: boolean; set(on: boolean): void }
 	/** Live, persisted app settings (/grid/in/settings/<section>/<key>). */
 	settings?: SettingsStore
 	/** Named presets + the persisted live layout. Omit and /grid/in/preset/* is inert. */
@@ -94,6 +96,21 @@ export function createOscRouter(
 	const truthy = (v: unknown) => v === true || v === "true" || Number(v) > 0
 
 	return function routeControl(path: string, args: any[], origin: ControlOrigin = "osc") {
+		// /grid/in/power [0|1] sets it; with no argument it toggles. /grid/in/power/get
+		// re-emits /grid/out/power. Handled first: it is the only way back from off.
+		const power = opts.power
+		if (path === "/grid/in/power" && power) {
+			power.set(args.length ? truthy(args[0]) : !power.on)
+			return
+		}
+		if (path === "/grid/in/power/get" && power) {
+			emit("/grid/out/power", power.on ? 1 : 0)
+			return
+		}
+		// Off means off: everything else is dropped, except ping, so a patch can still
+		// tell a powered-off gridmapper from a dead one.
+		if (power && !power.on && path !== "/grid/in/ping") return
+
 		// Anything arriving here is input: it keeps the app awake / wakes it up.
 		idle?.activity()
 

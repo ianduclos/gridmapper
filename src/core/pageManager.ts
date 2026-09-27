@@ -59,7 +59,11 @@ export class PageManager {
 					this.focus(target)
 					this.hooks.onPageFocus?.(target)
 				},
-				persist: (patch) => this.hooks.onPersist?.(slot, patch),
+				// An unloaded slot (power off) has nothing to save; a late timer must not
+				// capture an empty layout over the real one.
+				persist: (patch) => {
+					if (this.pages[slot]) this.hooks.onPersist?.(slot, patch)
+				},
 			}
 		}
 	}
@@ -89,6 +93,26 @@ export class PageManager {
 		if (slot === this.focused) p.onFocus(this.ctxPerSlot[slot])
 		this.desired[slot] = p.render(this.ctxPerSlot[slot])
 		if (slot === this.focused) this.onFrame?.(this.desired[slot], "focus")
+	}
+
+	/**
+	 * Power off: dispose every page and leave all slots empty, so no page timer, looper or
+	 * sequencer is left running. Slots are emptied BEFORE any dispose runs, so a page that
+	 * persists while disposing can't capture its already-emptied neighbours. The host
+	 * captures the layout first and reloads it (applySystemConfig) to power back on.
+	 */
+	unloadAll() {
+		const pages = this.pages
+		this.pages = Array.from(SLOT_INDICES, () => null)
+		this.desired = Array.from(SLOT_INDICES, () => undefined)
+		this.pressedOn.clear()
+		for (const slot of SLOT_INDICES) {
+			try {
+				pages[slot]?.dispose(this.ctxPerSlot[slot])
+			} catch (err) {
+				console.error(`[PageManager] dispose error in slot ${slotLabel(slot)}:`, err)
+			}
+		}
 	}
 
 	focus(slot: Slot) {

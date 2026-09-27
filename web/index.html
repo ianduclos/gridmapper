@@ -41,6 +41,9 @@
 		header .device.on { opacity: .85; }
 		header .device .dot { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--ink); background: transparent; }
 		header .device.on .dot { background: var(--ink); }
+		header .power { margin-left: 14px; min-width: 44px; }
+		header .power[aria-pressed="true"] { background: var(--ink); color: var(--bg); opacity: 1; }
+		body.powered-off main { opacity: .3; pointer-events: none; }
 		/* Grid on the left, page settings reserved on the right. */
 		main { flex: 1; display: flex; flex-direction: row; align-items: flex-start; gap: 28px; padding: 0 28px 40px; }
 		.left { display: flex; flex-direction: column; gap: 16px; }
@@ -248,6 +251,7 @@
 	<header>
 		<span class="mark">gridmapper</span>
 		<span class="device" id="device"><span class="dot"></span><span id="deviceLabel">no device</span></span>
+		<button class="chip power" id="powerBtn" type="button" aria-pressed="true" title="Turn gridmapper off: no pages, clock, render loop or grid I/O (OSC /grid/in/power)">on</button>
 	</header>
 	<main>
 		<div class="left">
@@ -830,6 +834,18 @@
 
 		const setSetting = (path, v) => send("/grid/in/settings/" + path, [v]);
 
+		// Power: off = no pages, clock, render loop or grid I/O. The rest of the panel is
+		// greyed out and inert until it comes back on (the server drops it anyway).
+		let powered = true;
+		const powerBtn = el("powerBtn");
+		powerBtn.onclick = () => send("/grid/in/power", [powered ? 0 : 1]);
+		function renderPower(on) {
+			powered = on;
+			powerBtn.textContent = on ? "on" : "off";
+			powerBtn.setAttribute("aria-pressed", String(on));
+			document.body.classList.toggle("powered-off", !on);
+		}
+
 		clockRunBtn.onclick = () => send("/grid/in/clock/run", [clockState.running ? 0 : 1]);
 		clockStepBtn.onclick = () => send("/grid/in/clock/tick", [Number(clockStepLaneEl.value) || 0]);
 		clockRateEl.onchange = () => { const v = Number(clockRateEl.value); if (Number.isFinite(v)) setSetting("clock/rate", v); };
@@ -1086,6 +1102,7 @@
 					// [lane, n] — blink on lane 0 only, or four lanes would strobe at once.
 					case "/grid/out/clock/tick": if (Number(m.args[0]) === 0) pulse(); break;
 					case "/grid/out/idle": { try { renderIdle(JSON.parse(m.args[0])); } catch {} break; }
+					case "/grid/out/power": renderPower(Number(m.args[0]) > 0); break;
 					case "/grid/out/settings": { try { appSettings = JSON.parse(m.args[0]); } catch {} renderAppSettings(); break; }
 					case "/grid/out/preset/list": presetNames = m.args.map(String); armedDelete = null; renderPresets(); break;
 					// "" = no preset active: a failed load, or the layout was edited since.

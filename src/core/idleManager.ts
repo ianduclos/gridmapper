@@ -58,6 +58,7 @@ export class IdleManager {
 	private policy: IdlePolicy
 	private lastActivity = Date.now()
 	private _asleep = false
+	private held = false
 	private watchdog: ReturnType<typeof setInterval> | null = null
 
 	constructor(private readonly opts: IdleManagerOpts) {
@@ -90,11 +91,13 @@ export class IdleManager {
 	 * rate; it only stamps a timestamp unless we were asleep.
 	 */
 	activity() {
+		if (this.held) return
 		this.lastActivity = Date.now()
 		if (this._asleep) this.wake()
 	}
 
 	wake() {
+		if (this.held) return
 		this.lastActivity = Date.now()
 		if (!this._asleep) return
 		this._asleep = false
@@ -102,6 +105,15 @@ export class IdleManager {
 		this.arm()
 		this.opts.onWake?.()
 		this.changed()
+	}
+
+	/**
+	 * Power off: sleep and stay asleep. While held, nothing wakes the loop (activity,
+	 * wake, a device change, caffeinate). Releasing does not wake by itself.
+	 */
+	hold(on: boolean) {
+		this.held = on
+		if (on) this.sleep()
 	}
 
 	/** Sleep now. Explicit (/grid/in/sleep) — ignores `caffeinate`. */
