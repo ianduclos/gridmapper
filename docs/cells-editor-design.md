@@ -67,7 +67,13 @@ of cells. These decisions were settled with Ian in a design session. Build from 
 Each phase ships on its own, with tests, and leaves playback unchanged until someone
 edits.
 
-### Phase 1: live score view (web, display only)
+### Phase 1: live score view (web, display only) — BUILT 2026-09-27
+
+As built: one canvas at the top of the Arrangement tab. Each lane repeats its row's
+selected cell across one world cycle, the first repeat drawn darker, with bar height
+following gain. The block under the playhead lights up; muted and resting rows are dim.
+Beat lines are drawn every performance beat. The onset flash is the lit block rather
+than the `/cells` packets, so the panel needs no extra traffic.
 
 - Six strips, one per row: the selected cell's hits as blocks on its source-pulse grid
   (onset = `atPulse`, width = `durationPulses`), beat lines every `pulsesPerBeat`, the cell

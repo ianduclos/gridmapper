@@ -134,6 +134,7 @@
 		.cells-advice { display:flex; align-items:center; gap:10px; font-size:12px; flex-wrap:wrap; }
 		.cells-note { font-size:11px; opacity:.65; margin:5px 0 12px; }
 		.cells-rows { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+		.cx-score { display:block; width:100%; margin-top:6px; }
 		.cells-row.muted .cell-choice[aria-pressed="true"], .cells-row.resting .cell-choice[aria-pressed="true"] { opacity:.45; border-style:dashed; }
 		.cells-row { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
 		.cells-role { flex:0 0 100%; font-size:11px; margin-top:3px; }
@@ -335,6 +336,8 @@
 		let specsByPage = {};                          // pageName -> SettingSpec[]
 		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
 		let cellsViews = SLOT_LABELS.map(() => null);
+		// Static per-world data (names, notes, the score), from /grid/ui/page/<slot>/world.
+		let cellsWorlds = SLOT_LABELS.map(() => null);
 		let keymapsByPage = {};                        // pageName -> KeySpec[]
 		let cellsViewSignature = "";
 		const cellsPanel = document.createElement("section");
@@ -549,14 +552,65 @@
 		const CELLS_TABS = [["arrange", "Arrangement"], ["sound", "Sound"], ["evolve", "Evolution"], ["world", "World"], ["more", "More"]];
 		let cellsTab = "arrange";
 		try { const t = localStorage.getItem("cells-tab"); if (CELLS_TABS.some(([id]) => id === t)) cellsTab = t; } catch {}
+		// --- Cells score. One canvas, reused across panel rebuilds. The playhead is run here
+		// from the view's phase anchor ({pulse heard at atMs, one pulse per periodMs}), so
+		// the page sends nothing per pulse. Same host, same Date.now() epoch.
+		const scoreCanvas = document.createElement("canvas");
+		scoreCanvas.className = "cx-score"; scoreCanvas.setAttribute("role", "img");
+		let scoreRaf = 0;
+		const kickScore = () => { if (!scoreRaf) scoreRaf = requestAnimationFrame(drawScore); };
+		addEventListener("resize", kickScore);
+		document.addEventListener("visibilitychange", kickScore);
+		function drawScore() {
+			scoreRaf = 0;
+			const live = cellsViews[focusedSlot], w = cellsWorlds[focusedSlot];
+			if (!scoreCanvas.isConnected || !live || !w || w.worldId !== live.worldId || slotPages[focusedSlot] !== "cells-hot") return;
+			const LANE = 20, GAP = 4, H = 6 * (LANE + GAP) - GAP;
+			const cssW = scoreCanvas.clientWidth || 600, dpr = devicePixelRatio || 1;
+			if (scoreCanvas.width !== Math.round(cssW * dpr) || scoreCanvas.height !== Math.round(H * dpr)) {
+				scoreCanvas.width = Math.round(cssW * dpr); scoreCanvas.height = Math.round(H * dpr); scoreCanvas.style.height = `${H}px`;
+			}
+			const g = scoreCanvas.getContext("2d");
+			g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cssW, H);
+			g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#15140f";
+			const cycle = w.cyclePulses, sx = cssW / cycle, scale = w.sourceScale;
+			const ph = live.phase;
+			const pulse = ph ? Math.max(0, ph.pulse + (Date.now() - ph.atMs) / ph.periodMs) : null;
+			const pos = pulse === null ? null : ((pulse % cycle) + cycle) % cycle;
+			// Beat lines, every performance beat (three pulses).
+			g.globalAlpha = .1;
+			for (let b = 0; b < cycle; b += 3) g.fillRect(Math.round(b * sx), 0, 1, H);
+			for (let r = 0; r < 6; r++) {
+				const cell = w.score?.[r]?.[live.selected?.[r]]; if (!cell) continue;
+				const y = r * (LANE + GAP), len = cell.lengthPulses * scale;
+				const silent = !!(live.muted?.[r] || live.evolvedRest?.[r]);
+				g.globalAlpha = .05; g.fillRect(0, y, cssW, LANE);
+				for (let t = 0; t < cycle - 1e-9; t += len) {
+					g.globalAlpha = .4; g.fillRect(Math.round(t * sx), y, 1, LANE); // cell starts
+					for (const e of cell.events) {
+						const at = t + e.atPulse * scale, dur = e.durationPulses * scale;
+						const on = pos !== null && !silent && pos >= at && pos < at + Math.max(dur, .35);
+						const h = LANE * (.45 + .55 * Math.min(1, e.gain ?? 1));
+						g.globalAlpha = silent ? .15 : on ? 1 : t === 0 ? .6 : .38;
+						g.fillRect(at * sx, y + LANE - h, Math.max(2, dur * sx - 1), h);
+					}
+				}
+			}
+			if (pos !== null) { g.globalAlpha = .9; g.fillRect(Math.round(pos * sx), 0, 2, H); }
+			g.globalAlpha = 1;
+			if (pos !== null && live.running && !document.hidden) scoreRaf = requestAnimationFrame(drawScore);
+		}
+
 		function renderCellsView() {
 			const cellsSlot = slotPages[focusedSlot] === "cells-hot";
 			cellsPanel.hidden = !cellsSlot;
 			if (!cellsSlot) return;
-			const view = cellsViews[focusedSlot];
+			const live = cellsViews[focusedSlot], world = cellsWorlds[focusedSlot];
+			// The world packet carries what only changes with the world; the view, the rest.
+			const view = live && world && world.worldId === live.worldId ? { ...world, ...live } : null;
 			const values = settingsBySlot[focusedSlot] || {};
 			const patterns = patternsBySlot[focusedSlot] || [];
-			const signature = JSON.stringify([focusedSlot, view, values, patterns]);
+			const signature = JSON.stringify([focusedSlot, live, world?.worldId, values, patterns]);
 			if (signature === cellsViewSignature) return;
 			cellsViewSignature = signature;
 			// A rebuild must not eat a number you are typing.
@@ -628,7 +682,9 @@
 				parent.append(row); return input;
 			};
 			settingsCtx.textContent = `slot ${slot} · cells-hot`;
-			if (!view) { cellsPanel.append(make("p", "cx-help", "Waiting for the page…")); act("/action/refreshView"); return; }
+			// A world/view mismatch is a world change in flight (the world packet goes first); the
+			// view follows at once, so only ask for a refresh when a packet is missing outright.
+			if (!view) { cellsPanel.append(make("p", "cx-help", "Waiting for the page…")); if (!live || !world) act("/action/refreshView"); return; }
 
 			// One line on top; the world's explanation and picker come after the basic controls.
 			cellsPanel.append(make("p", "cx-nowline", view.pendingWorldName ? `${view.worldName}, then ${view.pendingWorldName} on the next beat` : view.worldName));
@@ -671,6 +727,13 @@
 				bar.append(make("span", "cx-muted", `beat ${Math.round(beatMs)} ms · pulse ${Math.round(beatMs / 3)} ms`));
 			}
 			tempo.append(bar);
+
+			// The live score: one world cycle, every row's cell repeated across it.
+			const beats = +(view.cyclePulses / 3).toFixed(2);
+			const sc = section("Score", `One world cycle, ${beats} beats: each row's cell repeats until all six line up again. Rows top to bottom are voices 1–6; bright = sounding now, dim = muted or resting.`, "arrange");
+			scoreCanvas.setAttribute("aria-label", `Score of ${view.worldName}, ${beats}-beat cycle`);
+			sc.append(scoreCanvas);
+			kickScore();
 
 			// Arrangement: ensembles, then the six rows.
 			const arr = section("Ensembles and cells", "Tap the selected cell to mute or rejoin. Another cell comes in at the current phase.", "arrange");
@@ -1031,6 +1094,11 @@
 						const vm = m.path.match(/^\/grid\/out\/page\/([a-h])\/view$/);
 						if (vm) {
 							try { const idx=SLOT_LABELS.indexOf(vm[1]); cellsViews[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) { renderCellsView(); renderKeys(); } } catch {}
+							break;
+						}
+						const wm = m.path.match(/^\/grid\/ui\/page\/([a-h])\/world$/);
+						if (wm) {
+							try { const idx=SLOT_LABELS.indexOf(wm[1]); cellsWorlds[idx]=JSON.parse(m.args[0]); if(idx===focusedSlot) renderCellsView(); } catch {}
 							break;
 						}
 						const pm = m.path.match(/^\/grid\/out\/page\/([a-h])\/patterns$/);

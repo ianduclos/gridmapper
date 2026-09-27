@@ -268,6 +268,54 @@ describe("cells-hot world change cues", () => {
 	})
 })
 
+describe("cells-hot score packets", () => {
+	it("sends static world data once, web-only, and keeps /view small", () => {
+		const sent: any[] = []
+		const r = rig()
+		r.ctx.osc.send = (path: string, ...args: any[]) => sent.push({ path, args })
+		r.page.onOsc!("/action/refreshView", [], r.ctx)
+		const world = sent.filter((m) => m.path === "/grid/ui/page/b/world")
+		expect(world).toHaveLength(1)
+		const w = JSON.parse(world[0].args[0])
+		expect(w).toMatchObject({ worldId: "horn-relay", cyclePulses: 48, sourceScale: 1, pulsesPerBeat: 3 })
+		expect(w.score).toHaveLength(6)
+		expect(w.score.every((row: any[]) => row.length === 3)).toBe(true)
+		expect(w.score[0][0].events[0]).toEqual({
+			atPulse: expect.any(Number),
+			durationPulses: expect.any(Number),
+			gain: expect.any(Number),
+		})
+		const view = JSON.parse(sent.filter((m) => m.path.endsWith("/view")).at(-1).args[0])
+		for (const k of ["roles", "cellNames", "presetNames", "context", "worldSummaries", "source"])
+			expect(view).not.toHaveProperty(k)
+		expect(JSON.stringify(view).length).toBeLessThan(1500)
+		expect(view.phase).toBeNull()
+		// A setting change doesn't resend the world; a world change does.
+		sent.length = 0
+		r.page.onOsc!("/setting/rootMultiplier", [2], r.ctx)
+		expect(sent.some((m) => m.path.endsWith("/world"))).toBe(false)
+		r.page.onOsc!("/setting/rhythmWorld", ["kotekan"], r.ctx)
+		const k = JSON.parse(sent.filter((m) => m.path.endsWith("/world")).at(-1).args[0])
+		expect(k).toMatchObject({ worldId: "kotekan", cyclePulses: 24, sourceScale: 0.75 })
+	})
+	it("anchors the playhead on the first pulse and on a tempo change, not every pulse", () => {
+		vi.useFakeTimers()
+		vi.setSystemTime(1000)
+		const r = rig()
+		r.tap(1, 7)
+		const views = () => r.view()
+		r.page.onTick!(1, 0, r.ctx, 1000)
+		expect(views().phase).toEqual({ pulse: 0, atMs: 1100, periodMs: 100 })
+		r.page.onTick!(2, 0, r.ctx, 1100)
+		expect(views().phase.pulse).toBe(0) // no re-anchor on an ordinary pulse
+		r.clock.rate = 40 // tempo change: period 50
+		r.page.onTick!(3, 0, r.ctx, 1200)
+		expect(views().phase).toEqual({ pulse: 2, atMs: 1300, periodMs: 50 })
+		r.page.dispose(r.ctx)
+		vi.useRealTimers()
+	})
+})
+
 describe("cells-hot playhead", () => {
 	it("glides the leading edge and dims silent rows", () => {
 		expect(playheadLevel(0, 3.5, false)).toBe(5)

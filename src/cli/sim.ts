@@ -24,7 +24,7 @@ import { applySystemConfig, captureSystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
 import { PAGE_TYPES, DEFAULT_PAGE, pageSettings, pageKeymap } from "../pages/registry.js"
-import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel } from "../core/types.js"
+import { type PageContext, type Slot, type Modifiers, type KeyEvent, SLOT_INDICES, slotLabel, UI_ONLY_PREFIX } from "../core/types.js"
 
 const PORT = Number(process.env.GRID_UI_PORT ?? 57191) // 57190 is twistermapper's UI
 const UI_INDEX = resolvePath(process.cwd(), "web/index.html")
@@ -123,6 +123,11 @@ const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc
 const twisterOsc = createOscSender(settings.osc.twisterPort)
 let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	// /grid/ui/... is for the web panel only (e.g. cells-hot's score): never on the UDP wire.
+	if (path.startsWith(UI_ONLY_PREFIX)) {
+		server.broadcast(path, args)
+		return
+	}
 	if (path.startsWith("/twister/in/")) {
 		twisterOsc.send(path, ...args)
 	server.broadcast(path, args)

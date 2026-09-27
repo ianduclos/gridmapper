@@ -145,6 +145,9 @@ export interface Page {
 }
 
 // 8 hot-swappable page slots, labelled a..h (mirrors the twister).
+/** Output under this prefix goes to the web panel only, never on the UDP wire to Max. */
+export const UI_ONLY_PREFIX = "/grid/ui/"
+
 export type Slot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 export type SlotLabel = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"
 

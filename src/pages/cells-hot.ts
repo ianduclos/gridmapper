@@ -13,6 +13,7 @@ import {
 	type PageContext,
 	makeFrame,
 	ledIndex,
+	UI_ONLY_PREFIX,
 } from "../core/types.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
@@ -296,6 +297,8 @@ export class CellsHotPage implements Page {
 	private loopers = Array.from({ length: LOOPERS }, () => new CycleLooper())
 	private persistTimer: ReturnType<typeof setTimeout> | null = null
 	private worldLandedAt = 0
+	/** The world the last /world packet described. */
+	private worldSent = ""
 	private dampAllHeld = false
 	private dampMode = false
 	private dampRows = new Array(VOICES).fill(false)
@@ -320,10 +323,10 @@ export class CellsHotPage implements Page {
 	init(c: PageContext) {
 		this.observedRun = c.clock.running
 		this.observedRate = c.clock.rate
-		this.announce(c)
+		this.announce(c, true)
 	}
 	onFocus(c: PageContext) {
-		this.announce(c)
+		this.announce(c, true)
 	}
 	onBlur(c: PageContext) {
 		c.setShift(1, false)
@@ -373,6 +376,9 @@ export class CellsHotPage implements Page {
 		const p = tick - this.originTick,
 			period = this.period(c),
 			now = Date.now()
+		// The web score runs its own playhead from the last anchor; re-anchor it only when
+		// the extrapolation would go wrong: the first pulse and a tempo change.
+		const reanchor = p === 0 || period !== this.lastPeriod
 		this.lastPulse = p
 		this.lastPeriod = period
 		this.deadlineMs = deadlineMs
@@ -408,6 +414,7 @@ export class CellsHotPage implements Page {
 				events,
 			})
 		this.playLoops(c, p, period, deadlineMs)
+		if (reanchor && !transitioned) this.view(c)
 		c.setDirty()
 	}
 	onKey(e: KeyEvent, c: PageContext) {
@@ -526,6 +533,7 @@ export class CellsHotPage implements Page {
 	onOsc(path: string, args: any[], c: PageContext) {
 		const v = args[0]
 		if (path === "/action/refreshView") {
+			this.emitWorld(c)
 			this.view(c)
 			return
 		}
@@ -835,7 +843,7 @@ export class CellsHotPage implements Page {
 				num(raw.bpm, pulseRateToBpm(this.pulseRate), BPM_MIN, BPM_MAX),
 			)
 		if (raw.patterns !== undefined) this.restorePatterns(raw.patterns)
-		this.announce(c)
+		this.announce(c, true)
 	}
 	/** Loops in pulses. The older wall-clock (`lengthMs`) form has no cycle position, so it is dropped. */
 	private restorePatterns(value: unknown) {
@@ -1318,14 +1326,53 @@ export class CellsHotPage implements Page {
 			c.persist({})
 		}, PERSIST_MS)
 	}
-	private announce(c: PageContext) {
+	/** `forceWorld`: resend the world packet even if it hasn't changed (init, focus, restore). */
+	private announce(c: PageContext, forceWorld = false) {
 		c.osc.send(`/grid/out/page/${c.slotLabel}/type`, "cells-hot")
+		if (forceWorld || this.worldSent !== this.rhythmWorld) this.emitWorld(c)
 		this.emitPatterns(c)
 		c.osc.send(
 			`/grid/out/page/${c.slotLabel}/settings`,
 			JSON.stringify(this.serialize()),
 		)
 		this.view(c)
+	}
+	/**
+	 * Everything about the world that only changes when the world does: names, notes and
+	 * the score (every cell's hits, in source pulses). Sent on announce (init, focus,
+	 * restore, a world change) and on refreshView, never per key press.
+	 */
+	private emitWorld(c: PageContext) {
+		const w = this.world
+		this.worldSent = w.id
+		c.osc.send(
+			// Web only: Max has no use for the score, and a 15 KB datagram is not worth risking.
+			`${UI_ONLY_PREFIX}page/${c.slotLabel}/world`,
+			JSON.stringify({
+				worldId: w.id,
+				worldName: w.name,
+				roles: w.roles,
+				cellNames: w.cells.map((row) => row.map((cell) => cell.name)),
+				presetNames: w.presetNames,
+				ensembleNotes: w.ensembleNotes ?? [],
+				context: w.context ?? "",
+				worldSummaries: worldSummaries(),
+				source: w.source,
+				pulsesPerBeat: meta(w.id).pulsesPerBeat ?? 3,
+				sourceScale: this.sourceScale,
+				cyclePulses: worldCyclePulses(w.id),
+				score: w.cells.map((row) =>
+					row.map((cell) => ({
+						lengthPulses: cell.lengthPulses,
+						events: cell.events.map((e) => ({
+							atPulse: e.atPulse,
+							durationPulses: e.durationPulses,
+							gain: e.gain,
+						})),
+					})),
+				),
+			}),
+		)
 	}
 	private view(c: PageContext) {
 		const w = this.world,
@@ -1352,15 +1399,18 @@ export class CellsHotPage implements Page {
 					!!this.pendingWorldId &&
 					stagedTuning === recommendation.recommendedTuning &&
 					this.pendingRecommendationWorldId === this.pendingWorldId,
-				roles: w.roles,
-				cellNames: w.cells.map((row) => row.map((cell) => cell.name)),
-				presetNames: w.presetNames,
-				ensembleNotes: w.ensembleNotes ?? [],
 				activeEnsemble: this.activeEnsemble(),
-				context: w.context ?? "",
-				worldSummaries: worldSummaries(),
-				source: w.source,
 				running: this.running,
+				// Where the score's playhead is: `pulse` is heard at `atMs` (same-host epoch
+				// ms), and advances one pulse per `periodMs`. Null while cells is silent.
+				phase:
+					this.running && this.originTick !== undefined && this.lastPeriod > 0
+						? {
+								pulse: this.lastPulse,
+								atMs: this.deadlineMs + BUFFER_MS,
+								periodMs: this.lastPeriod,
+							}
+						: null,
 				bpm: pulseRateToBpm(this.pulseRate),
 				selected: this.selected,
 				muted: this.muted,

@@ -192,7 +192,17 @@ after cutoff. A transition emits an empty sync heartbeat followed by one atomic
 replacement packet, so Max retains fresh clock/humanization/watchdog information.
 Existing sounding tails remain. The Max watchdog is `max(2000, 3 * periodMs)`.
 
-The UI receives `/grid/out/page/b/view` on changes and `/action/refreshView`.
+The UI receives `/grid/out/page/b/view` on changes and `/action/refreshView`. It is
+live state only (about 0.7 KB): selection, mutes, locks, running, and a `phase` anchor
+`{pulse, atMs, periodMs}` (the pulse heard at `atMs`, same-host epoch ms; `null` while
+cells is silent). The anchor is re-sent on the first pulse, on a tempo change and on any
+view change, never per pulse: the web score runs its own playhead from it.
+
+What only changes with the world goes to `/grid/ui/page/b/world` (names, notes, context,
+world summaries, `pulsesPerBeat`, `sourceScale`, `cyclePulses`, and `score`: every
+cell's `{lengthPulses, events: [{atPulse, durationPulses, gain}]}` in source pulses). It is
+sent on init, focus, restore, a world change and `/action/refreshView`. `/grid/ui/...` is
+**web-panel only**: the hosts never put it on the UDP wire, so Max doesn't get it.
 Controls use `/grid/in/page/b/{cell/<row>/<choice>,mute/<row>,lock/<row>,ensemble/<index>,looper/<i>[/clear]}`
 and `/action/{play,evolve,lockMode,applyRecommendation}`; row and choice indices are
 zero-based. Existing `/setting/<key>` messages remain supported.

@@ -168,7 +168,10 @@ twister's `/twister/...` vocabulary:
   (mirrors `../twistermapper/docs/max-handshake.md`).
 
 The web visualizer uses the same `{ path, args }` JSON shape over WebSocket, so the
-UI and OSC share one vocabulary (see `io/gridServer.ts`).
+UI and OSC share one vocabulary (see `io/gridServer.ts`). One exception:
+**`/grid/ui/...` (`UI_ONLY_PREFIX` in `core/types.ts`) goes to the web panel only** and
+never on the UDP wire, for bulky display data Max has no use for (cells-hot's
+`/grid/ui/page/<slot>/world` score packet).
 
 ## Rate limiting / render loop — planned
 

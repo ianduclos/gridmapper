@@ -6,7 +6,7 @@ entries: 1
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
 - done: design settled with Ian; open items resolved 2026-09-27 (step-or-Hz entries, edits land at the cutoff, variant lengths divide the world cycle, pitch loops per world + row); phased build plan written.
-- next: phase 1 of the build plan: the live score view, plus the static `/world` packet split.
+- next: phase 2 (rhythm editing, variants). Phase 1 (live score + `/grid/ui` world packet) built 2026-09-27; not yet seen by Ian in the real panel.
 - blockers: none.
 - context: docs/cells-editor-design.md (Decisions 6–10 + Build plan), docs/cells-hot.md, src/pages/cells-hot.ts (`events()` is the scheduler), web/index.html (`renderCellsView`). Cycle-locked loopers (b14f81f) define the world cycle that variant lengths must divide.
 

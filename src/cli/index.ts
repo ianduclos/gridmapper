@@ -29,6 +29,7 @@ import {
 	type KeyEvent,
 	SLOT_INDICES,
 	slotLabel,
+	UI_ONLY_PREFIX,
 } from "../core/types.js"
 
 const useNull = process.argv.includes("--null")
@@ -86,6 +87,8 @@ const osc = createOsc({ localPort: settings.osc.inPort, remotePort: settings.osc
 const twisterOsc = createOscSender(settings.osc.twisterPort)
 let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
+	// Web-panel-only output; the daemon has no web panel.
+	if (path.startsWith(UI_ONLY_PREFIX)) return
 	if (path.startsWith("/twister/in/")) {
 		twisterOsc.send(path, ...args)
 		return
