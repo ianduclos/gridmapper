@@ -607,7 +607,11 @@
 			if (!cellsSlot) return;
 			const live = cellsViews[focusedSlot], world = cellsWorlds[focusedSlot];
 			// The world packet carries what only changes with the world; the view, the rest.
-			const view = live && world && world.worldId === live.worldId ? { ...world, ...live } : null;
+			// An older server still puts the static fields in /view and sends no world packet:
+			// use its view as-is (no score) rather than waiting forever.
+			const view = !live ? null
+				: world && world.worldId === live.worldId ? { ...world, ...live }
+				: live.cellNames ? live : null;
 			const values = settingsBySlot[focusedSlot] || {};
 			const patterns = patternsBySlot[focusedSlot] || [];
 			const signature = JSON.stringify([focusedSlot, live, world?.worldId, values, patterns]);
@@ -730,10 +734,12 @@
 
 			// The live score: one world cycle, every row's cell repeated across it.
 			const beats = +(view.cyclePulses / 3).toFixed(2);
-			const sc = section("Score", `One world cycle, ${beats} beats: each row's cell repeats until all six line up again. Rows top to bottom are voices 1–6; bright = sounding now, dim = muted or resting.`, "arrange");
-			scoreCanvas.setAttribute("aria-label", `Score of ${view.worldName}, ${beats}-beat cycle`);
-			sc.append(scoreCanvas);
-			kickScore();
+			const sc = !view.score ? null : section("Score", `One world cycle, ${beats} beats: each row's cell repeats until all six line up again. Rows top to bottom are voices 1–6; bright = sounding now, dim = muted or resting.`, "arrange");
+			if (sc) {
+				scoreCanvas.setAttribute("aria-label", `Score of ${view.worldName}, ${beats}-beat cycle`);
+				sc.append(scoreCanvas);
+				kickScore();
+			}
 
 			// Arrangement: ensembles, then the six rows.
 			const arr = section("Ensembles and cells", "Tap the selected cell to mute or rejoin. Another cell comes in at the current phase.", "arrange");
