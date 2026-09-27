@@ -3,6 +3,10 @@ import { wolosoWorld } from "./cells-woloso.js"
 import { kotekanWorld } from "./cells-kotekan.js"
 import { ngonWorld } from "./cells-ngon.js"
 import { manjaninWorld } from "./cells-manjanin.js"
+import { nyamaropaWorld } from "./cells-nyamaropa.js"
+import { sikuriWorld } from "./cells-sikuri.js"
+import { tshikonaWorld } from "./cells-tshikona.js"
+import { kecakWorld } from "./cells-kecak.js"
 import hotelier from "./hotelier-tunings.json" with { type: "json" }
 import horn from "./cells-hot-bank.json" with { type: "json" }
 
@@ -316,6 +320,11 @@ worlds[ngonWorld.id] = ngonWorld
 worlds[manjanin2World.id] = manjanin2World
 worlds[wolosoWorld.id] = wolosoWorld
 worlds[kotekanWorld.id] = kotekanWorld
+// 2026-09-27 research run: source-checked, awaiting Ian's listening (docs/cells-research-*.md).
+worlds[nyamaropaWorld.id] = nyamaropaWorld
+worlds[sikuriWorld.id] = sikuriWorld
+worlds[tshikonaWorld.id] = tshikonaWorld
+worlds[kecakWorld.id] = kecakWorld
 
 // Explicit performance arrangements: these groups choose existing compatible
 // cell tuples and never synthesize new attacks or change foundation rows.

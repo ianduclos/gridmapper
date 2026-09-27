@@ -107,3 +107,27 @@ the independent stem buttons allow further thinning.
 Try Humanize 0 first: the structural timing remains uneven. Then add 1–4 ms if
 wanted. Start with the core ensemble, change the lead pair together to hear the
 source phrase, then separate their choices to create a deliberate hybrid.
+
+## Research run 2026-09-27: Nyamaropa, Sikuri, Tshikona, Kecak
+
+Four banks drafted by parallel research agents. Each source below was then re-read
+page by page against the data before registering (every stroke checked where noted).
+All four await Ian's listening. Full dossiers, including the designed parts, are linked.
+
+- **Mbira — Nyamaropa** (`mbira-nyamaropa`): B. Michael Williams, "Getting Started with
+  Mbira dzaVadzimu", *Percussive Notes*, Aug 1997, pp.38–46 (author PDF). Kushaura Chara I
+  was re-checked cell by cell against p.43. Open: the text puts the kutsinhira one pulse
+  *behind* the kushaura, while the tablature's column labels read one pulse ahead.
+  [Dossier](cells-research-nyamaropa.md).
+- **Sikuri** (`sikuri`): Serrano Finetti 2022, *Kaylla* 1:97–110, figs.1–3 (Lima sikuri
+  metropolitano, not Conima). Fig.2 bars 1–3 were re-checked note by note, ties included.
+  The ira/arka split comes from fig.1's tuning chart; no score prints it. Printed tempo is
+  ♩=61–70. [Dossier](cells-research-sikuri.md).
+- **Tshikona** (`tshikona`): Tracey & Gumboreshumba, "Transcribing the Venda tshikona
+  reedpipe dance", *African Music* 9(3), 2013. All seven Fig.5 onsets and pipe pairings
+  were re-checked, including 7/4 between pulses 9 and 10. The drum parts are not encoded.
+  [Dossier](cells-research-tshikona.md).
+- **Kecak** (`kecak`): Darmawan, Ardini & Mudana 2020, *Jurnal Bali Membangun Bali* 1(1),
+  p.70. All Cak 3, Cak 6 and Cak 5 lines and all seven melody lines were re-checked. Only
+  the cak rhythm is source-derived: the melody's timing and every pitch are designed.
+  [Dossier](cells-research-kecak.md).

@@ -1445,6 +1445,10 @@ const WORLD_SHORT: Record<string, string> = {
 	"manjanin-ii": "Manj. II",
 	woloso: "Woloso",
 	kotekan: "Pelayon",
+	"mbira-nyamaropa": "Nyamar.",
+	sikuri: "Sikuri",
+	tshikona: "Tshikona",
+	kecak: "Kecak",
 }
 const shortWorld = (id: string) => WORLD_SHORT[id] ?? worlds[id].name.split(" — ")[0]
 // Cheat-sheet looks, from render(): a cell chosen per row, phase bars part-way through.
