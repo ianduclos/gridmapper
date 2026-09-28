@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-09-27
+updated: 2026-09-28
 entries: 1
 ---
 
@@ -119,6 +119,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-09-28 — Claude — power switch, agent restarted onto the new work
+- **Power** (`core/appRuntime.ts`): `/grid/in/power [0|1]` (no argument toggles), `/grid/in/power/get` → `/grid/out/power`. OFF captures the layout, disposes every page (`PageManager.unloadAll`), stops the clock, blanks and releases the grid, stops discovery, and holds the render loop asleep (`IdleManager.hold`). The router drops everything except power and ping. ON reloads through `applySystemConfig`. The web header has the toggle.
+- The web cells panel falls back to an older server's `/view` (no score) instead of "Waiting for the page…".
+- Agent restarted twice (kickstart); it runs all of this. **The grid did not reconnect after the last restart: no `/dev/cu.usbserial*` present** (cable or power, not code).
+- **Verified:** tsc clean, 538 tests; the power toggle was exercised in an isolated sim copy (off/on, no page errors). Not on hardware.
 
 ### 2026-09-27 — Claude — cells-hot review fixes, cycle loopers, score view, four banks
 - **Review fixes:** cells persists with an EMPTY patch (live `slots.json` only, batched 400 ms; `presetStore.persistSlot` skips the preset on `{}`), so playing never rewrites a saved preset. A held per-voice damp releases after a view change. Play gates cells only: it starts a stopped transport, joins a running one on its next beat, and never stops it; a preset load stops the session only.

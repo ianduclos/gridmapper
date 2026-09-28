@@ -1,14 +1,14 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-09-27
+updated: 2026-09-28
 machine: mac
-summary: cells-hot gained cycle-locked loopers, a Play key that no longer stops the shared transport, evolution knobs, a live web score view (editor phase 1) and four new source-checked banks; 534 tests green, none of it yet restarted onto the agent or heard.
+summary: cells-hot gained cycle-locked loopers, a transport-safe Play key, evolution knobs, a live web score and four new source-checked banks, and the app has a power off/on switch (/grid/in/power); all live on the restarted agent, 538 tests green, not yet played or heard.
 next:
-  - Restart the agent (kickstart -k) and audition the new work: score view, loopers, Play, and the four banks (Nyamaropa offset, Sikuri at 61-70 BPM, Tshikona, Kecak)
+  - Reconnect the grid (after the 2026-09-27 restart macOS showed no usbserial device) and audition the new work — score view, loopers, Play, power toggle, and the four banks (Nyamaropa offset, Sikuri at 61-70 BPM, Tshikona, Kecak)
   - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
   - Decide whether to revert the cells-drifted slot b in configs/presets/hotelier.json and commit the dirty configs/*.json
-  - Single-instance guard; twistermapper clock bridge
+  - Single-instance guard; twistermapper clock bridge; a matching power switch in twistermapper
 handoff_for: claude-gridmapper
 ---
 
