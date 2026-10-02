@@ -21,8 +21,13 @@ describe("isValidPresetName", () => {
 		expect(isValidPresetName("a".repeat(48))).toBe(true)
 	})
 
+	it("accepts dots, but never leading", () => {
+		expect(isValidPresetName("idk.surface")).toBe(true)
+		for (const bad of [".", "..", ".hidden", "../x", "a/b.c"]) expect(isValidPresetName(bad)).toBe(false)
+	})
+
 	it("rejects anything that could escape the presets directory", () => {
-		for (const bad of ["../evil", "a/b", "a\\b", "", "a".repeat(49), ".", "x.json", null, 7]) {
+		for (const bad of ["../evil", "a/b", "a\\b", "", "a".repeat(49), ".", " lead", null, 7]) {
 			expect(isValidPresetName(bad)).toBe(false)
 		}
 	})

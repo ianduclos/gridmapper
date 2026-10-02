@@ -27,7 +27,8 @@ import {
 } from "./systemConfig.js"
 import type { SlotLabel } from "./types.js"
 
-const NAME_RE = /^[A-Za-z0-9 _-]{1,48}$/
+/** Dots are allowed (e.g. "idk.surface") but never first: no hidden files, no "." / "..". */
+const NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9 ._-]{0,47}$/
 
 /** True if `name` is a safe preset name (no path separators, sane length). */
 export const isValidPresetName = (name: unknown): name is string =>

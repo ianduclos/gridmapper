@@ -10,6 +10,9 @@
  *  the effective damp per voice (boolean[6]) so other pages can light their keys. */
 export const DAMP_FROM_CELLS = "damp/cells"
 export const DAMP_STATE = "damp/set-hot"
+/** idk.surface fork of the two damp keys above: the surface pages use ONLY these, so they never cross-talk with -hot pages. */
+export const DAMP_FROM_CELLS_SURFACE = "damp/cells-surface"
+export const DAMP_STATE_SURFACE = "damp/set-surface"
 
 export class SharedStore {
 	private values = new Map<string, unknown>()

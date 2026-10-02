@@ -338,6 +338,7 @@
 		let focusedSlot = 0;
 		let slotPages = SLOT_LABELS.map(() => "base");
 		let specsByPage = {};                          // pageName -> SettingSpec[]
+		const isCellsPage = (name) => name === "cells-hot" || name === "cells-surface";
 		let settingsBySlot = SLOT_LABELS.map(() => ({})); // slot index -> { key: value }
 		let cellsViews = SLOT_LABELS.map(() => null);
 		// Static per-world data (names, notes, the score), from /grid/ui/page/<slot>/world.
@@ -381,7 +382,7 @@
 			const page = slotPages[focusedSlot];
 			renderKeys();
 			settingsCtx.textContent = `slot ${SLOT_LABELS[focusedSlot]} · ${page}`;
-			if (page === "cells-hot") { cellsViewSignature = ""; renderCellsView(); return; }
+			if (isCellsPage(page)) { cellsViewSignature = ""; renderCellsView(); return; }
 			const specs = specsByPage[page] || [];
 			settingsFields.innerHTML = "";
 			if (!specs.length) { renderCellsView(); settingsNote.textContent = `no settings for ${page} yet`; return; }
@@ -547,7 +548,7 @@
 		}
 
 		function requestCellsView() {
-			if (slotPages[focusedSlot] === "cells-hot") send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/action/refreshView`, []);
+			if (isCellsPage(slotPages[focusedSlot])) send(`/grid/in/page/${SLOT_LABELS[focusedSlot]}/action/refreshView`, []);
 		}
 		// --- Cells Hot: its own panel. Settings, the live view and the loopers are drawn
 		// together in the order you play: what's on, the arrangement, tempo, tuning, sound,
@@ -568,7 +569,7 @@
 		function drawScore() {
 			scoreRaf = 0;
 			const live = cellsViews[focusedSlot], w = cellsWorlds[focusedSlot];
-			if (!scoreCanvas.isConnected || !live || !w || w.worldId !== live.worldId || slotPages[focusedSlot] !== "cells-hot") return;
+			if (!scoreCanvas.isConnected || !live || !w || w.worldId !== live.worldId || !isCellsPage(slotPages[focusedSlot])) return;
 			const LANE = 20, GAP = 4, H = 6 * (LANE + GAP) - GAP;
 			const cssW = scoreCanvas.clientWidth || 600, dpr = devicePixelRatio || 1;
 			if (scoreCanvas.width !== Math.round(cssW * dpr) || scoreCanvas.height !== Math.round(H * dpr)) {
@@ -606,7 +607,7 @@
 		}
 
 		function renderCellsView() {
-			const cellsSlot = slotPages[focusedSlot] === "cells-hot";
+			const cellsSlot = isCellsPage(slotPages[focusedSlot]);
 			cellsPanel.hidden = !cellsSlot;
 			if (!cellsSlot) return;
 			const live = cellsViews[focusedSlot], world = cellsWorlds[focusedSlot];
@@ -629,7 +630,7 @@
 			const slot = SLOT_LABELS[focusedSlot];
 			const act = (path, args = []) => send(`/grid/in/page/${slot}${path}`, args);
 			const setVal = (key, v) => act(`/setting/${key}`, [v]);
-			const specs = Object.fromEntries((specsByPage["cells-hot"] || []).map((s) => [s.key, s]));
+			const specs = Object.fromEntries((specsByPage[slotPages[focusedSlot]] || []).map((s) => [s.key, s]));
 			const cur = (key) => values[key] !== undefined ? values[key] : specs[key]?.default;
 			const make = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 			const button = (label, onClick, pressed, cls = "enum-button") => {
@@ -689,7 +690,7 @@
 				if (spec.help) row.append(make("p", "cx-help", spec.help));
 				parent.append(row); return input;
 			};
-			settingsCtx.textContent = `slot ${slot} · cells-hot`;
+			settingsCtx.textContent = `slot ${slot} · ${slotPages[focusedSlot]}`;
 			// A world/view mismatch is a world change in flight (the world packet goes first); the
 			// view follows at once, so only ask for a refresh when a packet is missing outright.
 			if (!view) { cellsPanel.append(make("p", "cx-help", "Waiting for the page…")); if (!live || !world) act("/action/refreshView"); return; }
@@ -954,7 +955,7 @@
 		// --- presets ---------------------------------------------------------------
 		// A preset is the eight slots and each page's own state. The daemon owns the files;
 		// this panel is just the one surface allowed to CREATE them.
-		const PRESET_NAME_RE = /^[A-Za-z0-9 _-]{1,48}$/;
+		const PRESET_NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9 ._-]{0,47}$/;
 		let presetNames = [];
 		let activePreset = "";
 		let armedDelete = null; // click × once to arm, again to confirm — no modal dialogs
@@ -1006,7 +1007,7 @@
 			const input = el("presetName");
 			const name = input.value.trim();
 			if (!PRESET_NAME_RE.test(name)) {
-				el("presetNote").textContent = "name: letters, digits, space, _ or -";
+				el("presetNote").textContent = "name: letters, digits, space, . _ or - (not starting with . or space)";
 				return;
 			}
 			// Overwriting is the point of a name you already used, but say so out loud.

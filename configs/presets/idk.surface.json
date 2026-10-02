@@ -1,0 +1,13 @@
+{
+	"version": 1,
+	"slots": {
+		"a": { "page": "iso-surface" },
+		"b": { "page": "cells-surface" },
+		"c": { "page": "blank-surface" },
+		"d": { "page": "blank-surface" },
+		"e": { "page": "blank-surface" },
+		"f": { "page": "set-surface" },
+		"g": { "page": "blank-surface" },
+		"h": { "page": "blank-surface" }
+	}
+}

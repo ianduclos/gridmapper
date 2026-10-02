@@ -39,4 +39,9 @@ describe("page key maps", () => {
 		expect(pageKeymap("set-hot").length).toBeGreaterThan(5)
 		expect(pageKeymap("iso-hot").length).toBeGreaterThan(10)
 	})
+	it("covers the idk.surface forks", () => {
+		expect(pageKeymap("cells-surface").length).toBeGreaterThan(10)
+		expect(pageKeymap("set-surface").length).toBeGreaterThan(5)
+		expect(pageKeymap("iso-surface").length).toBeGreaterThan(10)
+	})
 })
