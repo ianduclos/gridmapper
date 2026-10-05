@@ -1,11 +1,12 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-09-28
+updated: 2026-10-05
 machine: mac
-summary: cells-hot gained cycle-locked loopers, a transport-safe Play key, evolution knobs, a live web score and four new source-checked banks, and the app has a power off/on switch (/grid/in/power); all live on the restarted agent, 538 tests green, not yet played or heard.
+summary: idk.surface now has its own forked grid pages (iso/cells/set/blank-surface) and an idk.surface preset, live on the restarted agent with 549 tests green; the cells-hot work and these forks are still unplayed on hardware.
 next:
-  - Reconnect the grid (after the 2026-09-27 restart macOS showed no usbserial device) and audition the new work — score view, loopers, Play, power toggle, and the four banks (Nyamaropa offset, Sikuri at 61-70 BPM, Tshikona, Kecak)
+  - Load the idk.surface preset on the grid and play the surface pages (plus the still-unauditioned cells-hot work from 2026-09-27/28)
+  - Offer voices 7-8 on the surface pages now that idk.surface runs eight voices (VOICES is still 6 in cells-surface/set-surface)
   - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
   - Decide whether to revert the cells-drifted slot b in configs/presets/hotelier.json and commit the dirty configs/*.json
   - Single-instance guard; twistermapper clock bridge; a matching power switch in twistermapper

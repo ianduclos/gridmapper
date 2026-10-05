@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-09-28
+updated: 2026-10-05
 entries: 1
 ---
 
@@ -119,6 +119,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-10-02 — Claude — idk.surface page forks + preset
+- **Forks** `pages/{iso,cells,set,blank}-surface.ts` of the hotelier -hot pages: the same behavior and wire format, free to diverge. They have their own selector (`util/pageSelectorSurface.ts`, separate `twisterHeld`) and their own damp keys in `core/sharedStore.ts` (`damp/cells-surface`, `damp/set-surface`). They still share read-only world/tuning data with cells-hot. VOICES is 6.
+- **Preset** `configs/presets/idk.surface.json`: a iso-surface, b cells-surface, f set-surface, the rest blank-surface. Preset names may now contain `.` (never leading), in `presetStore.ts` and the web panel. The web cells panel recognises cells-surface too.
+- **Verified:** tsc clean, 549 tests (`test/surface.test.ts` reads the real preset file); agent restarted (`kickstart -k`), web UI up. **Not** loaded over OSC or played on hardware. Since then idk.surface has gone to eight voices (CHANGES.md 2026-10-03); the surface pages still cap at 6.
 
 ### 2026-09-28 — Claude — power switch, agent restarted onto the new work
 - **Power** (`core/appRuntime.ts`): `/grid/in/power [0|1]` (no argument toggles), `/grid/in/power/get` → `/grid/out/power`. OFF captures the layout, disposes every page (`PageManager.unloadAll`), stops the clock, blanks and releases the grid, stops discovery, and holds the render loop asleep (`IdleManager.hold`). The router drops everything except power and ping. ON reloads through `applySystemConfig`. The web header has the toggle.
