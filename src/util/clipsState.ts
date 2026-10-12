@@ -276,12 +276,35 @@ function launched(st: ClipsState, send: Send[], track: number | undefined): KeyR
 	return { send, focus: track }
 }
 
+/** Every staged slot as a press then a release, all presses first, so they land together.
+ *  (A Gate clip fired this way plays only for that instant.) */
+function fireStaged(st: ClipsState): KeyResult {
+	const out: KeyResult = { send: [] }
+	for (const s of st.staged) out.send.push(slotButton(s.track, s.scene, 1))
+	for (const s of st.staged) out.send.push(slotButton(s.track, s.scene, 0))
+	const last = [...st.staged].reverse().find((s) => s.launches)
+	st.staged = []
+	if (last) {
+		st.focusTrack = last.track
+		out.focus = last.track
+	}
+	return out
+}
+
 function clipPress(st: ClipsState, w: WindowView, x: number, y: number): KeyResult {
 	if (x >= COLS || y >= ROWS) return { send: [] }
 	const code = w.slots[y * COLS + x]
 	if (code === SLOT.none) return { send: [] }
 	const track = w.trackOff + x
 	const scene = w.sceneOff + y
+	if (st.opts.stagedLaunch && st.shift) {
+		// Staged launch: collect now, fire on shift release. Nothing goes in `down`, so this
+		// key's release sends nothing. A second tap unstages.
+		const i = st.staged.findIndex((s) => s.track === track && s.scene === scene)
+		if (i >= 0) st.staged.splice(i, 1)
+		else st.staged.push({ track, scene, launches: code >= SLOT.emptyArmed })
+		return { send: [] }
+	}
 	st.down.set(y * GRID_W + x, { track, scene })
 	// An empty slot's press stops the track in Live: not a launch, so focus stays put.
 	return launched(st, [slotButton(track, scene, 1)], code >= SLOT.emptyArmed ? track : undefined)
@@ -316,7 +339,7 @@ function faderPress(st: ClipsState, w: WindowView, x: number, y: number): Send[]
 function controlKey(st: ClipsState, x: number, s: 0 | 1, nowMs: number): KeyResult {
 	if (x === SHIFT_X) {
 		st.shift = s === 1
-		return { send: [] }
+		return s === 0 && st.staged.length ? fireStaged(st) : { send: [] }
 	}
 	const layer = LAYER_KEYS[x]
 	if (layer) {
@@ -463,6 +486,11 @@ function drawNoLink(put: Put, size: GridSize) {
 function drawClips(st: ClipsState, w: WindowView, put: Put, pick: Pick, dip: boolean) {
 	for (let y = 0; y < ROWS; y++)
 		for (let x = 0; x < COLS; x++) put(x, y, slotLevel(w.slots[y * COLS + x], pick, dip))
+	for (const s of st.staged) {
+		const x = s.track - w.trackOff
+		const y = s.scene - w.sceneOff
+		if (x >= 0 && x < COLS && y >= 0 && y < ROWS) put(x, y, pick(LEVEL.staged))
+	}
 
 	const scenes = st.scenes && st.scenes.sceneOff === w.sceneOff ? st.scenes.codes : null
 	for (let y = 0; y < ROWS; y++) {
