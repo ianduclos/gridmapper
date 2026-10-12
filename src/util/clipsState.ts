@@ -183,3 +183,173 @@ export function linkTick(st: ClipsState, nowMs: number): Send[] {
 	if (nowMs - st.lastHelloMs < HELLO_RETRY_MS) return []
 	return [hello(st, nowMs)]
 }
+
+// --- the grid layout (spec "Grid layout"; C3 adds the pages key) ---------------------
+
+export const GRID_W = 16
+export const SCENE_COL = 15
+export const STOP_ROW = 6
+export const CTRL_ROW = 7
+export const SHIFT_X = 15
+/** x0 y7: hold, then x0-7 on y0 focuses slot a-h (Ian, 2026-10-12). */
+export const PAGES_X = 0
+export const PAGE_SLOTS = 8
+export const LAYER_KEYS: Readonly<Record<number, Layer>> = { 1: "clips", 2: "mute", 3: "solo", 4: "arm", 5: "volume" }
+export const ARROWS = { left: 11, right: 12, up: 13, down: 14 } as const
+export type Arrow = keyof typeof ARROWS
+/** A layer key held longer than this is momentary; shorter is a latching tap. */
+export const MOMENTARY_MS = 300
+
+// --- volume faders (V layer) --------------------------------------------------------
+
+export const FADER_STEPS = 7 // y6 (bottom, −∞) .. y0 (top, 0 dB)
+/** Live's mixer volume at 0 dB on its 0..1 parameter (confirm in the idk.clips spike). */
+export const UNITY = 0.85
+export const stepToVolume = (step: number) => Number(((UNITY * step) / (FADER_STEPS - 1)).toFixed(4))
+export const volumeToStep = (v: number) =>
+	Math.min(FADER_STEPS - 1, Math.max(0, Math.round((v / UNITY) * (FADER_STEPS - 1))))
+
+export type ToggleLayer = "mute" | "solo" | "arm"
+export const TOGGLE_BIT: Readonly<Record<ToggleLayer, number>> = { mute: TRACK.mute, solo: TRACK.solo, arm: TRACK.arm }
+
+/** The flags of window column x, or null when unknown: no track there, or the track feed
+ *  still describes another bank (it carries its own offset). */
+export function viewFlags(st: ClipsState, x: number): number | null {
+	const t = st.tracks
+	if (!t || !st.win || t.trackOff !== st.win.trackOff) return null
+	const f = t.flags[x] ?? 0
+	return f & TRACK.exists ? f : null
+}
+
+// --- keys ---------------------------------------------------------------------------
+
+export interface KeyResult {
+	send: Send[]
+	/** A launch moved the track focus (absolute track index). */
+	focus?: number
+	/** The pages key asked for slot a-h (0-7). */
+	focusSlot?: number
+}
+
+const slotButton = (track: number, scene: number, state: 0 | 1): Send =>
+	({ path: "/clips/slot/button", args: [track, scene, state] })
+const sceneButton = (scene: number, state: 0 | 1): Send => ({ path: "/clips/scene/button", args: [scene, state] })
+
+export function pressKey(st: ClipsState, x: number, y: number, s: 0 | 1, nowMs: number): KeyResult {
+	if (y === CTRL_ROW && x === PAGES_X) {
+		st.pagesHeld = s === 1
+		return { send: [] }
+	}
+	if (st.pagesHeld && s === 1 && y !== CTRL_ROW)
+		return y === 0 && x < PAGE_SLOTS ? { send: [], focusSlot: x } : { send: [] }
+	if (y === CTRL_ROW) return controlKey(st, x, s, nowMs)
+	if (s === 0) return release(st, x, y)
+	const w = st.win
+	if (!st.linked || !w) return { send: [] }
+	if (st.layer === "volume") return { send: faderPress(st, w, x, y) }
+	if (y === STOP_ROW) return { send: stopRowPress(st, w, x) }
+	if (x === SCENE_COL) return { send: scenePress(st, w, y) }
+	return clipPress(st, w, x, y)
+}
+
+/** A release goes wherever its press went, whatever the window or layer is now. */
+function release(st: ClipsState, x: number, y: number): KeyResult {
+	const cell = y * GRID_W + x
+	const held = st.down.get(cell)
+	if (held) {
+		st.down.delete(cell)
+		return { send: [slotButton(held.track, held.scene, 0)] }
+	}
+	const scene = x === SCENE_COL ? st.sceneDown.get(y) : undefined
+	if (scene !== undefined) {
+		st.sceneDown.delete(y)
+		return { send: [sceneButton(scene, 0)] }
+	}
+	return { send: [] }
+}
+
+function launched(st: ClipsState, send: Send[], track: number | undefined): KeyResult {
+	if (track === undefined) return { send }
+	st.focusTrack = track
+	return { send, focus: track }
+}
+
+function clipPress(st: ClipsState, w: WindowView, x: number, y: number): KeyResult {
+	if (x >= COLS || y >= ROWS) return { send: [] }
+	const code = w.slots[y * COLS + x]
+	if (code === SLOT.none) return { send: [] }
+	const track = w.trackOff + x
+	const scene = w.sceneOff + y
+	st.down.set(y * GRID_W + x, { track, scene })
+	// An empty slot's press stops the track in Live: not a launch, so focus stays put.
+	return launched(st, [slotButton(track, scene, 1)], code >= SLOT.emptyArmed ? track : undefined)
+}
+
+function scenePress(st: ClipsState, w: WindowView, y: number): Send[] {
+	const scene = w.sceneOff + y
+	if (scene >= w.nScenes) return []
+	st.sceneDown.set(y, scene)
+	return [sceneButton(scene, 1)]
+}
+
+function stopRowPress(st: ClipsState, w: WindowView, x: number): Send[] {
+	if (x === SCENE_COL) return [{ path: "/clips/stop_all", args: [] }]
+	const track = w.trackOff + x
+	if (track >= w.nTracks) return []
+	if (st.layer === "clips") return [{ path: "/clips/track/stop", args: [track] }]
+	const flags = viewFlags(st, x)
+	if (flags === null) return []
+	const prop = st.layer as ToggleLayer
+	return [{ path: "/clips/track/set", args: [prop, track, flags & TOGGLE_BIT[prop] ? 0 : 1] }]
+}
+
+function faderPress(st: ClipsState, w: WindowView, x: number, y: number): Send[] {
+	if (y > STOP_ROW) return []
+	// Master (x15) is shown, not set: the contract has no master address yet (C1).
+	if (x === SCENE_COL) return []
+	if (viewFlags(st, x) === null) return []
+	return [{ path: "/clips/track/set", args: ["volume", w.trackOff + x, stepToVolume(FADER_STEPS - 1 - y)] }]
+}
+
+function controlKey(st: ClipsState, x: number, s: 0 | 1, nowMs: number): KeyResult {
+	if (x === SHIFT_X) {
+		st.shift = s === 1
+		return { send: [] }
+	}
+	const layer = LAYER_KEYS[x]
+	if (layer) {
+		layerKey(st, layer, s, nowMs)
+		return { send: [] }
+	}
+	if (s === 0) return { send: [] }
+	const arrow = (Object.keys(ARROWS) as Arrow[]).find((a) => ARROWS[a] === x)
+	return { send: arrow ? bank(st, arrow) : [] }
+}
+
+function layerKey(st: ClipsState, layer: Layer, s: 0 | 1, nowMs: number) {
+	if (s === 1) {
+		st.layerDown = { layer, atMs: nowMs, prev: st.latched }
+		st.layer = layer
+		return
+	}
+	const d = st.layerDown
+	if (!d || d.layer !== layer) return
+	st.layerDown = null
+	if (nowMs - d.atMs > MOMENTARY_MS) st.layer = d.prev // held: momentary, go back
+	else st.latched = layer // tapped: it sticks
+}
+
+function bank(st: ClipsState, dir: Arrow): Send[] {
+	const w = st.win
+	if (!st.linked || !w) return []
+	// Build on an unanswered move, so two quick presses go two windows, not one.
+	const base = st.want ?? { trackOff: w.trackOff, sceneOff: w.sceneOff }
+	const sign = dir === "left" || dir === "up" ? -1 : 1
+	const next =
+		dir === "left" || dir === "right"
+			? { trackOff: nextOffset(base.trackOff, w.nTracks, COLS, sign, st.shift ? 1 : COLS), sceneOff: base.sceneOff }
+			: { trackOff: base.trackOff, sceneOff: nextOffset(base.sceneOff, w.nScenes, ROWS, sign, st.shift ? 1 : ROWS) }
+	if (next.trackOff === base.trackOff && next.sceneOff === base.sceneOff) return []
+	st.want = next
+	return [{ path: "/clips/window/set", args: [next.trackOff, next.sceneOff] }]
+}
