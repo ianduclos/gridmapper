@@ -28,6 +28,11 @@ You are **never** responsible for, and must **never** touch:
 If you find yourself importing anything from `src/io/`, stop — you're outside the
 contract.
 
+The one sanctioned way out to another app is a link the host hands you on the context —
+today `ctx.live` (the Ableton Live link, `io/liveLink.ts`). You still never import it:
+use `ctx.live?.send(...)` / `ctx.live?.on(...)`, unsubscribe in `dispose()`, and expect it
+to be absent in test rigs. See `pages/clips.ts`.
+
 ---
 
 ## 2. Quickstart

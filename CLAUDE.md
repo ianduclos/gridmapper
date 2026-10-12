@@ -78,6 +78,7 @@ twister's `/twister/...` vocabulary:
 > **Ports:** gridmapper's app OSC defaults to **listen 57131 / send 57130** (the
 > `5713x` block). twistermapper runs constantly and holds `57120/57121`, and its web
 > UI owns `57190`, so gridmapper's sim UI uses **57191**. Don't collide.
+> The Live link holds UDP **11001** (and sends to 11000, the idk.clips fork).
 
 - `/grid/out/hello` on transport ready.
 - `/grid/out/focus/page <a..h>`; `/grid/out/page/<slot>/type <name>`.
@@ -163,6 +164,12 @@ twister's `/twister/...` vocabulary:
   stay up, and the router drops everything except power and ping. ON reloads the captured
   layout through `applySystemConfig` (as a preset load: loops come back paused, clock
   stopped) and resumes hotplug. Lives in `core/appRuntime.ts`; the web header has the toggle.
+- **Ableton Live link (implemented, 2026-10-12).** A second OSC peer, `io/liveLink.ts`:
+  send **11000**, listen **11001**, loopback only, fully separate from the Max link (Live
+  traffic never reaches Max or the web panel). Pages see it as `ctx.live` (`send`, `on` →
+  unsubscribe). Only `pages/clips.ts` uses it, speaking idk.clips' `/clips/...` contract.
+  Ports are boot-only settings (`osc.liveOutPort` / `osc.liveInPort`). If 11001 is taken,
+  the clips page just shows "no link".
 - **Live settings (implemented).** `/grid/in/settings/<section>/<key> <value>` — clamped,
   applied to the running clock/idle, and persisted to `configs/settings.json` (debounced,
   atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`
@@ -385,6 +392,16 @@ src/
                          <row 0..7> <1|0>; Max owns row→pitch. Driven by the APP CLOCK
                          (onTick), so it runs in every slot, focused or not; `lane` picks
                          which clock lane to follow and `div` divides it down per page.
+  io/liveLink.ts         the Ableton Live link: a SECOND OSC peer (send 11000, listen 11001,
+                         loopback), never mixed with Max's. Pages get it as ctx.live; only
+                         pages/clips.ts uses it.
+  pages/clips.ts         CLIPS — Live Session-view launcher over the idk.clips AbletonOSC fork.
+                         15×6 window (Live's red box follows), x15 scenes, y6 stop/toggles,
+                         y7 pages key · C M S A V layers · ←→↑↓ · ⇧. Absolute indices; publishes
+                         SharedStore "focus/clips" + /grid/out/page/<slot>/focus/track <n>.
+                         Contract is idk.clips'; our readings: docs/clips-contract-notes.md.
+  util/clipsState.ts     the clips page's pure model: feed, offsets, liveness, keys, LEVEL, frame
+  cli/clips-fake-live.ts stand-in /clips fork for the web sim (npm run clips:fake)
 docs/PAGE_PROTOCOL.md    HOW TO WRITE A PAGE — the authoring contract (person or LLM)
   cli/index.ts           the daemon: grid + pages + loop + OSC  (npm run dev [-- --null])
   cli/grid-list.ts       discovery probe                          (npm run grid:list)
