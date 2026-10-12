@@ -77,6 +77,18 @@ describe("SettingsStore.apply", () => {
 		expect(st.get().osc.inPort).toBe(DEFAULT_SETTINGS.osc.inPort)
 	})
 
+	it("carries the Live link's ports, boot-only", () => {
+		expect(DEFAULT_SETTINGS.osc.liveOutPort).toBe(11000)
+		expect(DEFAULT_SETTINGS.osc.liveInPort).toBe(11001)
+		const path = tmp()
+		writeFileSync(path, JSON.stringify({ osc: { liveInPort: 12001, liveOutPort: 12000 } }))
+		const s = loadSettings(path)
+		expect(s.osc.liveInPort).toBe(12001)
+		expect(s.osc.liveOutPort).toBe(12000)
+		expect(s.osc.inPort).toBe(DEFAULT_SETTINGS.osc.inPort)
+		expect(store().apply("osc/liveInPort", 9999)).toBe(false)
+	})
+
 	it("debounces the write, then persists once", () => {
 		const path = tmp()
 		const st = new SettingsStore(clone(), undefined, path)

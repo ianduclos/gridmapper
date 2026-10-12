@@ -31,6 +31,10 @@ export type Settings = {
 		outPort: number
 		/** twistermapper's OSC in-port: /twister/in/... messages from pages go here, not to Max. */
 		twisterPort: number
+		/** The Ableton Live link (io/liveLink.ts): the idk.clips fork listens here… */
+		liveOutPort: number
+		/** …and replies here. Boot-only, like every osc.* port. */
+		liveInPort: number
 	}
 	clock: {
 		/** Master internal rate in Hz. */
@@ -51,7 +55,7 @@ export type Settings = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-	osc: { inPort: 57131, outPort: 57130, twisterPort: 57121 },
+	osc: { inPort: 57131, outPort: 57130, twisterPort: 57121, liveOutPort: 11000, liveInPort: 11001 },
 	clock: { rate: 20, lanes: DEFAULT_LANES.map((l) => ({ ...l })), echo: false },
 	idle: { connectedMin: 240, disconnectedMin: 15, caffeinate: false },
 }
@@ -116,6 +120,8 @@ export function loadSettings(path = SETTINGS_PATH): Settings {
 			inPort: cleanPort(oscNode.inPort, DEFAULT_SETTINGS.osc.inPort),
 			outPort: cleanPort(oscNode.outPort, DEFAULT_SETTINGS.osc.outPort),
 			twisterPort: cleanPort(oscNode.twisterPort, DEFAULT_SETTINGS.osc.twisterPort),
+			liveOutPort: cleanPort(oscNode.liveOutPort, DEFAULT_SETTINGS.osc.liveOutPort),
+			liveInPort: cleanPort(oscNode.liveInPort, DEFAULT_SETTINGS.osc.liveInPort),
 		},
 		clock: {
 			rate: clampRate(clockNode.rate ?? DEFAULT_SETTINGS.clock.rate),

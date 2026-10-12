@@ -54,6 +54,16 @@ export interface Modifiers {
 	shift2: boolean
 }
 
+/**
+ * A second OSC peer beside Max: today the idk.clips AbletonOSC fork inside Ableton Live
+ * (io/liveLink.ts, UDP 11000 out / 11001 in). Its traffic never reaches Max or the web.
+ */
+export interface LiveLink {
+	send: (path: string, ...args: Array<number | string | boolean>) => void
+	/** Hear every message from Live. Returns the unsubscribe; call it from dispose(). */
+	on: (fn: (path: string, args: any[]) => void) => () => void
+}
+
 export interface PageContext {
 	size: GridSize
 	modifiers: Modifiers
@@ -96,6 +106,8 @@ export interface PageContext {
 	persist: (patch: Record<string, unknown>) => void
 	/** Live state shared between pages (core/sharedStore.ts). Absent in bare test rigs. */
 	shared?: import("./sharedStore.js").SharedStore
+	/** The Ableton Live link. Absent in bare test rigs; only pages/clips.ts uses it. */
+	live?: LiveLink
 }
 
 export interface Page {
