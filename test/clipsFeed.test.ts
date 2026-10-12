@@ -111,6 +111,32 @@ describe("link liveness", () => {
 		expect(st.linked).toBe(false)
 	})
 
+	it("beats alone never bring the link up: hellos keep going, and the window appears once a snapshot arrives", () => {
+		const st = createClipsState()
+		let sent = 0
+		for (let t = 0; t <= 60_000; t += 500) {
+			applyLive(st, "/clips/beat", [t / 500], T0 + t)
+			sent += hellos(linkTick(st, T0 + t))
+		}
+		expect(st.linked).toBe(false)
+		expect(sent).toBeGreaterThanOrEqual(30)
+		applyLive(st, "/clips/window", windowMsg(), T0 + 60_100)
+		expect(st.linked).toBe(true)
+	})
+
+	it("a dropped link forgets the old set, so a beat can't bring back a stale window", () => {
+		const st = createClipsState()
+		applyLive(st, "/clips/window", windowMsg({ trackOff: 15 }), T0)
+		applyLive(st, "/clips/tracks", tracksMsg({ trackOff: 15 }), T0)
+		linkTick(st, T0 + QUIET_PROBE_MS) // probe
+		linkTick(st, T0 + QUIET_PROBE_MS + HELLO_RETRY_MS) // unanswered → dropped
+		expect(st.linked).toBe(false)
+		expect([st.win, st.tracks, st.scenes, st.want]).toEqual([null, null, null, null])
+		applyLive(st, "/clips/beat", [1], T0 + QUIET_PROBE_MS + HELLO_RETRY_MS + 10)
+		expect(st.linked).toBe(false)
+		expect(st.win).toBeNull()
+	})
+
 	it("an answered probe keeps the link", () => {
 		const st = createClipsState()
 		applyLive(st, "/clips/window", windowMsg(), T0)

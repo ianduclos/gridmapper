@@ -106,8 +106,11 @@ const code = (v: number, max: number) => (Number.isInteger(v) && v >= 0 && v <= 
 const unit = (v: number) => Math.min(1, Math.max(0, v))
 
 /**
- * One message from the fork. Returns true if it was a well-formed /clips message, which is
- * also what counts as hearing from Live. Anything else is ignored, never thrown on.
+ * One message from the fork. Returns true if it was a well-formed /clips message; anything
+ * else is ignored, never thrown on. Only a WINDOW brings the link up — a beat or a track
+ * update arriving first (Live already playing when we start, or a fork that came back)
+ * must not, or the page would believe it is linked with nothing to draw and stop asking
+ * for the snapshot. Once linked, every well-formed message counts as hearing from Live.
  */
 export function applyLive(st: ClipsState, path: string, args: unknown[], nowMs: number): boolean {
 	switch (path) {
@@ -148,8 +151,8 @@ export function applyLive(st: ClipsState, path: string, args: unknown[], nowMs: 
 		default:
 			return false
 	}
-	st.linked = true
-	st.lastHeardMs = nowMs
+	if (path === "/clips/window") st.linked = true
+	if (st.linked) st.lastHeardMs = nowMs
 	return true
 }
 
@@ -180,7 +183,13 @@ export function linkTick(st: ClipsState, nowMs: number): Send[] {
 		const probed = st.lastHelloMs > st.lastHeardMs
 		if (!probed) return [hello(st, nowMs)]
 		if (nowMs - st.lastHelloMs < HELLO_RETRY_MS) return []
-		st.linked = false // the probe went unanswered: Live closed, or the fork stopped
+		// The probe went unanswered: Live closed, or the fork stopped. Forget the set, so the
+		// page can't draw (or press into) a stale window if Live comes back with another one.
+		st.linked = false
+		st.win = null
+		st.tracks = null
+		st.scenes = null
+		st.want = null
 	}
 	if (nowMs - st.lastHelloMs < HELLO_RETRY_MS) return []
 	return [hello(st, nowMs)]
