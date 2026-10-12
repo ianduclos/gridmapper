@@ -13,6 +13,9 @@ export const DAMP_STATE = "damp/set-hot"
 /** idk.surface fork of the two damp keys above: the surface pages use ONLY these, so they never cross-talk with -hot pages. */
 export const DAMP_FROM_CELLS_SURFACE = "damp/cells-surface"
 export const DAMP_STATE_SURFACE = "damp/set-surface"
+/** Clips: the ABSOLUTE 0-based index (number) of the track whose clip was launched last.
+ *  Written only by pages/clips.ts; any page may read or subscribe. */
+export const FOCUS_CLIPS = "focus/clips"
 
 export class SharedStore {
 	private values = new Map<string, unknown>()
