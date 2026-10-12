@@ -16,6 +16,8 @@ import osc from "osc"
 export type Osc = {
 	send: (path: string, ...args: Array<number | string | boolean>) => void
 	onMessage: (cb: (path: string, args: any[]) => void) => void
+	/** Hear socket errors too (a failed bind arrives here with err.code, e.g. EADDRINUSE). */
+	onError: (cb: (err: unknown) => void) => void
 	close: () => void
 }
 
@@ -88,5 +90,9 @@ export function createOsc(opts?: {
 	}
 
 	udpPort.open()
-	return { send, onMessage, close }
+	const onError = (cb: (err: unknown) => void) => {
+		udpPort.on("error", cb)
+	}
+
+	return { send, onMessage, onError, close }
 }

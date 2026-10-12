@@ -78,7 +78,8 @@ twister's `/twister/...` vocabulary:
 > **Ports:** gridmapper's app OSC defaults to **listen 57131 / send 57130** (the
 > `5713x` block). twistermapper runs constantly and holds `57120/57121`, and its web
 > UI owns `57190`, so gridmapper's sim UI uses **57191**. Don't collide.
-> The Live link holds UDP **11001** (and sends to 11000, the idk.clips fork).
+> The Live link holds UDP **11001** while a clips page is loaded (and sends to 11000, the
+> idk.clips fork).
 
 - `/grid/out/hello` on transport ready.
 - `/grid/out/focus/page <a..h>`; `/grid/out/page/<slot>/type <name>`.
@@ -168,8 +169,10 @@ twister's `/twister/...` vocabulary:
   send **11000**, listen **11001**, loopback only, fully separate from the Max link (Live
   traffic never reaches Max or the web panel). Pages see it as `ctx.live` (`send`, `on` →
   unsubscribe). Only `pages/clips.ts` uses it, speaking idk.clips' `/clips/...` contract.
-  Ports are boot-only settings (`osc.liveOutPort` / `osc.liveInPort`). If 11001 is taken,
-  the clips page just shows "no link".
+  Ports are boot-only settings (`osc.liveOutPort` / `osc.liveInPort`). The socket is LAZY:
+  bound only while a clips page is loaded, so an idle daemon never holds 11001 (AbletonOSC's
+  own client and tests bind it too). A taken port is retried every 5 s and the page shows
+  "no link" meanwhile; sends are dropped, not queued, while unbound.
 - **Live settings (implemented).** `/grid/in/settings/<section>/<key> <value>` — clamped,
   applied to the running clock/idle, and persisted to `configs/settings.json` (debounced,
   atomic). Out: `/grid/out/settings <json>`; `/grid/in/settings/get` re-emits. `clock.*`

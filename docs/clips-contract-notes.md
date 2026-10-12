@@ -3,7 +3,7 @@
 The contract belongs to idk.clips
 (`idk.clips/docs/superpowers/specs/2026-10-12-clip-launcher-design.md`); nothing here
 changes it. These are Ian's calls of 2026-10-12, and the page's readings of places the
-spec is silent. **idk.clips: please confirm or correct the readings (4–11).**
+spec is silent. **idk.clips: please confirm or correct the readings (4–11), and answer 12.**
 
 ## Decided by Ian (2026-10-12)
 
@@ -42,3 +42,13 @@ spec is silent. **idk.clips: please confirm or correct the readings (4–11).**
     the page takes to be 0 dB. To confirm in the spike.
 11. **Staged launch** fires each staged slot as a press then a release (all presses first),
     so a staged Gate clip plays only for that instant.
+
+## Open question for idk.clips
+
+12. **Port 11001 is shared with AbletonOSC's own tooling.** The fork replies to the fixed
+    port 11001, and idk.clips' `client/client.py` (and the tests and console built on it)
+    binds 11001 too. So while a clips page is loaded in gridmapper, the fork's own client
+    can't bind it, and if the client holds it first, gridmapper's page shows "no link" until
+    it is free. gridmapper now binds 11001 only while a clips page is loaded and retries
+    every 5 s. A clean split needs a contract change: the fork sends `/clips/*` replies to a
+    port the page names (e.g. in `/clips/hello`), or to a dedicated port such as 11002.

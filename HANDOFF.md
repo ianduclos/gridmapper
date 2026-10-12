@@ -123,8 +123,9 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ### 2026-10-12 — Claude — clips page (gridmapper side of idk.clips)
 - **New:** `io/liveLink.ts` (a second OSC peer, `ctx.live`, UDP 11000 out / 11001 in, loopback), `util/clipsState.ts` (the pure model + the one LED table), `pages/clips.ts`, `cli/clips-fake-live.ts` (`npm run clips:fake`, a stand-in fork). Plan: `docs/superpowers/plans/2026-10-12-clips-page.md`; spec lives in idk.clips.
 - **Ian's calls:** master volume shown only (no contract address), hold-to-cue dropped from v1, x0 y7 = pages key (hold + x0–7 on y0 → slot a–h). The contract readings idk.clips should confirm are in `docs/clips-contract-notes.md`.
-- **Verified:** tsc clean, 618 tests; the page against the fake fork over real UDP (snapshot, launch, bank). **Not** verified in the web sim, in Live (fork unbuilt) or on the grid.
-- **Next:** Ian views it in the sim against `npm run clips:fake`. The launchd agent only binds 11001 after `kickstart -k`. Built on branch `feat/clips`.
+- **Verified:** tsc clean, 623 tests; the page against the fake fork over real UDP (snapshot, launch, bank); a taken port retried and recovered on a real socket. **Not** verified in the web sim, in Live (fork unbuilt) or on the grid.
+- **Final review fixes:** only a `/clips/window` brings the link up (a beat first used to strand the page on "no link"), and a dropped link forgets the set. The Live socket is lazy (bound only while a clips page is loaded), retries a taken port, and drops sends while unbound. Port 11001 also clashes with idk.clips' own AbletonOSC client: open question 12 in the contract notes.
+- **Next:** Ian views it in the sim against `npm run clips:fake`. The launchd agent picks the page up only after `kickstart -k`; it binds 11001 only while a clips page is loaded. Built on branch `feat/clips`.
 
 ### 2026-10-02 — Claude — idk.surface page forks + preset
 - **Forks** `pages/{iso,cells,set,blank}-surface.ts` of the hotelier -hot pages: the same behavior and wire format, free to diverge. They have their own selector (`util/pageSelectorSurface.ts`, separate `twisterHeld`) and their own damp keys in `core/sharedStore.ts` (`damp/cells-surface`, `damp/set-surface`). They still share read-only world/tuning data with cells-hot. VOICES is 6.
