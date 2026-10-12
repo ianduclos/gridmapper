@@ -10,6 +10,8 @@
  * ------------------------------------------------------------------------------
  */
 
+import { makeFrame, ledIndex, type GridSize, type LedFrame } from "../core/types.js"
+
 export const COLS = 15 // tracks in the window = the width of Live's red box
 export const ROWS = 6 // scenes in the window
 export const SLOTS = COLS * ROWS
@@ -352,4 +354,151 @@ function bank(st: ClipsState, dir: Arrow): Send[] {
 	if (next.trackOff === base.trackOff && next.sceneOff === base.sceneOff) return []
 	st.want = next
 	return [{ path: "/clips/window/set", args: [next.trackOff, next.sceneOff] }]
+}
+
+// --- LEDs ---------------------------------------------------------------------------
+
+/**
+ * Every brightness this page draws: the one table to tune (spec "LED brightness"; the
+ * spec's values where it gives one, first guesses elsewhere). Pairs are [off-beat, on-beat].
+ */
+export const LEVEL = {
+	emptyArmed: 2,
+	stopped: 5,
+	playing: 15,
+	recording: 15,
+	recordingDip: 8,
+	queuedPlay: [5, 15],
+	queuedStop: [15, 5],
+	queuedRec: [2, 15],
+	scenePresent: 3,
+	sceneTriggered: [3, 15],
+	stopPlaying: 8,
+	stopIdle: 2,
+	toggleOn: 15,
+	toggleOff: 3,
+	faderFill: 6,
+	faderTop: 15,
+	layerActive: 15,
+	layerOther: 4,
+	arrowCan: 8,
+	arrowEdge: 2,
+	shiftUp: 4,
+	shiftDown: 15,
+	pagesUp: 2,
+	pagesDown: 15,
+	slotKey: 6,
+	ownSlot: 15,
+	staged: [2, 8],
+	noLink: 2,
+} as const
+
+/** Our own blink period when Live sends no beat (its transport is stopped). */
+export const LOCAL_BEAT_MS = 500
+/** How long a recording clip dips after each beat. */
+export const DIP_MS = 120
+
+const beatFresh = (st: ClipsState, nowMs: number) => st.beat !== null && nowMs - st.beatAtMs < BEAT_STALE_MS
+
+/** The "on" half of a blink: Live's beat parity while it is fresh, else our own clock. */
+export function onBeat(st: ClipsState, nowMs: number): boolean {
+	if (beatFresh(st, nowMs)) return Math.floor(st.beat!) % 2 === 0
+	return Math.floor(nowMs / LOCAL_BEAT_MS) % 2 === 0
+}
+
+export function inDip(st: ClipsState, nowMs: number): boolean {
+	if (beatFresh(st, nowMs)) return nowMs - st.beatAtMs < DIP_MS
+	return nowMs % LOCAL_BEAT_MS < DIP_MS
+}
+
+type Pick = (pair: readonly [number, number]) => number
+
+export function slotLevel(code: number, pick: Pick, dip: boolean): number {
+	switch (code) {
+		case SLOT.emptyArmed: return LEVEL.emptyArmed
+		case SLOT.stopped: return LEVEL.stopped
+		case SLOT.queuedPlay: return pick(LEVEL.queuedPlay)
+		case SLOT.playing: return LEVEL.playing
+		case SLOT.queuedStop: return pick(LEVEL.queuedStop)
+		case SLOT.queuedRec: return pick(LEVEL.queuedRec)
+		case SLOT.recording: return dip ? LEVEL.recordingDip : LEVEL.recording
+		default: return 0 // none, empty
+	}
+}
+
+type Put = (x: number, y: number, v: number) => void
+
+/** The page's whole frame, a pure function of state and time. */
+export function clipsFrame(st: ClipsState, size: GridSize, nowMs: number, ownSlot = -1): LedFrame {
+	const f = makeFrame(size)
+	const put: Put = (x, y, v) => {
+		if (x >= 0 && y >= 0 && x < size.width && y < size.height) f[ledIndex(size, x, y)] = v
+	}
+	const w = st.win
+	if (!st.linked || !w) drawNoLink(put, size)
+	else {
+		const beat = onBeat(st, nowMs)
+		const pick: Pick = (pair) => pair[beat ? 1 : 0]
+		if (st.layer === "volume") drawFaders(st, put)
+		else drawClips(st, w, put, pick, inDip(st, nowMs))
+		drawControlRow(st, w, put)
+	}
+	put(PAGES_X, CTRL_ROW, st.pagesHeld ? LEVEL.pagesDown : LEVEL.pagesUp)
+	if (st.pagesHeld)
+		for (let x = 0; x < PAGE_SLOTS; x++) put(x, 0, x === ownSlot ? LEVEL.ownSlot : LEVEL.slotKey)
+	return f
+}
+
+function drawNoLink(put: Put, size: GridSize) {
+	for (let x = 0; x < size.width; x++) {
+		put(x, 0, LEVEL.noLink)
+		put(x, size.height - 1, LEVEL.noLink)
+	}
+	for (let y = 0; y < size.height; y++) {
+		put(0, y, LEVEL.noLink)
+		put(size.width - 1, y, LEVEL.noLink)
+	}
+}
+
+function drawClips(st: ClipsState, w: WindowView, put: Put, pick: Pick, dip: boolean) {
+	for (let y = 0; y < ROWS; y++)
+		for (let x = 0; x < COLS; x++) put(x, y, slotLevel(w.slots[y * COLS + x], pick, dip))
+
+	const scenes = st.scenes && st.scenes.sceneOff === w.sceneOff ? st.scenes.codes : null
+	for (let y = 0; y < ROWS; y++) {
+		const c = scenes?.[y] ?? SCENE.none
+		put(SCENE_COL, y, c === SCENE.triggered ? pick(LEVEL.sceneTriggered) : c === SCENE.present ? LEVEL.scenePresent : 0)
+	}
+
+	let anyPlaying = false
+	for (let x = 0; x < COLS; x++) {
+		const fl = viewFlags(st, x)
+		if (fl === null) continue
+		if (fl & TRACK.playing) anyPlaying = true
+		if (st.layer === "clips") put(x, STOP_ROW, fl & TRACK.playing ? LEVEL.stopPlaying : LEVEL.stopIdle)
+		else put(x, STOP_ROW, fl & TOGGLE_BIT[st.layer as ToggleLayer] ? LEVEL.toggleOn : LEVEL.toggleOff)
+	}
+	put(SCENE_COL, STOP_ROW, anyPlaying ? LEVEL.stopPlaying : LEVEL.stopIdle)
+}
+
+function drawFaders(st: ClipsState, put: Put) {
+	const column = (x: number, v: number) => {
+		const top = volumeToStep(v)
+		for (let k = 0; k <= top; k++) put(x, STOP_ROW - k, k === top ? LEVEL.faderTop : LEVEL.faderFill)
+	}
+	for (let x = 0; x < COLS; x++) if (viewFlags(st, x) !== null) column(x, st.tracks!.volumes[x])
+	if (st.tracks) column(SCENE_COL, st.tracks.master)
+}
+
+function drawControlRow(st: ClipsState, w: WindowView, put: Put) {
+	for (const [x, layer] of Object.entries(LAYER_KEYS))
+		put(Number(x), CTRL_ROW, layer === st.layer ? LEVEL.layerActive : LEVEL.layerOther)
+	const can: Record<Arrow, boolean> = {
+		left: w.trackOff > 0,
+		right: w.trackOff < maxOffset(w.nTracks, COLS),
+		up: w.sceneOff > 0,
+		down: w.sceneOff < maxOffset(w.nScenes, ROWS),
+	}
+	for (const a of Object.keys(ARROWS) as Arrow[]) put(ARROWS[a], CTRL_ROW, can[a] ? LEVEL.arrowCan : LEVEL.arrowEdge)
+	put(SHIFT_X, CTRL_ROW, st.shift ? LEVEL.shiftDown : LEVEL.shiftUp)
 }
