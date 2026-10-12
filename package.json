@@ -11,7 +11,8 @@
 		"sim": "tsx src/cli/sim.ts",
 		"grid:list": "tsx src/cli/grid-list.ts",
 		"grid:log": "tsx src/cli/grid-log.ts",
-		"grid:led": "tsx src/cli/grid-led.ts"
+		"grid:led": "tsx src/cli/grid-led.ts",
+		"clips:fake": "tsx src/cli/clips-fake-live.ts"
 	},
 	"keywords": ["monome", "grid", "serialosc", "osc", "midi", "max"],
 	"author": "",
