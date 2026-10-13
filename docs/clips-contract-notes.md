@@ -39,7 +39,7 @@ spec is silent. idk.clips confirmed the readings (4–11) and answered 12 on 202
    `/clips/scenes` whose offset matches the current `/clips/window`, so a bank move never
    draws (or toggles) the wrong tracks. The fork should send all three after every move.
 10. **Volume faders** are 7 steps, linear in Live's 0..1 parameter from 0 (−∞) to 0.85, which
-    the page takes to be 0 dB. To confirm in the spike.
+    the page takes to be 0 dB. Confirmed: Live 12 Suite reads 0.85 as 0.0 dB (idk.clips, 2026-10-13).
 11. **Staged launch** fires each staged slot as a press then a release (all presses first),
     so a staged Gate clip plays only for that instant.
 
@@ -47,6 +47,6 @@ spec is silent. idk.clips confirmed the readings (4–11) and answered 12 on 202
 
 12. **Port 11001** — decided by Ian 2026-10-13: the fork sends `/clips/*` to whoever last
     sent `/clips/hello` or `/clips/window/set`. gridmapper sends from 11001, so nothing
-    changed here; AbletonOSC's own client and the fork's smoke script use other ports.
+    changed here; the fork's smoke script uses a throwaway port. Only the feed moved: `/live/*` replies still go to 11001, so AbletonOSC's own client still can't run while a clips page is loaded.
     Also confirmed: track indices are positions in Live's *visible* tracks (folding a
     group renumbers).

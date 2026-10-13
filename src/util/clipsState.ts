@@ -214,7 +214,7 @@ export const MOMENTARY_MS = 300
 // --- volume faders (V layer) --------------------------------------------------------
 
 export const FADER_STEPS = 7 // y6 (bottom, −∞) .. y0 (top, 0 dB)
-/** Live's mixer volume at 0 dB on its 0..1 parameter (confirm in the idk.clips spike). */
+/** Live's mixer volume at 0 dB on its 0..1 parameter (confirmed in Live 12, 2026-10-13). */
 export const UNITY = 0.85
 export const stepToVolume = (step: number) => Number(((UNITY * step) / (FADER_STEPS - 1)).toFixed(4))
 export const volumeToStep = (v: number) =>
