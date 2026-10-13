@@ -1,15 +1,15 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-10-05
+updated: 2026-10-13
 machine: mac
-summary: idk.surface now has its own forked grid pages (iso/cells/set/blank-surface) and an idk.surface preset, live on the restarted agent with 549 tests green; the cells-hot work and these forks are still unplayed on hardware.
+summary: The clips page (Ableton Live launcher) is merged and talking to idk.clips' new AbletonOSC fork in Live 12; still unseen by Ian on the sim and grid, as are the idk.surface forks and recent cells-hot work.
 next:
-  - Load the idk.surface preset on the grid and play the surface pages (plus the still-unauditioned cells-hot work from 2026-09-27/28)
-  - Offer voices 7-8 on the surface pages now that idk.surface runs eight voices (VOICES is still 6 in cells-surface/set-surface)
+  - View the clips slot against Live in the web sim, then on the grid (banking + red box, launches, M/S/A/V layers)
+  - Load the idk.surface preset on the grid and play the surface pages (plus the unauditioned cells-hot work from 2026-09-27/28)
+  - Offer voices 7-8 on the surface pages (VOICES is still 6 in cells-surface/set-surface)
   - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
-  - Decide whether to revert the cells-drifted slot b in configs/presets/hotelier.json and commit the dirty configs/*.json
-  - Single-instance guard; twistermapper clock bridge; a matching power switch in twistermapper
+  - Decide on the dirty configs/*.json (cells-drifted slot b in hotelier.json)
 handoff_for: claude-gridmapper
 ---
 

@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-10-05
+updated: 2026-10-13
 entries: 1
 ---
 
@@ -47,6 +47,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
+- **clips page talks to real Live (2026-10-13):** idk.clips' fork serves `/clips` on 11000 and feeds whoever said hello (the clips slot, from 11001). Unseen by Ian on sim/grid yet. Session log 2026-10-13.
 - **cells-hot v2 LIVE (2026-09-21, agent restarted after Hotelier 61dd9bf installed the Max half):** richer banks, shared-beat world changes, independent tuning recommendations, shaped decay, optional evolution/rests and selected-cell mute/rejoin. 447 tests and types pass. Max half installed and probed (replaceAll, decayMs→scorearm, armDecay0..3, decay scales; 4-slot guard offline-tested only). Listening/timing pass is Ian's. See `docs/cells-v2-rollout.md` and `docs/cells-v2-verification.md`.
 - **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Manjanin and Ngòn study banks installed, 18 choices each; source details in `docs/cells-sources.md` and next-repertoire research in `docs/cells-microtiming-research.md`.
 - **Run:** `npm run sim` → http://localhost:57191 (live grid + web mirror; auto-
@@ -119,6 +120,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-10-13 — Claude — clips page meets the real Live side
+- **What:** `feat/clips` merged to main (ff, dc24025) and the agent restarted onto it. idk.clips' AbletonOSC fork now serves `/clips` (built this session, idk.clips branch `idk` cf43cf8), installed in Live 12 Suite via a symlink in `~/Music/Ableton/User Library/Remote Scripts/AbletonOSC`. The agent's clips slot subscribes on its own (fork log: `clips: feed now goes to 127.0.0.1:11001`).
+- **Contract outcomes for this page:** question 12 answered — the fork sends `/clips/*` to whoever last sent hello/window-set, so nothing changed here; readings 4–11 confirmed; 0.85 = 0.0 dB confirmed (`UNITY`); track indices are Live's *visible* tracks; solo/arm honour Live's exclusive prefs fork-side. Notes: `docs/clips-contract-notes.md`; the contract as implemented: idk.clips `docs/clips-contract.md`.
+- **Verified:** fork smoke against live Live (hello/window/tracks/scenes, banking + clamping, mute, Gate hold/release, track stop, scene, stop-all, reload); gridmapper 73 clips/liveLink tests + tsc after the doc/comment edits. **Not** verified: the page itself on the web sim or the grid with real Live — Ian's check.
+- **Next:** Ian views the clips slot (sim, then grid) against Live. `npm run clips:fake` can't run while Live's AbletonOSC holds 11000.
 
 ### 2026-10-12 — Claude — clips page (gridmapper side of idk.clips)
 - **New:** `io/liveLink.ts` (a second OSC peer, `ctx.live`, UDP 11000 out / 11001 in, loopback), `util/clipsState.ts` (the pure model + the one LED table), `pages/clips.ts`, `cli/clips-fake-live.ts` (`npm run clips:fake`, a stand-in fork). Plan: `docs/superpowers/plans/2026-10-12-clips-page.md`; spec lives in idk.clips.
