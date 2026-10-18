@@ -1,10 +1,11 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-10-13
+updated: 2026-10-18
 machine: mac
-summary: The clips page (Ableton Live launcher) is merged and talking to idk.clips' new AbletonOSC fork in Live 12; still unseen by Ian on the sim and grid, as are the idk.surface forks and recent cells-hot work.
+summary: Power-off now actually blanks the grid (a dropped UDP send, fixed 2026-10-18); the clips page (Ableton Live launcher) is merged and talking to idk.clips' new AbletonOSC fork in Live 12; still unseen by Ian on the sim and grid, as are the idk.surface forks and recent cells-hot work.
 next:
+  - Plug the grid in and check power off blanks it and power on brings the screen back (fixed 2026-10-18, not hardware-checked)
   - View the clips slot against Live in the web sim, then on the grid (banking + red box, launches, M/S/A/V layers)
   - Load the idk.surface preset on the grid and play the surface pages (plus the unauditioned cells-hot work from 2026-09-27/28)
   - Offer voices 7-8 on the surface pages (VOICES is still 6 in cells-surface/set-surface)

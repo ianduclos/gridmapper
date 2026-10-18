@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-10-13
+updated: 2026-10-18
 entries: 1
 ---
 
@@ -120,6 +120,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-10-18 — Claude — power-off blank actually reaches the grid
+- **Bug:** power OFF never blanked the grid. `ledLevelAll(0)` was queued, then `conn.detach()` closed the driver's UDP socket synchronously, and a dgram send that is still waiting on its (next-tick) address lookup is silently dropped by `close()`. Confirmed with a bare dgram repro (0 packets).
+- **Fix** (`io/serialoscDriver.ts`, 259055a): `close()` stops dispatching incoming messages at once and closes the socket 50 ms later (`CLOSE_FLUSH_MS`). Applies to every close, including `reconnect()`. Power ON was already right: reattach → `onRepaint` → full paint of the reloaded layout.
+- **Verified:** new `test/serialoscDriver.test.ts` (fake serialosc on loopback) fails without the fix and passes with it; 624 tests, tsc clean; agent restarted (`kickstart -k`). **Not** on hardware: no `/dev/cu.usbserial*` at the time.
 
 ### 2026-10-13 — Claude — clips page meets the real Live side
 - **What:** `feat/clips` merged to main (ff, dc24025) and the agent restarted onto it. idk.clips' AbletonOSC fork now serves `/clips` (built this session, idk.clips branch `idk` cf43cf8), installed in Live 12 Suite via a symlink in `~/Music/Ableton/User Library/Remote Scripts/AbletonOSC`. The agent's clips slot subscribes on its own (fork log: `clips: feed now goes to 127.0.0.1:11001`).
