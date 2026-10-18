@@ -18,6 +18,8 @@ import osc from "osc"
 const DISCOVERY_PORT = 12002
 const DEFAULT_PREFIX = "/monome"
 const DEFAULT_SIZE: GridSize = { width: 16, height: 8 } // grid 128
+/** How long close() waits for queued sends to leave before closing the socket. */
+const CLOSE_FLUSH_MS = 50
 
 /** Device-agnostic grid surface. Both the real driver and NullGrid implement it. */
 export interface GridDriver {
@@ -135,6 +137,7 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 		const reconnectCbs: Array<() => void> = []
 		let size: GridSize = { ...DEFAULT_SIZE }
 		let settled = false
+		let closed = false
 
 		const udp = new osc.UDPPort({ localAddress: "127.0.0.1", localPort: 0, metadata: true })
 
@@ -164,6 +167,7 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 		})
 
 		udp.on("message", (m: any) => {
+			if (closed) return
 			const addr: string = m.address
 			const args = m.args.map((a: any) => a.value)
 
@@ -233,7 +237,14 @@ export async function connectGrid(opts: ConnectOptions = {}): Promise<GridDriver
 				sendDev(`${prefix}/grid/led/level/map`, args)
 			},
 			close() {
-				try { udp.close() } catch {}
+				// Deferred: a dgram send is async (address lookup on the next tick), so closing
+				// synchronously silently DROPS whatever was just queued — e.g. power-off's
+				// blanking ledLevelAll(0). Stop listening now, let the queue flush, then close.
+				if (closed) return
+				closed = true
+				setTimeout(() => {
+					try { udp.close() } catch {}
+				}, CLOSE_FLUSH_MS)
 			},
 		}
 
