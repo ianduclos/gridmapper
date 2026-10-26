@@ -773,7 +773,7 @@ export class CellsSurfacePage implements Page {
 			? now % (BLINK_MS * 4) < BLINK_MS * 2
 				? 12
 				: 6
-			: damped.length && damped.every(Boolean)
+			: damped.length && damped.slice(0, VOICES).every(Boolean) // set-surface has more voices
 				? 15
 				: 3
 		return f

@@ -374,7 +374,8 @@ src/
   pages/iso-surface.ts   idk.surface fork of iso-hot — same behavior, own selector + shared-store keys
   pages/cells-surface.ts idk.surface fork of cells-hot — same behavior, own selector + shared-store keys
                          (DAMP_FROM_CELLS_SURFACE / DAMP_STATE_SURFACE); shares only read-only world data
-  pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys
+  pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;
+                         EIGHT voices (cols 4-11), not six
   pages/blank-surface.ts idk.surface fork of blank-hot — same behavior, own selector
   util/pageSelectorSurface.ts  idk.surface fork of pageSelector.ts — own twisterHeld, nothing imported from the original
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are

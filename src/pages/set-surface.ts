@@ -1,12 +1,12 @@
 /* Page: Set Surface  (idk.surface fork of set-hot — voice control for the modal instrument)
  * ------------------------------------------------------------------------------
- * Summary : Per-voice switches for the six modal voices (idk.surface, same OSC contract as hotelier), in the bottom four rows.
+ * Summary : Per-voice switches for the eight modal voices (idk.surface, same OSC contract as hotelier), in the bottom four rows.
  * Input   : col 0 rows 0-5 = page selector (util/pageSelectorSurface.ts). Bottom four rows,
  *           bottom → top: DAMP (row 7, momentary — damped while held), FREEZE (row 6),
  *           ROLL (row 5), BOW (row 4) — the last three latching toggles.
- *           Col 2 = ALL: it sets all six voices in its row (a toggle turns them all ON
- *           unless all six already are, then all OFF; damp-all holds all six down).
- *           Cols 4-9 = voices 1-6. Cols 1 and 3 are gaps.
+ *           Col 2 = ALL: it sets all eight voices in its row (a toggle turns them all ON
+ *           unless all eight already are, then all OFF; damp-all holds all eight down).
+ *           Cols 4-11 = voices 1-8. Cols 1 and 3 are gaps.
  *           Col 15 rows 0-2 = 3 LOOPERS (util/patternRecorder.ts, as in isometric): one key
  *           cycles empty → rec → play → stop, SHIFT 1 (col 0 row 7) + press clears. A take
  *           starts at the first gesture. Damp records as momentary notes (step = voice),
@@ -19,7 +19,7 @@
  *           VoicesHot): a press sends /twister/in/focus/page <a-e> straight to twistermapper.
  *           The lit key is the last one pressed here — the Twister's own focus changes are
  *           not reported back to us.
- * Output  : /grid/out/page/<slot>/voice <n 1-6> <damp|freeze|bow|roll> <1|0>, per voice
+ * Output  : /grid/out/page/<slot>/voice <n 1-8> <damp|freeze|bow|roll> <1|0>, per voice
  *           and only on a CHANGE — an ALL press sends one message per voice that moved.
  * Input   : (from Max, never echoed back)
  *           /grid/in/page/<slot>/voice/<n>/<damp|freeze|bow|roll> <1|0> — sync a switch
@@ -27,11 +27,11 @@
  *           /grid/in/page/<slot>/voice/<n>/state <0 idle|1 triggered|2 ringing> — the
  *           voice activity FEEDBACK, drawn on row 3 above each voice (provisional spot).
  *           Also out: /grid/out/page/<slot>/patterns <json> [{state, ms}] per looper.
- * Display : toggles dim 2 off / 12 on; damp 15 while held; ALL 12 when all six are on,
+ * Display : toggles dim 2 off / 12 on; damp 15 while held; ALL 12 when all eight are on,
  *           6 when some are. Feedback: triggered flashes 15 for TRIGGER_MS, ringing 5.
  * Rules   : The SWITCHES are runtime state — not saved, nothing sent at load, so recalling a
  *           preset can never unfreeze a voice. The LOOPS are content and are saved in a
- *           preset (serialize/restore); they come back stopped. Roll starts ARMED on all six,
+ *           preset (serialize/restore); they come back stopped. Roll starts ARMED on all eight,
  *           matching the instrument's own default (`voice N roll` defaults to 1). Damp is
  *           released on blur, since the key-up would otherwise land on another page.
  * ------------------------------------------------------------------------------
@@ -51,9 +51,9 @@ import { PatternRecorder, MAX_RECORD_MS, type PatternEvent } from "../util/patte
 import { isRecord, num, bool, records } from "../util/restoreGuards.js"
 import { DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
 
-export const VOICES = 6
+export const VOICES = 8
 const COL_ALL = 2
-const VOICE_COL0 = 4 // voice 1; voices run to col 9
+const VOICE_COL0 = 4 // voice 1; voices run to col 11
 const FEEDBACK_ROW = 3
 
 export const PARAMS = ["damp", "freeze", "bow", "roll"] as const
@@ -93,7 +93,7 @@ type Toggle = Exclude<Param, "damp">
 const TOGGLES: readonly Toggle[] = ["freeze", "roll", "bow"]
 const ctlId = (param: Toggle, voice: number) => `${param}/${voice + 1}`
 const parseCtl = (id: string): { param: Toggle; voice: number } | null => {
-	const m = /^(freeze|roll|bow)\/([1-6])$/.exec(id)
+	const m = /^(freeze|roll|bow)\/([1-8])$/.exec(id)
 	return m ? { param: m[1] as Toggle, voice: Number(m[2]) - 1 } : null
 }
 
@@ -393,12 +393,12 @@ export class SetSurfacePage implements Page {
 
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
-	{ x: COL_ALL, y: ROW_OF.bow, h: 4, name: "All voices", short: "All", help: "Set the whole row for all six voices (damp: hold).", lit: [LVL_SOME, LVL_OFF, LVL_SOME, LVL_OFF] },
+	{ x: COL_ALL, y: ROW_OF.bow, h: 4, name: "All voices", short: "All", help: "Set the whole row for all eight voices (damp: hold).", lit: [LVL_SOME, LVL_OFF, LVL_SOME, LVL_OFF] },
 	{ x: VOICE_COL0, y: ROW_OF.damp, w: VOICES, name: "Damp", help: "Hold to damp that voice.", lit: LVL_OFF },
-	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice.", lit: [LVL_ON, LVL_OFF, LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF] },
+	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice.", lit: [LVL_ON, LVL_OFF, LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: ROW_OF.roll, w: VOICES, name: "Roll", help: "Toggle roll per voice.", lit: LVL_OFF },
-	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
-	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0] },
+	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
+	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] },
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
 	{ x: 15, y: TWISTER_ROW0, h: TWISTER_PAGES.length, name: "Twister pages", short: "Twister", help: `Switch the Twister's page: ${TWISTER_PAGES.join(", ")}.`, lit: [LVL_TWISTER_ON, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF] },
 	{ x: SHIFT1_COL, y: SHIFT1_ROW, name: "Shift 1", short: "Shift", help: "Hold, then press a looper to clear it.", lit: LVL_SHIFT },
