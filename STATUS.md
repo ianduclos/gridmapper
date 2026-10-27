@@ -1,16 +1,15 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-10-18
+updated: 2026-10-27
 machine: mac
-summary: Power-off now actually blanks the grid (a dropped UDP send, fixed 2026-10-18); the clips page (Ableton Live launcher) is merged and talking to idk.clips' new AbletonOSC fork in Live 12; still unseen by Ian on the sim and grid, as are the idk.surface forks and recent cells-hot work.
+summary: set-surface now drives eight voices (cols 4-11) and idk.surface accepts all eight; power-off blanking, the clips page, the idk.surface forks and recent cells-hot work are all still waiting for Ian to check them on the grid.
 next:
+  - After idk.surface is relaunched (./surface play), press set-surface's voice 7-8 keys (cols 10-11) on the grid and check they reach lanes 7-8
   - Plug the grid in and check power off blanks it and power on brings the screen back (fixed 2026-10-18, not hardware-checked)
   - View the clips slot against Live in the web sim, then on the grid (banking + red box, launches, M/S/A/V layers)
-  - Load the idk.surface preset on the grid and play the surface pages (plus the unauditioned cells-hot work from 2026-09-27/28)
-  - Offer voices 7-8 on the surface pages (VOICES is still 6 in cells-surface/set-surface)
+  - Decide whether cells-surface gets voices 7-8 too (still 6; its damp-all reaches voices 1-6 only)
   - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
-  - Decide on the dirty configs/*.json (cells-drifted slot b in hotelier.json)
 handoff_for: claude-gridmapper
 ---
 

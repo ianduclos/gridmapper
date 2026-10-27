@@ -1,6 +1,6 @@
 ---
 project: gridmapper
-updated: 2026-10-18
+updated: 2026-10-27
 entries: 1
 ---
 
@@ -120,6 +120,13 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-10-27 — Claude — set-surface voices 7-8
+- **What:** `pages/set-surface.ts` VOICES 6 → 8; voices 7-8 on cols 10-11, ALL covers eight, loop ctl ids accept `/7`, `/8` (97126cd). `pages/cells-surface.ts` stays 6 voices; its ALL-damp light now checks only voices 1-6 of set-surface's eight-entry `DAMP_STATE_SURFACE`. New test in `test/surface.test.ts`.
+- **Other side:** idk.surface dropped voice keys above 6 (`control/GridSeam.h` `kGridVoices`) and sent feedback for six (`control/VoiceLights.h`). Both raised to 8 there, test + spec updated (idk.surface e23149a2, `./surface test -R "grid:"` 20/20).
+- **Verified:** tsc clean, 625 tests; agent restarted (`kickstart -k`). **Not** on hardware, and the running idk.surface app is still the old build until Ian relaunches it.
+- **Next:** relaunch idk.surface, press the voice 7-8 keys. Decide whether cells-surface goes to 8.
+- **Gotcha:** a voice-count change on a surface page needs the matching limit in idk.surface's GridSeam; check the receiving end before calling it done.
 
 ### 2026-10-18 — Claude — power-off blank actually reaches the grid
 - **Bug:** power OFF never blanked the grid. `ledLevelAll(0)` was queued, then `conn.detach()` closed the driver's UDP socket synchronously, and a dgram send that is still waiting on its (next-tick) address lookup is silently dropped by `close()`. Confirmed with a bare dgram repro (0 packets).
