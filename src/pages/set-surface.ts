@@ -72,11 +72,12 @@ const FEEDBACK_ROW = 4
 
 /**
  * The next home page (FOCUS, MOTION, FX tracks, lane home) speaks addresses idk.surface is
- * still adding: /surface/view/{focus,linked,fx}, /surface/lane/<n>/home, /surface/home.
- * Off, the page is exactly the old one and sends idk.surface nothing. Switch it on when the
- * surface session confirms they are live in the running app.
+ * added on 2026-11-11: /surface/view/{focus,linked,fx}, /surface/lane/<n>/home, /surface/home.
+ * Off, the page is exactly the old one and sends idk.surface nothing. On since the surface
+ * session confirmed them live (2026-11-11). Surface reports no view topic to subscribers
+ * (docs/osc/state.txt has none), so the view is read by /surface/get polling.
  */
-export const HOME_VIEW_LIVE = false
+export const HOME_VIEW_LIVE = true
 const FOCUS_ROW = 3
 const MOTION_ROW = 4
 const FX_ROW = 0
@@ -602,7 +603,7 @@ export const keymap: KeySpec[] = [
 	{ x: VOICE_COL0, y: ROW_OF.damp, w: VOICES, name: "Damp", help: "Hold to damp that voice.", lit: LVL_OFF },
 	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice.", lit: [LVL_ON, LVL_OFF, LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
-	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] },
+	...(HOME_VIEW_LIVE ? [] : ([{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] }] as KeySpec[])),
 	...(HOME_VIEW_LIVE
 		? ([
 				{ x: VOICE_COL0, y: FOCUS_ROW, w: VOICES, name: "Focus", help: "Focus that lane alone. Shift 1 + press adds or drops it; hold one and long-press another for the range. Shift 2 + press: that lane home. Flashes on sound.", lit: [LVL_FOCUS, LVL_LINKED, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },

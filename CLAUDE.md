@@ -383,7 +383,7 @@ src/
                          EIGHT voices (cols 4-11), not six.
                          ROLL is gone; rows top to bottom y5 BOW · y6 FREEZE · y7 DAMP (as PLAY's shift 2),
                          voice activity on y4.
-                         THE NEXT HOME (built, OFF: `HOME_VIEW_LIVE` in the file, on only when the surface
+                         THE NEXT HOME (ON since 2026-11-11: `HOME_VIEW_LIVE` in the file, switched on once the surface
                          session confirms /surface/view/{focus,linked,fx}, /surface/lane/<n>/home and
                          /surface/home are live): y3 FOCUS + activity, y4 MOTION (lane trem), y0 FX tracks,
                          over ctx.surface. The loopers record MOTION, never focus, FX or home presses
