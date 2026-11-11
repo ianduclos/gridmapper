@@ -29,9 +29,15 @@
  *           the shared dial (F), bright = its own (V). A press pulls the lane there; the
  *           all column pulls all eight; shift 1 + lane sends it back to the shared dial,
  *           shift 1 + all sends every lane back.
- * PRESETS : each cell is one stored state of a lane's six, eight rows per engine. A press
- *           recalls (and strikes, with STRIKE lit); shift 1 + cell stores what the lane is
- *           now. All on a row recalls every lane's own row; shift 1 + all also strikes.
+ * PRESETS : a cell is a lane's WHOLE SOUND, seven rows per engine: every continuous dial
+ *           the lane has pulled away from the shared one (V), made on screen or on the
+ *           Twister (util/playDials.ts). A press recalls: those dials go to their stored
+ *           values and every other one goes back to the shared dial (F). With STRIKE lit it
+ *           strikes too. Shift 1 + cell stores what the lane is now. The BOTTOM ROW is
+ *           HOME: the lane's dials all back to F, the unified instrument. With SLEW on,
+ *           every move travels, the way home too (a dial glides to where the shared one
+ *           stands, then hands itself back). All on a row
+ *           does every lane's own row; shift 1 + all also strikes them.
  * SLEW    : hold it and the all column offers eight times. Levels and recalls travel at
  *           that time; the page sends the glide itself.
  * SHIFT 2 : while held, the lanes' bottom three rows are BOW, FREEZE and DAMP (damp held
@@ -79,12 +85,14 @@ import {
 	isEngine,
 	laneAddr,
 	ownerAddr,
+	sharedAddr,
 	partSuffix,
 	partsFor,
 	suffixesFor,
 	type Engine,
 	type Part,
 } from "../util/playSlots.js"
+import { dialsFor, partOfSuffix } from "../util/playDials.js"
 import {
 	ALL_SLOTS,
 	BASE_READS,
@@ -115,6 +123,8 @@ const LATCH_Y = 7
 /** Chooser rows: 0 KEYS, 1-6 the parameter layers, 7 PRESETS. */
 export const LAYER_KEYS = 0
 export const LAYER_PRESETS = 7
+/** On PRESETS the bottom row is HOME: every dial of the lane back to the shared one. */
+export const HOME_ROW = 7
 
 /** Shift 2's rows on the lanes. */
 const BOW_Y = 5
@@ -152,11 +162,13 @@ const BLINK_MS = 220
 
 // --- Time ---------------------------------------------------------------------------
 const TIMER_MS = 10
-const GLIDE_SEND_MS = 30 // how often a travelling level is sent
+const GLIDE_SEND_MS = 30 // how often a travelling level is sent…
+const GLIDE_MAX_PER_S = 600 // …slower when many travel at once, so surface is never flooded
 const FAST_POLL_MS = 250 // the layer on screen
 const SLOW_POLL_MS = 2000 // everything else
 const SUBSCRIBE_MS = 3000 // a subscription is a lease: 10 s without renewal and it lapses
 const LINK_LOST_MS = 5000
+const READ_WAIT_MS = 150 // a store or a travelling recall asks surface first, then acts
 const MAX_PATTERN_EVENTS = 20_000
 const MAX_PATCHES = 64
 
@@ -192,6 +204,8 @@ interface Glide {
 	to: number
 	t0: number
 	durMs: number
+	/** Run once it has arrived (a dial travelling home hands itself back to the shared one). */
+	after?: () => void
 }
 
 export class PlaySurfacePage implements Page {
@@ -237,6 +251,8 @@ export class PlaySurfacePage implements Page {
 	/** Patch name → engine → eight states. "" is the bank used when no surface patch is loaded. */
 	private presets: Record<string, Bank> = {}
 	private glides = new Map<string, Glide>()
+	/** Things waiting for surface's answers (a store, a travelling recall). */
+	private pending: Array<{ at: number; run: () => void }> = []
 	private recorders = Array.from({ length: LOOPERS }, () => new PatternRecorder())
 
 	private timer: ReturnType<typeof setInterval> | null = null
@@ -289,6 +305,7 @@ export class PlaySurfacePage implements Page {
 
 	dispose(ctx: PageContext) {
 		for (const r of this.recorders) r.clear()
+		this.pending = []
 		this.latched.clear()
 		this.glides.clear()
 		this.onBlur(ctx)
@@ -422,11 +439,12 @@ export class PlaySurfacePage implements Page {
 
 	private presetKey(lane: number, y: number, ctx: PageContext) {
 		const shift = ctx.modifiers.shift1
-		if (lane >= 0 && shift) return this.store(lane, y, ctx) // a store is never recorded
+		// A store is never recorded. HOME holds nothing to store: shift there is just home.
+		if (lane >= 0 && shift && y !== HOME_ROW) return this.store(lane, y, ctx)
 		// All: every lane to its own engine's row; with shift 1 it strikes them all too.
 		const strike = lane < 0 ? shift || !!this.settings.strike : !!this.settings.strike
 		this.tap(`rec/${lane < 0 ? "all" : lane}`, y + (strike ? ROWS : 0))
-		this.forLanes(lane, (l) => this.recall(l, y, strike, ctx))
+		this.recallLanes(lane < 0 ? [...Array(LANES).keys()] : [lane], y, strike, ctx)
 	}
 
 	private bigThreeKey(y: number, lane: number, ctx: PageContext) {
@@ -509,6 +527,31 @@ export class PlaySurfacePage implements Page {
 		this.syncTimer()
 	}
 
+	/**
+	 * One dial of a lane back to the shared one. With SLEW on it TRAVELS there: the lane's
+	 * own dial glides to where the shared one stands and only then hands itself back, so a
+	 * way home is as smooth as a way out.
+	 */
+	private sendHome(lane: number, p: Part, ctx: PageContext) {
+		const addr = laneAddr(lane + 1, p)
+		const owner = ownerAddr(lane + 1, p)
+		const follow = () => {
+			this.send(ctx, owner, "follow")
+			this.mirror.set(owner, "follow")
+		}
+		const known = this.mirror.str(owner)
+		const from = this.mirror.num(addr)
+		const to = this.mirror.num(sharedAddr(p))
+		const durMs = Number(this.settings.slew) * 1000
+		if (known === "voice" && durMs > 0 && from !== undefined && to !== undefined && from !== to) {
+			this.glides.set(addr, { from, to, t0: Date.now(), durMs, after: follow })
+			this.syncTimer()
+			return
+		}
+		this.glides.delete(addr)
+		if (known !== "follow") follow()
+	}
+
 	private setFlag(lane: number, key: "arm" | "freeze" | "trem", on: boolean, ctx: PageContext) {
 		const addr = `/surface/lane/${lane + 1}/${key}`
 		if (this.mirror.num(addr) === (on ? 1 : 0)) return
@@ -527,37 +570,84 @@ export class PlaySurfacePage implements Page {
 
 	private stored(lane: number, row: number): PresetState | null {
 		const e = this.mirror.engine(lane)
-		return (isEngine(e) && this.bank()[e]?.[row]) || null
+		return (isEngine(e) && row !== HOME_ROW && this.bank()[e]?.[row]) || null
 	}
 
-	/** Store what the lane is now into its engine's row. */
+	/**
+	 * Ask surface where these lanes' dials stand (value, owner, the shared dial), then run.
+	 * The page only keeps the six layers' dials in step; a preset is every dial.
+	 */
+	private readThen(lanes: number[], ctx: PageContext, run: () => void) {
+		const link = ctx.surface
+		const asked = new Set<string>()
+		const get = (addr: string) => {
+			if (asked.has(addr)) return
+			asked.add(addr)
+			link?.send("/surface/get", addr)
+		}
+		for (const lane of lanes) {
+			const e = this.mirror.engine(lane)
+			if (!isEngine(e)) continue
+			// One question per lane fetches every dial's 0-1 value (under surface's 64 a reply).
+			get(`/surface/lane/${lane + 1}/${e}/*/norm`)
+			get(`/surface/lane/${lane + 1}/tremolo/*/norm`)
+			// The shared dials one by one: an engine has more than 64 of them with a 0-1 twin.
+			for (const p of dialsFor(e)) {
+				get(sharedAddr(p))
+				get(ownerAddr("*", p))
+			}
+		}
+		get("/surface/lane/*/trem")
+		this.pending.push({ at: Date.now() + READ_WAIT_MS, run })
+		this.syncTimer()
+	}
+
+	/** Store what the lane is now: every dial it has pulled away, and its TREM switch. */
 	private store(lane: number, row: number, ctx: PageContext) {
 		const e = this.mirror.engine(lane)
 		if (!isEngine(e)) return
-		const state: PresetState = {}
-		for (let s = 0; s < SLOTS; s++)
-			for (const p of partsFor(e, s)) {
-				const v = this.mirror.effective(lane, p)
+		const patch = this.mirror.patch()
+		this.readThen([lane], ctx, () => {
+			const state: PresetState = {}
+			for (const p of dialsFor(e)) {
+				if (!this.mirror.owned(lane, p)) continue
+				const v = this.mirror.num(laneAddr(lane + 1, p))
 				if (v !== undefined) state[partSuffix(p)] = v
 			}
-		state[PRESET_TREM] = this.mirror.flag(lane, "trem") ? 1 : 0
-		const rows = (this.bank()[e] ??= new Array(ROWS).fill(null))
-		rows[row] = state
-		this.currentPreset[lane] = row
-		ctx.persist({ presets: this.presets })
+			state[PRESET_TREM] = this.mirror.flag(lane, "trem") ? 1 : 0
+			const rows = ((this.presets[patch] ??= {})[e] ??= new Array(ROWS).fill(null))
+			rows[row] = state
+			this.currentPreset[lane] = row
+			ctx.persist({ presets: this.presets })
+			ctx.setDirty()
+		})
+	}
+
+	/** Recall a row on some lanes. With SLEW on, surface is asked first so the travel starts from the truth. */
+	private recallLanes(lanes: number[], row: number, strike: boolean, ctx: PageContext) {
+		const go = () => { for (const l of lanes) this.recall(l, row, strike, ctx) }
+		if (Number(this.settings.slew) > 0 && lanes.some((l) => row === HOME_ROW || this.stored(l, row))) this.readThen(lanes, ctx, go)
+		else go()
 	}
 
 	private recall(lane: number, row: number, strike: boolean, ctx: PageContext) {
 		const state = this.stored(lane, row)
-		if (state) {
+		if (state || row === HOME_ROW) {
 			const e = this.mirror.engine(lane)
-			for (let s = 0; s < SLOTS; s++)
-				for (const p of partsFor(e, s)) {
-					const v = state[partSuffix(p)]
-					if (v !== undefined) this.setPart(lane, p, v, ctx)
-				}
-			if (state[PRESET_TREM] !== undefined) this.setFlag(lane, "trem", state[PRESET_TREM] !== 0, ctx)
-			this.currentPreset[lane] = row
+			const kept = new Set<string>()
+			for (const [suffix, v] of Object.entries(state ?? {})) {
+				const p = suffix === PRESET_TREM ? null : partOfSuffix(suffix)
+				if (!p) continue
+				kept.add(`${p.dial.scope}/${p.dial.key}`)
+				this.setPart(lane, p, v, ctx)
+			}
+			// Everything the preset does not hold goes back to the shared dial.
+			for (const p of dialsFor(e)) {
+				if (kept.has(`${p.dial.scope}/${p.dial.key}`)) continue
+				this.sendHome(lane, p, ctx)
+			}
+			if (state?.[PRESET_TREM] !== undefined) this.setFlag(lane, "trem", state[PRESET_TREM] !== 0, ctx)
+			if (isEngine(e)) this.currentPreset[lane] = row
 		}
 		// An empty cell changes nothing, but a strike is still a strike.
 		if (strike) this.strikeOwn(lane, Number(this.settings.velocity), ctx)
@@ -573,7 +663,7 @@ export class PlaySurfacePage implements Page {
 		const slot = Number(m[2])
 		if (kind === "lvl") this.forLanes(lane, (l) => this.level(slot, l, value, ctx))
 		else if (kind === "home") this.forLanes(lane, (l) => this.home(slot, l, ctx))
-		else if (kind === "rec") this.forLanes(lane, (l) => this.recall(l, value % ROWS, value >= ROWS, ctx))
+		else if (kind === "rec") this.recallLanes(lane < 0 ? [...Array(LANES).keys()] : [lane], value % ROWS, value >= ROWS, ctx)
 		else if (kind === "strike") this.strikeOwn(lane, rowVelocity(value), ctx)
 		else if (kind === "bow") this.setFlag(lane, "arm", value !== 0, ctx)
 		else if (kind === "frz") this.setFlag(lane, "freeze", value !== 0, ctx)
@@ -648,7 +738,7 @@ export class PlaySurfacePage implements Page {
 	// ---------------------------------------------------------------- time
 
 	private syncTimer() {
-		const needed = this.focused || this.glides.size > 0 || this.recorders.some((r) => r.isRunning)
+		const needed = this.focused || this.glides.size > 0 || this.pending.length > 0 || this.recorders.some((r) => r.isRunning)
 		if (needed && !this.timer) {
 			this.lastTickMs = Date.now()
 			this.timer = setInterval(() => this.onTimer(), TIMER_MS)
@@ -674,7 +764,13 @@ export class PlaySurfacePage implements Page {
 			this.commit(ctx)
 			if (this.recorders.some((r, i) => r.state !== before[i])) this.emitPatterns(ctx)
 		}
-		if (this.glides.size && now - this.lastGlideMs >= GLIDE_SEND_MS) {
+		if (this.pending.length) {
+			const due = this.pending.filter((p) => p.at <= now)
+			this.pending = this.pending.filter((p) => p.at > now)
+			for (const p of due) p.run()
+		}
+		const glideMs = Math.max(GLIDE_SEND_MS, Math.ceil((this.glides.size * 1000) / GLIDE_MAX_PER_S))
+		if (this.glides.size && now - this.lastGlideMs >= glideMs) {
 			this.lastGlideMs = now
 			this.stepGlides(now, ctx)
 		}
@@ -688,7 +784,10 @@ export class PlaySurfacePage implements Page {
 			const v = g.from + (g.to - g.from) * t
 			this.send(ctx, addr, float(v))
 			this.mirror.set(addr, v)
-			if (t >= 1) this.glides.delete(addr)
+			if (t >= 1) {
+				this.glides.delete(addr)
+				g.after?.()
+			}
 		}
 		ctx.setDirty()
 	}
@@ -737,8 +836,10 @@ export class PlaySurfacePage implements Page {
 			else if (this.layer === LAYER_PRESETS) {
 				const e = this.mirror.engine(lane)
 				if (!isEngine(e)) continue
-				for (let y = 0; y < ROWS; y++)
-					set(x, y, !this.stored(lane, y) ? LVL_PRE_EMPTY : this.currentPreset[lane] === y ? LVL_PRE_CURRENT : LVL_PRE_STORED)
+				for (let y = 0; y < ROWS; y++) {
+					const there = y === HOME_ROW || !!this.stored(lane, y)
+					set(x, y, !there ? LVL_PRE_EMPTY : this.currentPreset[lane] === y ? LVL_PRE_CURRENT : LVL_PRE_STORED)
+				}
 			} else this.drawBar(lane, x, this.layer - 1, set)
 		}
 		if (this.layer !== LAYER_KEYS) for (let y = 0; y < ROWS; y++) set(ALL_X, y, LVL_ALL)
@@ -904,7 +1005,8 @@ export function readPresets(raw: Record<string, unknown>): Record<string, Bank> 
 		for (const e of ENGINES) {
 			const rows = node[e]
 			if (!Array.isArray(rows)) continue
-			const allowed = new Set([...suffixesFor(e), PRESET_TREM])
+			// Every dial of the engine, plus the names the first version stored (tremolo depth unscaled).
+			const allowed = new Set([...dialsFor(e).map(partSuffix), ...suffixesFor(e), PRESET_TREM])
 			bank[e] = Array.from({ length: ROWS }, (_, i) => {
 				const cell = rows[i]
 				if (!isRecord(cell)) return null
@@ -935,7 +1037,7 @@ export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
 	{ x: CHOOSER_X, y: 0, name: "Keys", help: "The lanes play: the row is the pitch (or a REEL lane's pad).", lit: LVL_CHOOSER_ON },
 	{ x: CHOOSER_X, y: 1, h: SLOTS, name: "Layers 1-6", short: "Layer", help: "tone, time, force, move, place, tremolo: each lane's column is a bar for one dial.", lit: LVL_CHOOSER },
-	{ x: CHOOSER_X, y: 7, name: "Presets", short: "Pre", help: "Stored states of a lane's six. Shift 1 + cell stores.", lit: LVL_CHOOSER },
+	{ x: CHOOSER_X, y: 7, name: "Presets", short: "Pre", help: "A lane's whole sound: every dial it has pulled away. Shift 1 + cell stores; the bottom row is home (all back to the shared dials).", lit: LVL_CHOOSER },
 	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes, a bar, or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
 	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "The same press on all eight (not on KEYS). Shift 1 + all: every lane back to the shared dial; on PRESETS, recall and strike all.", lit: LVL_ALL },
 	{ x: RIGHT_X, y: 0, h: LOOPERS, name: "Loopers 1-4", short: "Loop", help: "Record hand gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },

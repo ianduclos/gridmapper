@@ -276,25 +276,37 @@ describe("play-surface: layers", () => {
 })
 
 describe("play-surface: presets", () => {
+	const store = (r: ReturnType<typeof rig>, lane: number, y: number) => {
+		r.key(0, 7); r.tapKey(LANE_X0 + lane, y); r.key(0, 7, 0)
+		vi.advanceTimersByTime(200) // it asks surface first
+	}
+	/** Lane 1 (MODAL): row 0 = hardness full and decay pulled away; row 1 = hardness at zero only. */
 	const two = () => {
 		const r = rig(); r.world()
-		r.layer(1); r.tapKey(LANE_X0, 0) // lane 1 hardness full
+		r.layer(1); r.tapKey(LANE_X0, 0)
+		r.say("/surface/lane/1/owner/decay", "voice") // made on screen or on the Twister
+		r.say("/surface/lane/1/modal/decay/norm", 0.25)
+		r.say("/surface/lane/1/modal/coupling/norm", 0.9) // its own value, but still on the shared dial
 		r.layer(7)
-		r.key(0, 7); r.tapKey(LANE_X0, 0); r.key(0, 7, 0) // store row 0
-		r.layer(1); r.tapKey(LANE_X0, 7) // hardness to zero
+		store(r, 0, 0)
+		r.say("/surface/lane/1/owner/decay", "follow")
+		r.layer(1); r.tapKey(LANE_X0, 7)
 		r.layer(7)
-		r.key(0, 7); r.tapKey(LANE_X0, 1); r.key(0, 7, 0) // store row 1
+		r.out.length = 0
+		store(r, 0, 1)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/1/modal/*/norm"])
+		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/*/owner/rattleTone"])
+		expect(r.out).toContainEqual(["/surface/get", "/surface/modal/rattleTone/norm"])
 		r.sent()
 		return r
 	}
 
-	it("shift 1 then a cell stores what the lane is now, and saves it", () => {
+	it("shift 1 then a cell stores every dial the lane has pulled away, and nothing else", () => {
 		const r = two()
 		expect(r.persisted).toHaveLength(2)
 		const bank = r.persisted[1].presets[""].modal
-		expect(bank[0]["modal/hardness/norm"]).toBe(1)
-		expect(bank[1]["modal/hardness/norm"]).toBe(0)
-		expect(bank[0].trem).toBe(0)
+		expect(bank[0]).toEqual({ "modal/hardness/norm": 1, "modal/decay/norm": 0.25, trem: 0 })
+		expect(bank[1]).toEqual({ "modal/hardness/norm": 0, trem: 0 })
 		expect(r.led(LANE_X0, 0)).toBe(5)
 		expect(r.led(LANE_X0, 1)).toBe(15) // the lane's current one
 		expect(r.led(LANE_X0, 2)).toBe(1)
@@ -302,29 +314,86 @@ describe("play-surface: presets", () => {
 		expect(r.led(LANE_X0 + 7, 0)).toBe(1) // STRING has its own
 	})
 
-	it("a press recalls; with STRIKE lit it strikes too", () => {
+	it("a press recalls: stored dials to their values, every other dial back to the shared one", () => {
 		const r = two()
+		r.say("/surface/lane/2/owner/position", "voice") // lane 2 had wandered off elsewhere
 		r.tapKey(LANE_X0 + 1, 0) // lane 2 takes MODAL's row 0
 		const m = r.sent()
 		expect(m).toContainEqual(["/surface/lane/2/owner/hardness", "voice"])
 		expect(m).toContainEqual(["/surface/lane/2/modal/hardness/norm", 1])
+		expect(m).toContainEqual(["/surface/lane/2/modal/decay/norm", 0.25])
+		expect(m).toContainEqual(["/surface/lane/2/owner/position", "follow"])
+		expect(m).not.toContainEqual(["/surface/lane/2/owner/hardness", "follow"])
 		expect(m.some((x) => x[0].includes("strike"))).toBe(false)
 		expect(r.led(LANE_X0 + 1, 0)).toBe(15)
-		r.tapKey(RIGHT, 5)
+		r.tapKey(RIGHT, 5) // STRIKE
 		r.tapKey(LANE_X0, 0)
 		expect(r.sent()).toContainEqual(["/surface/lane/1/strike/hz", 216, 0.8])
+	})
+
+	it("the bottom row is home: the lane's dials all back to the shared ones", () => {
+		const r = two()
+		expect(r.led(LANE_X0, 7)).toBe(5)
+		r.tapKey(LANE_X0, 7)
+		const m = r.sent()
+		expect(m).toContainEqual(["/surface/lane/1/owner/hardness", "follow"])
+		expect(m.every((x) => x[1] === "follow")).toBe(true)
+		expect(m.length).toBe(20) // MODAL's 19 dials and the tremolo's two, less decay, already known to be home
+		expect(r.led(LANE_X0, 7)).toBe(15)
+		r.tapKey(LANE_X0, 7) // already home: nothing more to say
+		expect(r.sent()).toEqual([])
+		r.tapKey(ALL, 7) // everyone home: a flat line along the bottom
+		for (let l = 0; l < 8; l++) expect(r.led(LANE_X0 + l, 7)).toBe(15)
+		store(r, 0, 7) // home holds nothing to store
+		expect(r.persisted).toHaveLength(2)
 	})
 
 	it("all on a row sends every lane to its own engine's row; shift 1 then all strikes them too", () => {
 		const r = two()
 		r.tapKey(ALL, 0)
 		let m = r.sent()
-		expect(m.filter((x) => x[0].endsWith("/modal/hardness/norm") && x[1] === 1).map((x) => x[0])).toHaveLength(6)
+		expect(m.filter((x) => x[0].endsWith("/modal/hardness/norm") && x[1] === 1)).toHaveLength(6)
 		expect(m.some((x) => x[0].includes("strike"))).toBe(false)
 		for (let l = 0; l < 6; l++) expect(r.led(LANE_X0 + l, 0)).toBe(15) // a flat line
 		r.key(0, 7); r.tapKey(ALL, 1); r.key(0, 7, 0)
 		m = r.sent()
 		expect(m.filter((x) => x[0].endsWith("/strike/hz"))).toHaveLength(8)
+	})
+
+	it("with SLEW on, a recall asks surface first and then travels", () => {
+		const r = two()
+		r.key(RIGHT, 6); r.tapKey(ALL, 3); r.key(RIGHT, 6, 0) // 1 s
+		r.out.length = 0
+		r.tapKey(LANE_X0 + 1, 0)
+		expect(r.sent()).toEqual([])
+		vi.advanceTimersByTime(700)
+		const hard = r.sent().filter((x) => x[0] === "/surface/lane/2/modal/hardness/norm").map((x) => x[1])
+		expect(hard[0]).toBe(0.5) // starts where the shared dial is
+		expect(hard.at(-1)).toBeGreaterThan(0.6)
+		expect(hard.at(-1)).toBeLessThan(1)
+		vi.advanceTimersByTime(800)
+		expect(r.sent().filter((x) => x[0] === "/surface/lane/2/modal/hardness/norm").at(-1)![1]).toBe(1)
+	})
+
+	it("with SLEW on, the way home travels too: the dial glides to the shared one, then hands itself back", () => {
+		const r = two()
+		r.tapKey(LANE_X0, 0) // hardness full, decay pulled away
+		r.say("/surface/modal/decay/norm", 0.75)
+		r.key(RIGHT, 6); r.tapKey(ALL, 3); r.key(RIGHT, 6, 0) // 1 s
+		r.sent()
+		r.tapKey(LANE_X0, 7) // home
+		vi.advanceTimersByTime(600)
+		let m = r.sent()
+		expect(m).not.toContainEqual(["/surface/lane/1/owner/hardness", "follow"]) // not yet
+		const hard = m.filter((x) => x[0] === "/surface/lane/1/modal/hardness/norm").map((x) => x[1])
+		expect(hard.at(-1)).toBeLessThan(1)
+		expect(hard.at(-1)).toBeGreaterThan(0.5)
+		vi.advanceTimersByTime(800)
+		m = r.sent()
+		expect(m).toContainEqual(["/surface/lane/1/modal/hardness/norm", 0.5]) // where the shared dial stands
+		expect(m).toContainEqual(["/surface/lane/1/modal/decay/norm", 0.75])
+		expect(m).toContainEqual(["/surface/lane/1/owner/hardness", "follow"])
+		expect(m).toContainEqual(["/surface/lane/1/owner/decay", "follow"])
 	})
 
 	it("keeps presets per surface patch", () => {
@@ -343,8 +412,8 @@ describe("play-surface: presets", () => {
 		b.layer(7)
 		expect(b.led(LANE_X0, 1)).toBe(5)
 		expect(b.sent()).toEqual([]) // restoring never makes a sound
-		expect(readPresets({ x: { modal: [{ "modal/hardness/norm": 7, "evil/path": 1 }, 3, null] }, y: 4 } as any)).toEqual({
-			x: { modal: [{ "modal/hardness/norm": 1 }, null, null, null, null, null, null, null] },
+		expect(readPresets({ x: { modal: [{ "modal/rattleTone/norm": 7, "tremolo/tremoloDepth": 0.4, "evil/path": 1 }, 3, null] }, y: 4 } as any)).toEqual({
+			x: { modal: [{ "modal/rattleTone/norm": 1, "tremolo/tremoloDepth": 0.4 }, null, null, null, null, null, null, null] },
 		})
 		const c = rig()
 		expect(() => c.page.restore({ presets: 3, patterns: [{ events: [{ atMs: 1, ctl: { id: "nope/1" } }, 5] }], slew: "9", velocity: "x" }, c.ctx)).not.toThrow()
