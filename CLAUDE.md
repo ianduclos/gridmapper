@@ -397,6 +397,8 @@ src/
                          send 57150, listen 57133, lazy, loopback), never through Max's link. Reads by
                          /surface/get polling while focused + `lanes`/`preset` subscriptions. Spec:
                          idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
+                         CHEATSHEET: docs/play-surface-cheatsheet.md is Ian's player-facing sheet. Any change
+                         to a key, gesture, light or default of this page updates it IN THE SAME COMMIT.
   util/playSlots.ts      the six slots per engine as DATA; test/playSlots.test.ts checks every address
                          against idk.surface's generated docs/osc/addresses.txt (never guess one).
   util/playModel.ts      SurfaceMirror (last value heard per address) + the pure row/bar/level rules.

@@ -1,6 +1,8 @@
 /* Page: Play Surface  (idk.surface's PLAY page)
  * ------------------------------------------------------------------------------
  * Spec    : idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
+ * Sheet   : docs/play-surface-cheatsheet.md, the player's cheatsheet. Change a key, a gesture,
+ *           a light or a default here and change the sheet in the same commit.
  * Summary : Eight lanes side by side. A chooser picks what their columns mean: KEYS (play
  *           the lanes) or PRESETS (stored states of a lane's whole sound). It plays
  *           idk.surface DIRECTLY over its own OSC (ctx.surface, UDP 57150), not through
