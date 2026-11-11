@@ -189,7 +189,7 @@ import type { ClockState } from "../core/clock.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { selectorKey, shiftKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
 import { clamp } from "../util/scale.js"
-import { SCALE_SURFACE } from "../core/sharedStore.js"
+import { SCALE_SURFACE, PEER_OSC } from "../core/sharedStore.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
 import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
 import { Arpeggiator, ARP_MODES, ARP_BUTTONS, isArpMode, type ArpMode } from "../util/arpeggiator.js"
@@ -265,6 +265,8 @@ const LVL_PANEL_DEFAULT = 8 // where "home" is, when you're elsewhere
 const LVL_PANEL_OTHER = 4
 const LVL_TINT_EDIT = 12 // a triad pitch class, while editing
 const PERSIST_DEBOUNCE_MS = 400
+/** A peer that sent heartbeats and has been silent this long is gone. */
+const PEER_GONE_MS = 5000
 /** Settings that belong to the panel, and so are written through when changed over OSC. */
 const PANEL_SETTINGS = new Set(["arpSpeed", "arpProb", "strum", "strumMs", "strumDir", "tintMode", "tintOctave", "tintJitterMs"])
 const BASE_STEP = 0 // bottom-left cell = step 0
@@ -523,6 +525,18 @@ export class IsoSurfacePage implements Page {
 	 * you can still see what a chord preset would capture.
 	 */
 	private litSteps = new Set<number>()
+	/**
+	 * REMOTE notes: keys played in idk.surface itself (its computer keys), sent here only to
+	 * be LIT (/grid/in/page/<slot>/remote <step> <1|0> <track 0-3>). Keyed (track, step). They
+	 * are display and nothing else: never sent back as a note (surface would play it twice),
+	 * never recorded by a looper, never held by sustain, never part of a saved chord. A
+	 * remote note looks exactly like a note you played here, twins included; a finger on the
+	 * same cell still reads brighter.
+	 */
+	private remote = new Set<number>()
+	/** When the peer's last heartbeat came (0 = it does not send them). */
+	private peerBeatAt = 0
+	private unpeer: (() => void) | null = null
 	private voicedSteps = new Set<number>()
 	/** When each track last received a note-on, for the activity pulse in render(). */
 	private trackPulseAt = new Array<number>(TRACK_ROWS).fill(0)
@@ -608,6 +622,16 @@ export class IsoSurfacePage implements Page {
 		this.releaseLive(ctx)
 		for (const r of this.recorders) r.clear()
 		this.syncTimer()
+		// A ping means surface has just (re)connected: whatever it had lit before is void.
+		// If it also sends heartbeats, their stopping clears the lights too (see render).
+		this.unpeer?.()
+		this.unpeer =
+			ctx.shared?.subscribe(PEER_OSC, (v) => {
+				const kind = isRecord(v) ? v.kind : undefined
+				if (kind === "ping") this.remote.clear()
+				else if (kind === "heartbeat") this.peerBeatAt = Date.now()
+				ctx.setDirty()
+			}) ?? null
 		this.announce(ctx)
 	}
 
@@ -1167,6 +1191,7 @@ export class IsoSurfacePage implements Page {
 		if (parts[i] === "setting" || parts[i] === "settings") i++
 		const key = parts[i]
 		if (!key) return
+		if (i === 0 && key === "remote") return this.remoteNote(args, ctx)
 		if (key === "get") {
 			this.emitSettings(ctx)
 			return
@@ -1184,9 +1209,26 @@ export class IsoSurfacePage implements Page {
 		this.emitSettings(ctx)
 	}
 
+	/** A note played in surface, to light here. Display only: see `remote`. */
+	private remoteNote(args: any[], ctx: PageContext) {
+		const step = Number(args[0]), track = Number(args[2] ?? 0)
+		if (!Number.isInteger(step) || step < 0 || step >= NOTE_STRIDE) return
+		if (!Number.isInteger(track) || track < 0 || track >= TRACK_ROWS) return
+		if (Number(args[1])) this.remote.add(noteKey(track, step))
+		else this.remote.delete(noteKey(track, step))
+		ctx.setDirty()
+	}
+
 	render(ctx: PageContext): LedFrame {
 		// Sustain can also fall because an OSC shift dropped, which never reaches onKey.
 		this.commit(ctx)
+		// A peer that sends heartbeats and then stops has gone: its lights go with it.
+		if (this.peerBeatAt && Date.now() - this.peerBeatAt > PEER_GONE_MS) {
+			this.peerBeatAt = 0
+			this.remote.clear()
+		}
+		const remoteSteps = new Set<number>()
+		for (const key of this.remote) remoteSteps.add(stepOf(key))
 
 		// A note is lit at EVERY cell that plays it — on an isomorphic layout that shows the
 		// shape you're playing. Three tiers: the chord you are holding or sustaining, the
@@ -1208,7 +1250,7 @@ export class IsoSurfacePage implements Page {
 				// The scale map stays under your fingers; what's SOUNDING is shown at the cells
 				// that would play it now, i.e. at the current transposition.
 				const sounding = step + this.offset()
-				if (this.litSteps.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
+				if (this.litSteps.has(sounding) || remoteSteps.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
 				if (shimmerLo && tSteps.has(sounding) && this.litSteps.has(sounding)) lvl = LVL_TINT_LO
 				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
 				if (arpOn && this.voicedSteps.has(sounding)) lvl = LVL_ARP_VOICE
@@ -1425,6 +1467,9 @@ export class IsoSurfacePage implements Page {
 
 	dispose(ctx: PageContext) {
 		// The slot is going away for good — now the loops really do stop.
+		this.unpeer?.()
+		this.unpeer = null
+		this.remote.clear()
 		this.releaseLive(ctx)
 		for (const r of this.recorders) r.clear()
 		this.commit(ctx)

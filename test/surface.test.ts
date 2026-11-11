@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { PAGE_MODULES, PAGE_TYPES, DEFAULT_PAGE } from "../src/pages/registry.js"
 import { CellsSurfacePage } from "../src/pages/cells-surface.js"
 import { SetSurfacePage } from "../src/pages/set-surface.js"
 import { CellsHotPage } from "../src/pages/cells-hot.js"
 import { SetHotPage } from "../src/pages/set-hot.js"
+import { IsoSurfacePage } from "../src/pages/iso-surface.js"
+import { createOscRouter } from "../src/core/oscRouter.js"
+import { PEER_OSC } from "../src/core/sharedStore.js"
 import { SharedStore, DAMP_FROM_CELLS, DAMP_FROM_CELLS_SURFACE, DAMP_STATE, DAMP_STATE_SURFACE } from "../src/core/sharedStore.js"
 import { createPresetStore } from "../src/core/presetStore.js"
 import { fileURLToPath } from "node:url"
@@ -166,5 +169,90 @@ describe("idk.surface layout", () => {
 		expect(cfg).not.toBeNull()
 		for (const [k, v] of Object.entries(page)) expect(cfg.slots[k as keyof typeof cfg.slots].page).toBe(v)
 		expect(Object.values(cfg.slots).some((s) => s.page === DEFAULT_PAGE)).toBe(false)
+	})
+})
+
+describe("iso-surface: notes played in surface light here", () => {
+	const mk = () => {
+		const sent: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		const shared = new SharedStore()
+		const ctx = {
+			size: SIZE, modifiers, slot: 0, slotLabel: "a", shared,
+			clock: { running: false, rate: 20, tick: 0, lanes: [{ div: 1 }, { div: 1 }, { div: 1 }, { div: 1 }] },
+			osc: { send: (path: string, ...a: any[]) => sent.push([path, ...a]) },
+			setDirty() {}, setShift() {}, focus() {}, persist() {},
+		} as unknown as PageContext
+		const page = new IsoSurfacePage()
+		page.init(ctx)
+		sent.length = 0
+		// Home (step 0) is x1 y7; a column right is +1 step, a row up +5.
+		const led = (x: number, y: number) => page.render(ctx)![ledIndex(SIZE, x, y)]
+		return { page, ctx, sent, shared, led }
+	}
+
+	it("a remote note lights every cell that plays it, like a played one, and sends nothing back", () => {
+		const r = mk()
+		const idle = r.led(3, 7) // step 2
+		r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
+		const lit = r.led(3, 7)
+		expect(lit).toBe(12)
+		expect(lit).toBeGreaterThan(idle)
+		expect(r.sent.filter((m) => m[0].endsWith("/note"))).toEqual([])
+		r.page.onOsc!("/remote", [7, 1, 1], r.ctx) // step 7 has twins: x8 y7 and x3 y6
+		expect(r.led(8, 7)).toBe(12)
+		expect(r.led(3, 6)).toBe(12)
+		r.page.onOsc!("/remote", [2, 0, 0], r.ctx)
+		expect(r.led(3, 7)).toBe(idle)
+		expect(r.led(8, 7)).toBe(12)
+	})
+
+	it("is per track and step: one track's off leaves the other's on", () => {
+		const r = mk()
+		r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
+		r.page.onOsc!("/remote", [2, 1, 3], r.ctx)
+		r.page.onOsc!("/remote", [2, 0, 0], r.ctx)
+		expect(r.led(3, 7)).toBe(12)
+		r.page.onOsc!("/remote", [2, 0, 3], r.ctx)
+		expect(r.led(3, 7)).toBeLessThan(12)
+		r.page.onOsc!("/remote", [2, 1, 9], r.ctx) // no such track
+		r.page.onOsc!("/remote", ["x", 1, 0], r.ctx)
+		expect(r.led(3, 7)).toBeLessThan(12)
+	})
+
+	it("is display only: not in a saved chord, not held by sustain, not in a loop", () => {
+		const r = mk()
+		r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
+		r.page.onKey({ x: 15, y: 0, s: 1 }, r.ctx) // arm looper 1
+		r.page.onKey({ x: 15, y: 4, s: 1 }, r.ctx) // sustain toggle: arms chord saving
+		r.page.onKey({ x: 13, y: 0, s: 1 }, r.ctx) // save "what is ringing" to chord 1: silence
+		const out = JSON.parse(JSON.stringify(r.page.serialize()))
+		expect(JSON.stringify(out.chords ?? [])).not.toContain("2")
+		expect((out.patterns ?? []).every((p: any) => !p.events?.length)).toBe(true)
+		expect(r.sent.filter((m) => m[0].endsWith("/note"))).toEqual([])
+	})
+
+	it("a ping from surface clears them (it has just reconnected); so do heartbeats that stop", () => {
+		vi.useFakeTimers(); vi.setSystemTime(5_000_000)
+		try {
+			const r = mk()
+			const route = createOscRouter({
+				pm: {} as any, shift: {} as any, reconnect() {}, onKey() {}, emit() {}, slotPages: [],
+				onPeer: (kind) => r.shared.set(PEER_OSC, { kind, at: Date.now() }),
+			} as any)
+			r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
+			route("/grid/in/ping", [1], "ui") // the web panel is not the peer
+			expect(r.led(3, 7)).toBe(12)
+			route("/grid/in/ping", [1], "osc")
+			expect(r.led(3, 7)).toBeLessThan(12)
+			r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
+			vi.advanceTimersByTime(60_000) // no heartbeats ever: nothing to judge by, the light stays
+			expect(r.led(3, 7)).toBe(12)
+			route("/grid/in/heartbeat", [], "osc")
+			vi.advanceTimersByTime(3000)
+			expect(r.led(3, 7)).toBe(12)
+			vi.advanceTimersByTime(3000)
+			expect(r.led(3, 7)).toBeLessThan(12)
+		} finally { vi.useRealTimers() }
 	})
 })

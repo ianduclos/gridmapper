@@ -8,7 +8,7 @@
 //   npm run dev            (real hardware)
 //   npm run dev -- --null  (no hardware; NullGrid)
 
-import { SharedStore } from "../core/sharedStore.js"
+import { SharedStore, PEER_OSC } from "../core/sharedStore.js"
 import { GridConnection } from "../io/gridConnection.js"
 import { createOsc, createOscSender } from "../io/osc.js"
 import { createLiveLink, createSurfaceLink } from "../io/liveLink.js"
@@ -210,6 +210,7 @@ osc.onMessage(
 		power: rt.power,
 		settings: rt.settings,
 		presets,
+		onPeer: (kind) => baseCtx.shared?.set(PEER_OSC, { kind, at: Date.now() }),
 		withOscEchoSuppressed,
 	})
 )

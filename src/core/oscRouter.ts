@@ -65,6 +65,8 @@ export interface OscRouterOpts {
 	settings?: SettingsStore
 	/** Named presets + the persisted live layout. Omit and /grid/in/preset/* is inert. */
 	presets?: PresetStore
+	/** The OSC peer showed a sign of life (a ping or a heartbeat, over OSC only). */
+	onPeer?: (kind: "ping" | "heartbeat") => void
 	/**
 	 * Run `fn` with page output kept OFF the OSC wire — the web UI (if any) must still
 	 * receive it. Only the caller knows how its transports are wired, so only the caller
@@ -119,6 +121,7 @@ export function createOscRouter(
 		// and nothing after, so a patch opened later has no broadcast to wait on and must
 		// initiate. Distinct from /grid/in/heartbeat below, which answers nothing.
 		if (path === "/grid/in/ping") {
+			if (origin === "osc") opts.onPeer?.("ping")
 			emit("/grid/out/pong", ...args)
 			return
 		}
@@ -169,7 +172,11 @@ export function createOscRouter(
 		// /grid/in/heartbeat is deliberately inert: the activity stamp at the top of this
 		// router already did the work, so a Max [metro] has an address it can hit forever
 		// that is guaranteed never to do anything else.
-		if (path === "/grid/in/heartbeat") return
+		// (The host may note it as a sign of life: opts.onPeer.)
+		if (path === "/grid/in/heartbeat") {
+			if (origin === "osc") opts.onPeer?.("heartbeat")
+			return
+		}
 		if (path === "/grid/in/wake") {
 			idle?.wake()
 			return

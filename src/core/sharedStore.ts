@@ -21,6 +21,11 @@ export const FOCUS_CLIPS = "focus/clips"
  *  the PLAY page's rows follow it. */
 export const SCALE_SURFACE = "scale/iso-surface"
 
+/** The OSC peer's signs of life ({ kind: "ping" | "heartbeat", at: ms }), written by the HOST
+ *  when /grid/in/ping or /grid/in/heartbeat arrives over OSC. A ping means the peer has just
+ *  (re)connected, so whatever it told a page before is void. */
+export const PEER_OSC = "peer/osc"
+
 export class SharedStore {
 	private values = new Map<string, unknown>()
 	private subs = new Map<string, Set<(value: unknown) => void>>()

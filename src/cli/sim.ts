@@ -8,7 +8,7 @@
 //
 //   npm run sim            (auto-connect to the real grid when present)
 //   npm run sim -- --null  (force the simulated grid; no auto-connect)
-import { SharedStore } from "../core/sharedStore.js"
+import { SharedStore, PEER_OSC } from "../core/sharedStore.js"
 import { resolve as resolvePath } from "node:path"
 import { GridConnection } from "../io/gridConnection.js"
 import { createGridServer } from "../io/gridServer.js"
@@ -242,6 +242,7 @@ routeControl = createOscRouter({
 	power: rt.power,
 	settings: rt.settings,
 	presets,
+	onPeer: (kind) => baseCtx.shared?.set(PEER_OSC, { kind, at: Date.now() }),
 	withOscEchoSuppressed,
 })
 
