@@ -55,11 +55,22 @@ export interface Modifiers {
 }
 
 /**
+ * A number that must go out as an OSC float even when it is whole (a velocity of 1, a dial
+ * at 0). The transport sends whole numbers as ints, which a peer with typed addresses
+ * (idk.surface: `if`, `ff`) may refuse.
+ */
+export class OscFloat {
+	constructor(readonly value: number) {}
+}
+export const float = (v: number) => new OscFloat(v)
+export type OscArg = number | string | boolean | OscFloat
+
+/**
  * A second OSC peer beside Max: today the idk.clips AbletonOSC fork inside Ableton Live
  * (io/liveLink.ts, UDP 11000 out / 11001 in). Its traffic never reaches Max or the web.
  */
 export interface LiveLink {
-	send: (path: string, ...args: Array<number | string | boolean>) => void
+	send: (path: string, ...args: OscArg[]) => void
 	/** Hear every message from Live. Returns the unsubscribe; call it from dispose(). */
 	on: (fn: (path: string, args: any[]) => void) => () => void
 }

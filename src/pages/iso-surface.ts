@@ -189,6 +189,7 @@ import type { ClockState } from "../core/clock.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { selectorKey, shiftKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
 import { clamp } from "../util/scale.js"
+import { SCALE_SURFACE } from "../core/sharedStore.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
 import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
 import { Arpeggiator, ARP_MODES, ARP_BUTTONS, isArpMode, type ArpMode } from "../util/arpeggiator.js"
@@ -2050,6 +2051,8 @@ export class IsoSurfacePage implements Page {
 	}
 
 	private emitSettings(ctx: PageContext) {
+		// The PLAY page's rows follow this scale (core/sharedStore.ts).
+		ctx.shared?.set(SCALE_SURFACE, { npo: this.npo, root: this.root, scale: this.scale })
 		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/settings`, JSON.stringify(this.settings()))
 	}
 }

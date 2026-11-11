@@ -17,6 +17,10 @@ export const DAMP_STATE_SURFACE = "damp/set-surface"
  *  Written only by pages/clips.ts; any page may read or subscribe. */
 export const FOCUS_CLIPS = "focus/clips"
 
+/** The scale iso-surface is set to ({ npo, root, scale }). Written only by pages/iso-surface.ts;
+ *  the PLAY page's rows follow it. */
+export const SCALE_SURFACE = "scale/iso-surface"
+
 export class SharedStore {
 	private values = new Map<string, unknown>()
 	private subs = new Map<string, Set<(value: unknown) => void>>()

@@ -8,13 +8,14 @@
 // and holds 57120/57121, so we must not collide with it.
 
 import { toFixedN } from "../util/scale.js"
+import { OscFloat, type OscArg } from "../core/types.js"
 
 // The 'osc' package ships without TS types; keep it loose for NodeNext ESM.
 // @ts-ignore
 import osc from "osc"
 
 export type Osc = {
-	send: (path: string, ...args: Array<number | string | boolean>) => void
+	send: (path: string, ...args: OscArg[]) => void
 	onMessage: (cb: (path: string, args: any[]) => void) => void
 	/** Hear socket errors too (a failed bind arrives here with err.code, e.g. EADDRINUSE). */
 	onError: (cb: (err: unknown) => void) => void
@@ -53,8 +54,9 @@ export function createOsc(opts?: {
 	})
 	udpPort.on("error", (err: unknown) => console.error("[OSC] UDP error:", err))
 
-	const buildArgs = (args: Array<number | string | boolean>) =>
+	const buildArgs = (args: OscArg[]) =>
 		args.map((a) => {
+			if (a instanceof OscFloat) return { type: "f", value: toFixedN(a.value, 5) }
 			if (typeof a === "boolean") return { type: a ? "T" : "F" }
 			if (typeof a === "number") {
 				if (Number.isInteger(a)) return { type: "i", value: a | 0 }
@@ -63,7 +65,7 @@ export function createOsc(opts?: {
 			return { type: "s", value: String(a) }
 		})
 
-	const send = (path: string, ...args: Array<number | string | boolean>) => {
+	const send = (path: string, ...args: OscArg[]) => {
 		const msg = { address: path, args: buildArgs(args) }
 		if (!ready) {
 			queue.push(msg)
