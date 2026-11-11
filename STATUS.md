@@ -1,15 +1,15 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-10-27
+updated: 2026-11-11
 machine: mac
-summary: set-surface now drives eight voices (cols 4-11) and idk.surface accepts all eight; power-off blanking, the clips page, the idk.surface forks and recent cells-hot work are all still waiting for Ian to check them on the grid.
+summary: Branch feat/play-surface holds the idk.surface work (PLAY page, the new home page switched on, iso lane picker, a REEL pads page built but switched off, a cheat sheet per surface page); none of it has been played by Ian yet and the grid was off USB at session end.
 next:
-  - After idk.surface is relaunched (./surface play), press set-surface's voice 7-8 keys (cols 10-11) on the grid and check they reach lanes 7-8
-  - Plug the grid in and check power off blanks it and power on brings the screen back (fixed 2026-10-18, not hardware-checked)
-  - View the clips slot against Live in the web sim, then on the grid (banking + red box, launches, M/S/A/V layers)
-  - Decide whether cells-surface gets voices 7-8 too (still 6; its damp-all reaches voices 1-6 only)
-  - Build cells editor phase 2 (rhythm editing, variants) from docs/cells-editor-design.md, in a fresh session
+  - Plug the grid in and let Ian play PLAY, home and iso against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
+  - When the idk.surface session says the step line is live, set REEL_PAGE_LIVE true in src/util/pageSelectorSurface.ts, restart the agent while surface is silent, report to surface-inbox
+  - Merge feat/play-surface to main once Ian has played it
+  - Build the ARP key on PLAY once idk.surface lets lane notes feed its arp (asked, not answered)
+  - Tune PLAY's shift 2 latch time (latchMs) with Ian
 handoff_for: claude-gridmapper
 ---
 

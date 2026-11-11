@@ -4,11 +4,11 @@ updated: 2026-11-11
 entries: 2
 ---
 
-### PLAY page for idk.surface — opened 2026-11-11, owner: claude-gridmapper
-- done: branch `feat/play-surface` (not pushed, not merged): the left column is the system's on every surface page (util/pageSelectorSurface.ts), a third OSC peer `ctx.surface` (57150 out / 57133 in), pages/play-surface.ts + util/playSlots.ts + util/playModel.ts, 657 tests. The launchd agent runs this branch; slot c of `idk.surface` is play-surface.
-- next: Ian's playing check (spec section 7); tune shift 2's latch on hardware; merge to main once played. No CHANGES.md entry written yet (the surface pages' left column and the new port are a boundary change).
-- blockers: none. Unplayed: nothing was ever written to the running idk.surface.
-- context: idk.surface docs/specs/2026-11-11-grid-play-page-design.md; report at idk.surface/.superpowers/reports/play-page.md (defaults chosen, gaps on surface's side).
+### idk.surface pages (PLAY, home, iso lanes, REEL pads) — opened 2026-11-11, owner: claude-gridmapper
+- done: branch `feat/play-surface`, pushed, not merged. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page built and OFF (slot d), one cheat sheet per surface page. 690 tests pass. Nothing has been played by Ian; the grid was off USB at session end.
+- next: Ian's playing check. Then, when the idk.surface session says the step line is live: `REEL_PAGE_LIVE = true` in src/util/pageSelectorSurface.ts, restart the agent while surface is silent (two silent reads of the `lanes` topic), one line to `hc send surface-inbox`. Merge to main after the playing check.
+- blockers: REEL page waits on idk.surface's rebuild. The ARP key on PLAY waits on surface letting lane notes feed its arp. Open with Ian: PLAY's shift 2 latch time; my six calls on the REEL page (pad order, clearing a step, key latching, hand speed, lane clearing, playing-step look) are in docs/reel-surface-cheatsheet.md as built.
+- context: CLAUDE.md (file map entries for play-surface, set-surface, reel-surface, pageSelectorSurface); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-11-grid-play-page-design.md and 2026-11-11-reel-step-line-design.md; idk.surface docs/osc/reference.txt (never guess an address); reports in idk.surface/.superpowers/reports/ (play-page*.md, play-y-axis.md, home-page-now.md).
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
 - done: design settled with Ian; open items resolved 2026-09-27 (step-or-Hz entries, edits land at the cutoff, variant lengths divide the world cycle, pitch loops per world + row); phased build plan written.
@@ -53,6 +53,7 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Current state
+- **idk.surface pages (2026-11-11, branch `feat/play-surface`, unplayed):** PLAY (slot c), new home ON (slot f), iso lane picker, REEL pads built OFF (slot d). A third OSC peer `ctx.surface` (57150 out / 57133 in). Cheat sheets: `docs/*-surface-cheatsheet.md`. Entry at the top of this file.
 - **clips page talks to real Live (2026-10-13):** idk.clips' fork serves `/clips` on 11000 and feeds whoever said hello (the clips slot, from 11001). Unseen by Ian on sim/grid yet. Session log 2026-10-13.
 - **cells-hot v2 LIVE (2026-09-21, agent restarted after Hotelier 61dd9bf installed the Max half):** richer banks, shared-beat world changes, independent tuning recommendations, shaped decay, optional evolution/rests and selected-cell mute/rejoin. 447 tests and types pass. Max half installed and probed (replaceAll, decayMs→scorearm, armDecay0..3, decay scales; 4-slot guard offline-tested only). Listening/timing pass is Ian's. See `docs/cells-v2-rollout.md` and `docs/cells-v2-verification.md`.
 - **cells-hot banks:** web + Grid rhythm/tuning buttons, nine exact Hotelier tuning tables, independent selection. Manjanin and Ngòn study banks installed, 18 choices each; source details in `docs/cells-sources.md` and next-repertoire research in `docs/cells-microtiming-research.md`.
@@ -126,6 +127,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-11-11 — Claude — idk.surface pages: PLAY, new home, iso lanes, REEL pads (off), cheat sheets
+- **What:** on `feat/play-surface`. PLAY (pages/play-surface.ts): layers removed, even field, held own notes with PITCH off, `y` setting, SLEW tap, STRIKE on by default, LATCH lights its column. Home (pages/set-surface.ts): ROLL gone, `HOME_VIEW_LIVE` now true (FX row y0, FOCUS y3, MOTION y4), view heard on surface's `values` topic. Iso: lane picker on the bottom row while a track is latched; x0 y6/y7 are PANEL and TRANSPOSER again. New pages/reel-surface.ts behind `REEL_PAGE_LIVE` (off); slot d of the idk.surface preset and live layout is `reel-surface`. Five cheat sheets in docs/.
+- **Verified:** tsc clean, 690 tests. Live reads of surface's view addresses answered. NOT played: the grid was off USB (no usbserial device) from about 10:22.
+- **Next:** see the entry at the top.
+- **Gotchas:** (1) `git commit -am` sweeps in the daemon-written configs (slots.json, settings.json, presets): fb2cebd did, by mistake; add files by name. (2) A page file created after the agent started is not registered until a restart. (3) Restart only while surface is silent; surface re-links by itself after a restart. (4) Every surface page has a cheat sheet that changes in the same commit as the page.
 
 ### 2026-10-27 — Claude — set-surface voices 7-8
 - **What:** `pages/set-surface.ts` VOICES 6 → 8; voices 7-8 on cols 10-11, ALL covers eight, loop ctl ids accept `/7`, `/8` (97126cd). `pages/cells-surface.ts` stays 6 voices; its ALL-damp light now checks only voices 1-6 of set-surface's eight-entry `DAMP_STATE_SURFACE`. New test in `test/surface.test.ts`.
