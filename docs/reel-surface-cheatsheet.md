@@ -15,7 +15,7 @@ y0  iso   steps  1-12                           loop 1
 y1  PLAY  steps 13-24                           loop 2
 y2  twist steps 25-36                           loop 3
 y3  .
-y4  REEL  LEFT pads   SPEED  value  SPEED  RIGHT pads
+y4  REEL  LEFT pads   SPEED  value  SPEED  RIGHT pads  ARP
 y5  home  (x2-x5)     ROLL   x7-x8  ROLL   (x10-x13)
 y6  sh 2              CHANCE        CHANCE
 y7  sh 1              BLEND         BLEND        play
@@ -34,6 +34,7 @@ y7  sh 1              BLEND         BLEND        play
 | x6 y4-y7 | LEFT's keys | SPEED, ROLL, CHANCE, BLEND, top to bottom. |
 | x9 y4-y7 | RIGHT's keys | The same four, for RIGHT. |
 | x7-x8 y4-y7 | value | The lit key's four values, lowest at the bottom. |
+| x14 y4 | ARP | Lit: held pads play in turn, timed by the app (below). |
 | x14 y7 | play | Start or stop the step line. |
 | x15 y0-y2 | loopers 1-3 | Record and loop pad presses. |
 
@@ -47,6 +48,19 @@ Shift 2 does nothing on this page.
 - A track with no lane is dark and silent. So are pads past the number of slices
   the lane has. Only the first sixteen slices can be reached.
 - Playing by hand is never limited by the line: both blocks sound together.
+
+## ARP (x14 y4)
+
+- **Lit:** a pad press no longer fires the slice. The app holds it in one arp and
+  steps through everything held, low pad to high, on its own ORDER, RATE and the
+  rest. Pads from both blocks are one chord; each step plays on its own track's lane.
+- **Let go:** the pad leaves the arp. Unlighting ARP, or leaving the page, lets go
+  of every pad held. Pads already down when you light it join the chord.
+- **Steps:** writing works as before (hold a pad, tap steps), ARP lit or not.
+- **Loopers** still record the presses but play them back as plain slices, never
+  arpeggiated.
+- **Lights:** a held pad is medium; the one whose step sounds now is the brightest.
+- ARP is not saved.
 
 ## Steps
 

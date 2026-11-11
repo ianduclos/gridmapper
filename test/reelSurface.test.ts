@@ -208,3 +208,116 @@ describe("reel-surface: REEL pads and the step line", () => {
 		r.page.dispose(r.ctx)
 	})
 })
+
+describe("reel-surface: arp (x14 y4)", () => {
+	// Reuse the file's rig by building the page the same way.
+	const mk = () => {
+		const out: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		let hear: (path: string, args: any[]) => void = () => {}
+		const ctx = {
+			size: SIZE, modifiers, slot: 3, slotLabel: "d", shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [] },
+			osc: { send() {} },
+			surface: { port: 57133, send: (path: string, ...a: any[]) => out.push([path, ...a.map((v) => (v instanceof OscFloat ? v.value : v))]), on: (fn: any) => ((hear = fn), () => {}) },
+			setDirty() {}, focus() {}, persist() {},
+			setShift: (w: number, d: boolean) => { if (w === 1) modifiers.shift1 = d; else modifiers.shift2 = d },
+		} as unknown as PageContext
+		const page = new ReelSurfacePage(true)
+		page.init(ctx)
+		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
+		const tap = (x: number, y: number) => { key(x, y, 1); key(x, y, 0) }
+		const sent = () => out.splice(0).filter((m) => m[0] !== "/surface/get" && m[0] !== "/surface/subscribe")
+		const led = (x: number, y: number) => page.render(ctx)![ledIndex(SIZE, x, y)]
+		const say = (p: string, v: any) => hear(p, [v])
+		say("/surface/reel/line/left", 3); say("/surface/reel/line/right", 5)
+		say("/surface/lane/3/reel/slices", 16); say("/surface/lane/5/reel/slices", 16)
+		out.length = 0
+		return { page, ctx, out, key, tap, sent, led, say }
+	}
+	beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(3_000_000) })
+	afterEach(() => { vi.useRealTimers() })
+
+	it("lit, a pad is a slice call (id 64 + (pad-1)*2 + track) and its release is call/off; both blocks, one chord", () => {
+		const r = mk()
+		r.tap(14, 4); r.sent()
+		r.key(2, 7, 1) // LEFT pad 1
+		r.key(10, 7, 1) // RIGHT pad 1
+		r.key(13, 4, 1) // RIGHT pad 16
+		expect(r.sent()).toEqual([
+			["/surface/arp/call", 64, 3, "slice", 1],
+			["/surface/arp/call", 65, 5, "slice", 1],
+			["/surface/arp/call", 95, 5, "slice", 16],
+		])
+		r.key(2, 7, 0); r.key(10, 7, 0); r.key(13, 4, 0)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 64], ["/surface/arp/call/off", 65], ["/surface/arp/call/off", 95]])
+	})
+
+	it("unlit, pads fire direct as before; the key lights and unlights", () => {
+		const r = mk()
+		expect(r.led(14, 4)).toBe(5)
+		r.tap(2, 7)
+		expect(r.sent()).toEqual([["/surface/lane/3/reel/slice", 1, 1]])
+		r.tap(14, 4)
+		expect(r.led(14, 4)).toBe(12)
+		r.tap(14, 4)
+		expect(r.led(14, 4)).toBe(5)
+	})
+
+	it("unlighting ARP, or leaving the page, ends every call held", () => {
+		const r = mk()
+		r.tap(14, 4)
+		r.key(2, 7, 1); r.key(3, 7, 1); r.sent()
+		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 64], ["/surface/arp/call/off", 66]])
+		r.tap(14, 4)
+		r.key(2, 7, 0); r.key(3, 7, 0); r.sent()
+		r.sent()
+		r.key(4, 7, 1); r.sent()
+		r.page.onBlur(r.ctx)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 68]])
+	})
+
+	it("pads already down join the chord when ARP lights", () => {
+		const r = mk()
+		r.key(2, 7, 1); r.sent()
+		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp/call", 64, 3, "slice", 1]])
+	})
+
+	it("writing steps still works with ARP lit", () => {
+		const r = mk()
+		r.tap(14, 4)
+		r.key(3, 7, 1) // LEFT pad 2
+		r.sent()
+		r.tap(2, 0) // step 1
+		expect(r.sent()).toEqual([["/surface/reel/line/step", 1, 1, 2, 1, 0, 100, 0]])
+	})
+
+	it("loops play back direct, never as calls", () => {
+		const r = mk()
+		r.tap(14, 4)
+		r.tap(15, 0) // arm
+		r.key(2, 7, 1); vi.advanceTimersByTime(200); r.key(2, 7, 0)
+		vi.advanceTimersByTime(200)
+		r.tap(15, 0) // play
+		r.sent()
+		vi.advanceTimersByTime(500)
+		const m = r.sent()
+		expect(m.some((x) => x[0] === "/surface/lane/3/reel/slice")).toBe(true)
+		expect(m.some((x) => x[0] === "/surface/arp/call")).toBe(false)
+		r.page.dispose(r.ctx)
+	})
+
+	it("the sounding call's pad is the brightest, other held pads sit below", () => {
+		const r = mk()
+		r.tap(14, 4)
+		r.key(2, 7, 1); r.key(3, 7, 1)
+		r.say("/surface/arp/call/at", 66)
+		expect(r.led(3, 7)).toBe(15)
+		expect(r.led(2, 7)).toBe(9)
+		r.say("/surface/arp/call/at", 64)
+		expect(r.led(2, 7)).toBe(15)
+		expect(r.led(3, 7)).toBe(9)
+	})
+})

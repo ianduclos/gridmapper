@@ -15,6 +15,14 @@
  *           Each block's keys on its inner side (x6 LEFT, x9 RIGHT): y4 SPEED, y5 ROLL,
  *           y6 CHANCE, y7 BLEND. The value in the centre (x7-x8, y4-y7, bottom = lowest)
  *           while one of them is lit. Play x14 y7. Gesture loops x15 y0-y2.
+ *           ARP x14 y4 (free in column 14; Ian, 2026-11-11).
+ * Arp     : while ARP is lit a pad press sends /surface/arp/call <id> <lane> slice <pad> instead
+ *           of the direct slice, and its release /surface/arp/call/off <id>; the APP times the
+ *           arp (spec 2026-11-11-grid-arp-design.md). id = 64 + (pad - 1) * 2 + track (0 LEFT,
+ *           1 RIGHT), so 64-95 and rising id is up; both blocks are one chord. Writing steps
+ *           (pad held + step tap) is unchanged. Loops record the presses but play direct, never
+ *           arpeggiated. Unlighting ARP, or leaving the page, ends every call held. The call whose
+ *           step sounds (/surface/arp/call/at) is the brightest pad. Not saved.
  * Pads    : a press fires that slice on the track's lane at x1 and makes that track "yours".
  * Steps   : hold a pad, tap steps: the step takes that slice with the track's four values;
  *           a step already holding that very slice is cleared instead.
@@ -50,6 +58,8 @@ const MOD_X = [6, 9] as const
 const CENTRE_X0 = 7
 const PLAY_X = 14
 const PLAY_Y = 7
+const ARP_X = 14
+const ARP_Y = 4
 const LANE_X0 = 4
 const LANES = 8
 const RECORDERS = 3
@@ -89,6 +99,8 @@ const LVL_AT_ON_DIM = 12
 const LVL_PAD = 4
 const LVL_PAD_FLASH = 12
 const LVL_PAD_HELD = 15
+const LVL_PAD_ARP_HELD = 9 // ARP lit: held but not sounding; the sounding one is LVL_PAD_HELD
+const LVL_ARP_ON = 12
 const LVL_MOD = 4
 const LVL_MOD_ON = 15
 const LVL_VALUE = 4
@@ -144,6 +156,9 @@ export function parseLineState(str: string): LineState | null {
 }
 
 const noteId = (t: Track, pad: number) => t * 64 + pad
+/** The arp's id for a pad (1-16) of a track: 64-95, rising id = up. */
+export const arpId = (t: Track, pad: number) => 64 + (pad - 1) * 2 + t
+const AT_ADDR = "/surface/arp/call/at"
 
 export class ReelSurfacePage implements Page {
 	private steps: [Step[], Step[]] = [Array.from({ length: STEPS }, fresh), Array.from({ length: STEPS }, fresh)]
@@ -162,6 +177,10 @@ export class ReelSurfacePage implements Page {
 	private modHeld: { t: Track; mod: Mod; at: number; used: boolean } | null = null
 	private modLatched: { t: Track; mod: Mod } | null = null
 	private pageKeyHeld = false
+	/** ARP: runtime only. The calls surface holds for this page, by id, with the lane they went to. */
+	private arp = false
+	private calls = new Map<number, number>()
+	private callAt = -1
 	private lanePicks = 0
 	private flashAt: [number[], number[]] = [new Array(PADS + 1).fill(0), new Array(PADS + 1).fill(0)]
 	private recorders = Array.from({ length: RECORDERS }, () => new PatternRecorder())
@@ -193,6 +212,7 @@ export class ReelSurfacePage implements Page {
 		this.focused = false
 		for (const h of this.held) this.recordPad(h.t, h.pad, false)
 		this.held = []
+		this.callsOff(ctx)
 		this.modHeld = null
 		this.pageKeyHeld = false
 		releaseShifts(ctx)
@@ -225,6 +245,14 @@ export class ReelSurfacePage implements Page {
 			if (!this.playing) this.at = 0
 			ctx.surface?.send(`${LINE}/play`, this.playing ? 1 : 0)
 			this.syncTimer()
+			return
+		}
+		if (x === ARP_X && y === ARP_Y) {
+			if (!ev.s) return
+			this.arp = !this.arp
+			if (!this.arp) this.callsOff(ctx)
+			else for (const h of this.held) this.callOn(h.t, h.pad, ctx) // pads already down join the chord
+			ctx.setDirty()
 			return
 		}
 		if (y < STEP_ROWS) {
@@ -301,13 +329,15 @@ export class ReelSurfacePage implements Page {
 			const k = this.held.findIndex((h) => h.t === t && h.pad === pad)
 			if (k < 0) return
 			this.held.splice(k, 1)
+			this.callOff(arpId(t, pad), ctx)
 			this.recordPad(t, pad, false)
 			return
 		}
 		if (!this.playable(t, pad)) return
 		this.touched = t
 		this.held.push({ t, pad })
-		this.fire(t, pad, ctx)
+		if (this.arp) this.callOn(t, pad, ctx)
+		else this.fire(t, pad, ctx)
 		this.recordPad(t, pad, true)
 	}
 
@@ -319,6 +349,23 @@ export class ReelSurfacePage implements Page {
 		if (!this.lanes[t]) return
 		this.flashAt[t][pad] = Date.now()
 		ctx.surface?.send(`/surface/lane/${this.lanes[t]}/reel/slice`, pad, float(1))
+	}
+
+	/** ARP lit: the pad is a call in the app's arp (a slice, speed left out = 1), not a direct slice. */
+	private callOn(t: Track, pad: number, ctx: PageContext) {
+		const id = arpId(t, pad)
+		this.flashAt[t][pad] = Date.now()
+		this.calls.set(id, this.lanes[t])
+		ctx.surface?.send("/surface/arp/call", id, this.lanes[t], "slice", pad)
+	}
+
+	private callOff(id: number, ctx: PageContext) {
+		if (!this.calls.delete(id)) return
+		ctx.surface?.send("/surface/arp/call/off", id)
+	}
+
+	private callsOff(ctx: PageContext) {
+		for (const id of [...this.calls.keys()]) this.callOff(id, ctx)
 	}
 
 	private recordPad(t: Track, pad: number, on: boolean) {
@@ -368,6 +415,7 @@ export class ReelSurfacePage implements Page {
 		const n = Math.round(Number(v))
 		if (path === `${LINE}/play`) this.playing = Number(v) !== 0
 		else if (path === `${LINE}/length`) { if (n >= 1 && n <= STEPS) this.length = n }
+		else if (path === AT_ADDR) this.callAt = Number.isFinite(n) ? n : -1
 		else if (path === `${LINE}/at`) { if (n >= 0 && n <= STEPS) this.setAt(n) }
 		else if (path === `${LINE}/mode`) { if (v === "one-slice" || v === "one-each") { this.mode = v; this.emitSettings(ctx) } }
 		else if (path === `${LINE}/state`) {
@@ -415,6 +463,8 @@ export class ReelSurfacePage implements Page {
 		if (nowMs - this.lastSubMs >= SUBSCRIBE_MS) {
 			this.lastSubMs = nowMs
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "values")
+			// Which call's step sounds, to light its pad (a pattern topic, only while ARP is lit).
+			if (this.arp) link.send("/surface/subscribe", "127.0.0.1", link.port, "/surface/arp/call/*")
 		}
 		if (nowMs - this.lastPollMs < POLL_MS) return
 		this.lastPollMs = nowMs
@@ -481,7 +531,8 @@ export class ReelSurfacePage implements Page {
 				for (let pad = 1; pad <= PADS; pad++) {
 					if (!this.playable(t, pad)) continue
 					const held = this.held.some((h) => h.t === t && h.pad === pad)
-					const lvl = held ? LVL_PAD_HELD : now - this.flashAt[t][pad] < FLASH_MS ? LVL_PAD_FLASH : LVL_PAD
+					const sounding = this.arp && this.callAt === arpId(t, pad)
+					const lvl = this.arp && held ? (sounding ? LVL_PAD_HELD : LVL_PAD_ARP_HELD) : held ? LVL_PAD_HELD : now - this.flashAt[t][pad] < FLASH_MS ? LVL_PAD_FLASH : LVL_PAD
 					set(BLOCK_X0[t] + ((pad - 1) % 4), 7 - Math.floor((pad - 1) / 4), lvl)
 				}
 				MODS.forEach((mod, k) => set(MOD_X[t], BLOCK_Y0 + k, act && act.t === t && act.mod === mod ? LVL_MOD_ON : LVL_MOD))
@@ -495,6 +546,7 @@ export class ReelSurfacePage implements Page {
 				}
 			}
 			set(PLAY_X, PLAY_Y, this.playing ? LVL_PLAY_ON : LVL_PLAY)
+			set(ARP_X, ARP_Y, this.arp ? LVL_ARP_ON : LVL_PLAY)
 			const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
 			for (let i = 0; i < RECORDERS; i++) {
 				const st = this.recorders[i].state
@@ -583,6 +635,7 @@ export const keymap: KeySpec[] = [
 				{ x: MOD_X[0], y: BLOCK_Y0, h: 4, name: "LEFT: speed, roll, chance, blend", short: "L keys", help: "Hold (or tap to keep): the centre picks that value for LEFT.", lit: LVL_MOD },
 				{ x: MOD_X[1], y: BLOCK_Y0, h: 4, name: "RIGHT: speed, roll, chance, blend", short: "R keys", help: "Hold (or tap to keep): the centre picks that value for RIGHT.", lit: LVL_MOD },
 				{ x: CENTRE_X0, y: BLOCK_Y0, w: 2, h: 4, name: "Value", help: "The lit key's four values, lowest at the bottom. ROLL and BLEND: press the lit one for none.", lit: 0 },
+				{ x: ARP_X, y: ARP_Y, name: "Arp", help: "Lit: held pads (both blocks, one chord) go to the app's arp and play in turn; the sounding one is brightest. Writing steps works as before. Loops still play direct. Unlighting lets them go.", lit: LVL_PLAY },
 				{ x: PLAY_X, y: PLAY_Y, name: "Play", help: "Start or stop the step line.", lit: LVL_PLAY },
 				{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1-3", help: "Record and loop pad presses: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
 			] as KeySpec[])
