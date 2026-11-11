@@ -20,8 +20,11 @@
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
  *           SLICES takes the row as its pad number, 1 at the bottom. PITCH unlit: a press
- *           strikes the lane on the note it already has, and the row is how hard. The cell
- *           last played stays lit and fades with the lane's real level. No all column.
+ *           strikes the lane on the note it already has, and the row is how hard. The
+ *           field is EVEN (no root rows; Ian, 2026-11-11): only the cell last played is
+ *           bright, fading with the lane's real level. PITCH unlit, every lane column is
+ *           lit solid and equal: one trigger each. Any key held in a lane's column lights
+ *           the whole column while it is down. No all column.
  * LATCH   : while lit, a played note stays held after the key is let go; pressing the
  *           same cell again ends it (iso's "press a parked note to subtract it");
  *           unlighting LATCH ends every latched note. A loop records a latched note as a
@@ -35,7 +38,8 @@
  *           every move travels, the way home too (a dial glides to where the shared one
  *           stands, then hands itself back). All on a row
  *           does every lane's own row; shift 1 + all also strikes them.
- * SLEW    : hold it and the all column offers eight times. Recalls and the way home
+ * SLEW    : a tap switches the glide on or off at the last time chosen; hold it and the
+ *           all column offers eight times. Recalls and the way home
  *           travel at that time; the page sends the glide itself.
  * SHIFT 2 : while held, the lanes' bottom three rows are BOW, FREEZE and DAMP (damp held
  *           while pressed, the other two switch). Held `latchMs` with nothing pressed, it
@@ -125,24 +129,25 @@ const DAMP_Y = 7
 export const SLEW_TIMES = [0, 0.1, 0.25, 0.5, 1, 2, 4, 8] as const
 
 // --- Levels -------------------------------------------------------------------------
-const LVL_CHOOSER = 3
+const LVL_CHOOSER = 5
 const LVL_CHOOSER_ON = 15
-const LVL_KEY_BASE = 1
-const LVL_KEY_ROOT = 3 // the scale's root rows, so the hand can find the octave
-const LVL_KEY_PAD = 2 // a REEL lane in SLICES: pads, not pitches
+const LVL_KEY_BASE = 2 // the even field: every cell of a lane the same
+const LVL_KEY_TRIGGER = 6 // PITCH unlit: the lane's column is one trigger, lit solid
+const LVL_KEY_PLAYED = 5 // the floor the last-played cell fades to
+const LVL_KEY_COLUMN = 10 // a key is down in this column
 const LVL_KEY_HELD = 15
 const LVL_KEY_LATCHED = 12
 const LVL_ALL = 2 // clearly dimmer than the lanes
 const LVL_PRE_EMPTY = 1
 const LVL_PRE_STORED = 5
 const LVL_PRE_CURRENT = 15
-const LVL_SW_OFF = 3
+const LVL_SW_OFF = 5 // readable at rest
 const LVL_SW_ON = 12
 const LVL_SW_HELD = 15
 const LVL_SLEW_OTHER = 4
-const LVL_REC_EMPTY = 1
+const LVL_REC_EMPTY = 2
 const LVL_REC_ARMED = 12
-const LVL_REC_STOPPED = 5
+const LVL_REC_STOPPED = 6
 const LVL_REC_PLAYING = 15
 const BLINK_MS = 220
 
@@ -154,6 +159,7 @@ const FAST_POLL_MS = 250 // the big three, while they are open
 const SLOW_POLL_MS = 2000 // everything else
 const SUBSCRIBE_MS = 3000 // a subscription is a lease: 10 s without renewal and it lapses
 const LINK_LOST_MS = 5000
+const SLEW_TAP_MS = 350 // SLEW let go sooner than this, with no time picked, is a tap
 const READ_WAIT_MS = 150 // a store or a travelling recall asks surface first, then acts
 const MAX_PATTERN_EVENTS = 20_000
 const MAX_PATCHES = 64
@@ -178,9 +184,10 @@ const SPECS: SettingSpec[] = [
 	{ key: "scale", label: "scale", type: "enum", options: SCALE_NAMES, default: DEFAULT_SCALE },
 	{ key: "base", label: "bottom row (step)", type: "number", min: 0, max: 84, step: 1, default: 24, help: "Where the bottom row sits: 24 is the octave of middle C." },
 	{ key: "slew", label: "slew (s)", type: "enum", options: SLEW_TIMES.map(String), default: "0" },
+	{ key: "slewTime", label: "slew time a tap switches on (s)", type: "enum", options: SLEW_TIMES.slice(1).map(String), default: "1" },
 	{ key: "latchMs", label: "shift 2 stays open after (ms)", type: "number", min: 200, max: 3000, step: 50, default: 1000 },
 	{ key: "pitch", label: "PITCH: presses set the note", type: "toggle", default: true },
-	{ key: "strike", label: "STRIKE: a recall also strikes", type: "toggle", default: false },
+	{ key: "strike", label: "STRIKE: a recall also strikes", type: "toggle", default: true },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 
@@ -220,6 +227,10 @@ export class PlaySurfacePage implements Page {
 	private handNotes = new Set<number>()
 	private handDampLast = new Array<boolean>(LANES).fill(false)
 	private slewHeld = false
+	private slewDownAt = 0
+	private slewPicked = false
+	/** PITCH unlit: cells whose press struck, lit as held until they are let go. */
+	private strikeDown = new Set<number>()
 	/** Shift 2: when it went down, whether anything was pressed under it, and the latch. */
 	private shift2DownAt = 0
 	private shift2Used = false
@@ -283,6 +294,7 @@ export class PlaySurfacePage implements Page {
 		this.dampHeld.clear()
 		this.dampAllHeld = false
 		this.slewHeld = false
+		this.strikeDown.clear()
 		this.shift2Latched = false
 		this.commit(ctx)
 		releaseShifts(ctx)
@@ -320,13 +332,17 @@ export class PlaySurfacePage implements Page {
 
 		// SLEW held: the all column is the eight times.
 		if (this.slewHeld && isAll) {
-			if (down) this.setSetting("slew", String(SLEW_TIMES[ROWS - 1 - ev.y]), ctx)
+			if (down) {
+				this.slewPicked = true
+				this.setSlew(SLEW_TIMES[ROWS - 1 - ev.y], ctx)
+			}
 			return
 		}
 		// A release always lets go of what its press took, whatever the layer is by now.
 		if (!down) {
 			const i = ledIndex(ctx.size, ev.x, ev.y)
 			if (this.ending.delete(i)) return
+			if (this.strikeDown.delete(i)) return
 			const step = this.held.get(i)
 			if (step !== undefined) {
 				this.held.delete(i)
@@ -371,6 +387,14 @@ export class PlaySurfacePage implements Page {
 
 	private rightKey(y: number, down: boolean, ctx: PageContext) {
 		if (y === SLEW_Y) {
+			const now = Date.now()
+			// A tap is the switch: on at the last time chosen, or off. A hold shows the times.
+			if (!down && this.slewHeld && !this.slewPicked && now - this.slewDownAt < SLEW_TAP_MS)
+				this.setSlew(Number(this.settings.slew) > 0 ? 0 : Number(this.settings.slewTime), ctx)
+			if (down) {
+				this.slewDownAt = now
+				this.slewPicked = false
+			}
 			this.slewHeld = down
 			return
 		}
@@ -391,6 +415,12 @@ export class PlaySurfacePage implements Page {
 		else if (y === STRIKE_Y) this.setSetting("strike", !this.settings.strike, ctx)
 	}
 
+	/** Set the glide time; a time above zero is also what the next tap switches back on. */
+	private setSlew(seconds: number, ctx: PageContext) {
+		if (seconds > 0) this.setSetting("slewTime", String(seconds), ctx)
+		this.setSetting("slew", String(seconds), ctx)
+	}
+
 	/** KEYS: a held note, a pad, or (PITCH unlit) a strike on the lane's own note. */
 	private playKey(ev: KeyEvent, lane: number, row: number, ctx: PageContext) {
 		const i = ledIndex(ctx.size, ev.x, ev.y)
@@ -404,6 +434,7 @@ export class PlaySurfacePage implements Page {
 		if (!pad && !this.settings.pitch) {
 			this.tap(`strike/${lane}`, row)
 			this.strikeOwn(lane, rowVelocity(row), ctx)
+			this.strikeDown.add(i)
 			return
 		}
 		const key = pad ? Math.min(127, this.mirror.sliceRoot(lane) + row) : rowKey(row, this.rowScale())
@@ -826,25 +857,20 @@ export class PlaySurfacePage implements Page {
 	private drawKeys(lane: number, x: number, set: (x: number, y: number, l: number) => void, ctx: PageContext) {
 		const e = this.mirror.engine(lane)
 		if (e === "blank") return
-		const pad = this.mirror.slices(lane)
-		const s = this.rowScale()
-		const len = s.npo === 12 ? this.scaleLen(s.scale) : s.npo
+		const cell = (row: number) => ledIndex(ctx.size, x, ROWS - 1 - row)
+		// PITCH unlit, the column is one trigger (a pad lane keeps its pads).
+		const trigger = !this.settings.pitch && !this.mirror.slices(lane)
+		let columnDown = false
+		for (let row = 0; row < ROWS; row++) if (this.held.has(cell(row)) || this.strikeDown.has(cell(row))) columnDown = true
 		for (let row = 0; row < ROWS; row++) {
-			const y = ROWS - 1 - row
-			let lvl = pad ? LVL_KEY_PAD : this.settings.pitch && row % len === 0 ? LVL_KEY_ROOT : LVL_KEY_BASE
+			let lvl = trigger ? LVL_KEY_TRIGGER : LVL_KEY_BASE
 			// The cell last played stays lit and fades with the lane's real level.
-			if (row === this.lastRow[lane]) lvl = Math.max(lvl, levelLed(this.mirror.level(lane), LVL_KEY_ROOT + 1))
-			if (this.latched.has(ledIndex(ctx.size, x, y))) lvl = LVL_KEY_LATCHED
-			if (this.held.has(ledIndex(ctx.size, x, y))) lvl = LVL_KEY_HELD
-			set(x, y, lvl)
+			if (row === this.lastRow[lane]) lvl = Math.max(lvl, levelLed(this.mirror.level(lane), LVL_KEY_PLAYED))
+			if (this.latched.has(cell(row))) lvl = LVL_KEY_LATCHED
+			if (columnDown) lvl = Math.max(lvl, LVL_KEY_COLUMN)
+			if (this.held.has(cell(row)) || this.strikeDown.has(cell(row))) lvl = LVL_KEY_HELD
+			set(x, ROWS - 1 - row, lvl)
 		}
-	}
-
-	/** How many rows until the scale's root comes round again. */
-	private scaleLen(scale: string): number {
-		const s = { npo: 12, root: 0, scale, base: 0 }
-		for (let n = 1; n <= 12; n++) if (rowKey(n, s) - rowKey(0, s) === 12) return n
-		return 12
 	}
 
 	// ---------------------------------------------------------------- settings, saving
@@ -973,7 +999,7 @@ export const keymap: KeySpec[] = [
 	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it strikes the lane's own note, the row is how hard.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
-	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
+	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Tap: glide on or off at the last time. Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
 ]
 
 export const page: PageModule = {

@@ -136,14 +136,35 @@ describe("play-surface: keys", () => {
 		r.say("/surface/state/lane/2/pitch", 330); r.sent()
 		expect(r.led(RIGHT, 4)).toBe(12)
 		r.tapKey(RIGHT, 4)
-		expect(r.led(RIGHT, 4)).toBe(3)
+		expect(r.led(RIGHT, 4)).toBe(5)
+		// Every lane column is one trigger, lit solid and equal; a pad lane keeps its pads.
+		for (let y = 0; y < 8; y++) { expect(r.led(LANE_X0, y)).toBe(6); expect(r.led(LANE_X0 + 6, y)).toBe(2) }
 		r.key(LANE_X0 + 1, 7); r.key(LANE_X0 + 1, 0)
 		r.key(LANE_X0, 0)
+		expect(r.led(LANE_X0, 0)).toBe(15) // the key that is down
+		expect(r.led(LANE_X0, 5)).toBe(10) // and its whole column with it
+		expect(r.led(LANE_X0 + 2, 5)).toBe(6)
+		r.key(LANE_X0, 0, 0)
+		expect(r.led(LANE_X0, 5)).toBe(6)
 		expect(r.sent()).toEqual([
 			["/surface/lane/2/strike/own", 0.125],
 			["/surface/lane/2/strike/own", 1],
 			["/surface/lane/1/strike/own", 1],
 		])
+	})
+
+	it("the field is even: no root rows, and a held key lights its whole column", () => {
+		const r = rig(); r.world()
+		for (let y = 0; y < 8; y++) expect(r.led(LANE_X0, y)).toBe(2)
+		r.key(LANE_X0, 4)
+		expect(r.led(LANE_X0, 4)).toBe(15)
+		for (const y of [0, 3, 7]) expect(r.led(LANE_X0, y)).toBe(10)
+		expect(r.led(LANE_X0 + 1, 4)).toBe(2)
+		r.key(LANE_X0, 4, 0)
+		expect(r.led(LANE_X0, 0)).toBe(2)
+		// Side keys read at rest: loopers dim, switches medium, on = bright.
+		expect([0, 1, 2, 3].map((y) => r.led(RIGHT, y))).toEqual([2, 2, 2, 2])
+		expect([4, 5, 6, 7].map((y) => r.led(RIGHT, y))).toEqual([12, 12, 5, 5]) // PITCH and STRIKE start on
 	})
 
 	it("the cell last played stays lit and fades with the lane's level", () => {
@@ -221,6 +242,18 @@ describe("play-surface: the chooser and SLEW", () => {
 		expect(SLEW_TIMES[5]).toBe(2)
 		expect(r.sent()).toEqual([])
 		expect(r.led(RIGHT, 6)).toBe(12)
+		r.tapKey(RIGHT, 6) // a tap switches the glide off…
+		expect(r.led(RIGHT, 6)).toBe(5)
+		r.tapKey(RIGHT, 6) // …and on again at the last time
+		expect(r.led(RIGHT, 6)).toBe(12)
+		r.key(RIGHT, 6); vi.advanceTimersByTime(600); expect(r.led(ALL, 2)).toBe(15); r.key(RIGHT, 6, 0) // a hold alone changes nothing
+		expect(r.led(RIGHT, 6)).toBe(12)
+	})
+
+	it("SLEW tapped before any time was chosen glides at 1 s", () => {
+		const r = rig(); r.world(); r.layer(7)
+		r.tapKey(RIGHT, 6)
+		r.key(RIGHT, 6); vi.advanceTimersByTime(600); expect(r.led(ALL, 3)).toBe(15); r.key(RIGHT, 6, 0) // 1 s is the fifth from the bottom
 	})
 })
 
@@ -273,16 +306,17 @@ describe("play-surface: presets", () => {
 		expect(m).toContainEqual(["/surface/lane/2/modal/decay/norm", 0.25])
 		expect(m).toContainEqual(["/surface/lane/2/owner/position", "follow"])
 		expect(m).not.toContainEqual(["/surface/lane/2/owner/hardness", "follow"])
-		expect(m.some((x) => x[0].includes("strike"))).toBe(false)
+		expect(m).toContainEqual(["/surface/lane/2/strike/own", 0.8]) // STRIKE starts lit
 		expect(r.led(LANE_X0 + 1, 0)).toBe(15)
-		r.tapKey(RIGHT, 5) // STRIKE
+		r.tapKey(RIGHT, 5) // STRIKE off
 		r.tapKey(LANE_X0, 0)
-		expect(r.sent()).toContainEqual(["/surface/lane/1/strike/own", 0.8])
+		expect(r.sent().some((x) => x[0].includes("strike"))).toBe(false)
 	})
 
 	it("the bottom row is home: the lane's dials all back to the shared ones", () => {
 		const r = two()
 		expect(r.led(LANE_X0, 7)).toBe(5)
+		r.tapKey(RIGHT, 5) // STRIKE off
 		r.tapKey(LANE_X0, 7)
 		const m = r.sent()
 		expect(m).toContainEqual(["/surface/lane/1/owner/hardness", "follow"])
@@ -299,6 +333,7 @@ describe("play-surface: presets", () => {
 
 	it("all on a row sends every lane to its own engine's row; shift 1 then all strikes them too", () => {
 		const r = two()
+		r.tapKey(RIGHT, 5) // STRIKE off
 		r.tapKey(ALL, 0)
 		let m = r.sent()
 		expect(m.filter((x) => x[0].endsWith("/modal/hardness/norm") && x[1] === 1)).toHaveLength(6)
@@ -435,7 +470,7 @@ describe("play-surface: shift 2 and loopers", () => {
 		vi.advanceTimersByTime(1200)
 		expect(r.sent()).toEqual([])
 		r.key(0, 7); r.tapKey(RIGHT, 0); r.key(0, 7, 0) // shift 1 + looper clears
-		expect(r.led(RIGHT, 0)).toBe(1)
+		expect(r.led(RIGHT, 0)).toBe(2)
 	})
 
 	it("a loop keeps playing when the page loses focus, and lets go when it is cleared", () => {
