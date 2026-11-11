@@ -392,7 +392,7 @@ src/
                          /surface/reel/line/* and /surface/lane/<n>/reel/{slice,slices} are live. Steps x2-x13
                          y0-y2, two 4x4 pad blocks (x2-x5, x10-x13), SPEED/ROLL/CHANCE/BLEND keys x6 and x9,
                          value in the centre x7-x8, play x14 y7, loops x15 y0-y2. The line is surface's (its
-                         timing, its patch); `parseLineState` is a stub until the state format arrives.
+                         timing, its patch), read whole from /surface/reel/line/state (`parseLineState`, format version 1).
                          Switching on also means: slot d = reel-surface in configs/slots.json and the
                          idk.surface preset. Spec: idk.surface docs/specs/2026-11-11-reel-step-line-design.md.
   pages/blank-surface.ts idk.surface fork of blank-hot — same behavior, own selector

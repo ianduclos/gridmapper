@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { ReelSurfacePage } from "../src/pages/reel-surface.js"
+import { ReelSurfacePage, parseLineState } from "../src/pages/reel-surface.js"
 import { SharedStore } from "../src/core/sharedStore.js"
 import { type PageContext, ledIndex, OscFloat } from "../src/core/types.js"
 
@@ -131,7 +131,7 @@ describe("reel-surface: REEL pads and the step line", () => {
 		expect(r.led(9, 5)).toBe(4)
 		expect(r.sent()).toEqual([])
 		r.key(9, 7, 1); r.tap(8, 4); r.key(9, 7, 0) // RIGHT BLEND to B
-		expect(r.sent()).toEqual([["/surface/lane/5/reelBlend", 1], ["/surface/lane/5/owner/reelBlend", "voice"]])
+		expect(r.sent()).toEqual([["/surface/reel/line/blend", 2, 4]])
 	})
 
 	it("holding the page key: the top row picks LEFT's lane, then RIGHT's; never the same lane", () => {
@@ -158,6 +158,24 @@ describe("reel-surface: REEL pads and the step line", () => {
 		r.tap(14, 7)
 		expect(r.sent()).toEqual([["/surface/reel/line/play", 0]])
 		expect(r.led(4, 0)).toBe(2)
+	})
+
+	it("the whole line as surface reports it: length, lanes, mode and every step", () => {
+		const dash = (n: number) => Array(n).fill("-").join(" ")
+		const str = `1 16 3 5 1 145 15 L 2:0.5:1:75:4 ${dash(35)} R ${dash(35)} 9:-1:0:100:0`
+		const st = parseLineState(str)!
+		expect(st.length).toBe(16)
+		expect(st.lanes).toEqual([3, 5])
+		expect(st.mode).toBe("one-each")
+		expect(st.steps[0][0]).toEqual({ slice: 2, speed: 0.5, roll: 1, chance: 75, blend: 4 })
+		expect(st.steps[1][35]).toEqual({ slice: 9, speed: -1, roll: 0, chance: 100, blend: 0 })
+		expect(parseLineState("2 " + str.slice(2))).toBeNull()
+		expect(parseLineState(str + " -")).toBeNull()
+		const r = mk()
+		r.say("/surface/reel/line/state", str)
+		expect(r.led(2, 0)).toBe(10)
+		expect(r.led(6, 1)).toBe(0) // past the length
+		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/3/reel/slices"])
 	})
 
 	it("a looper records pad presses and fires them again", () => {

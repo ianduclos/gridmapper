@@ -28,8 +28,9 @@
  * Lights  : your track's steps bright, the other's faint, both brightest; steps past the
  *           length dark; the playing step inverts.
  * Loops   : pad presses only (the steps are the app's, never recorded here).
- * Reads   : /surface/get on focus and slowly after; changes on the `values` topic. The
- *           playing step is polled while playing until surface names its topic.
+ * Reads   : the whole line as one string (/surface/reel/line/state) on focus and slowly
+ *           after; changes and the playing step (line/at, only when it moves) arrive on the
+ *           `values` topic.
  */
 
 import { type Page, type PageContext, type KeyEvent, type LedFrame, makeFrame, ledIndex, float } from "../core/types.js"
@@ -74,7 +75,6 @@ const TAP_MS = 350
 const TIMER_MS = 5
 const SUBSCRIBE_MS = 3000
 const POLL_MS = 5000
-const AT_POLL_MS = 40
 const FLASH_MS = 110
 const BLINK_MS = 220
 const MAX_PATTERN_EVENTS = 20_000
@@ -106,12 +106,40 @@ const SPECS: SettingSpec[] = [
 	{ key: "mode", label: "A step holds", type: "enum", presentation: "buttons", options: ["one-slice", "one-each"], optionLabels: { "one-slice": "one slice a step", "one-each": "one from each" }, default: "one-slice", help: "One slice a step: writing a track's slice onto a step clears the other track's there. Kept by surface, in the patch." },
 ]
 
+export interface LineState { length: number; lanes: [number, number]; mode: "one-slice" | "one-each"; steps: [Step[], Step[]] }
+const SPEEDS = VALUES.speed
+
 /**
- * surface's /surface/reel/line/state string → the two tracks' steps. The format comes with
- * the surface helper's report; until then nothing is read and the page shows what it wrote.
+ * surface's /surface/reel/line/state string (format version 1), space-separated:
+ * `1 <len> <left 0-8> <right 0-8> <mode 0|1> <spacing> <level> L <36 steps> R <36 steps>`;
+ * a step is `-` (all defaults) or `slice:speed:roll:chance:blend` in line/step units.
+ * Anything else reads as null and the page keeps what it has.
  */
-export function parseLineState(_s: string): [Step[], Step[]] | null {
-	return null
+export function parseLineState(str: string): LineState | null {
+	const p = str.trim().split(/\s+/)
+	if (p.length !== 9 + 2 * STEPS || p[0] !== "1" || p[7] !== "L" || p[8 + STEPS] !== "R") return null
+	const int = (v: string, lo: number, hi: number) => {
+		const n = Number(v)
+		return Number.isInteger(n) && n >= lo && n <= hi ? n : null
+	}
+	const length = int(p[1], 1, STEPS), left = int(p[2], 0, LANES), right = int(p[3], 0, LANES), mode = int(p[4], 0, 1)
+	if (length === null || left === null || right === null || mode === null) return null
+	const track = (from: number): Step[] | null => {
+		const out: Step[] = []
+		for (let i = 0; i < STEPS; i++) {
+			const w = p[from + i]
+			if (w === "-") { out.push(fresh()); continue }
+			const q = w.split(":")
+			if (q.length !== 5) return null
+			const slice = int(q[0], 0, 64), roll = int(q[2], 0, 4), chance = int(q[3], 25, 100), blend = int(q[4], 0, 4)
+			const speed = Number(q[1])
+			if (slice === null || roll === null || chance === null || blend === null || !SPEEDS.includes(speed)) return null
+			out.push({ slice, speed, roll, chance, blend })
+		}
+		return out
+	}
+	const l = track(8), r = track(9 + STEPS)
+	return l && r ? { length, lanes: [left, right], mode: mode ? "one-each" : "one-slice", steps: [l, r] } : null
 }
 
 const noteId = (t: Track, pad: number) => t * 64 + pad
@@ -143,7 +171,6 @@ export class ReelSurfacePage implements Page {
 	private focused = false
 	private lastPollMs = 0
 	private lastSubMs = 0
-	private lastAtMs = 0
 	private unsurface: (() => void) | null = null
 
 	constructor(private live: boolean = REEL_PAGE_LIVE) {}
@@ -319,12 +346,8 @@ export class ReelSurfacePage implements Page {
 		const v = VALUES[a.mod][row]
 		const next = NONE_OK[a.mod] && this.cur[a.t][a.mod] === v ? 0 : v
 		this.cur[a.t][a.mod] = next
-		// BLEND alone is also the lane's live BLEND (as the lane's own).
-		if (a.mod === "blend" && next && this.lanes[a.t]) {
-			const n = this.lanes[a.t]
-			ctx.surface?.send(`/surface/lane/${n}/reelBlend`, float((next - 1) / 3))
-			ctx.surface?.send(`/surface/lane/${n}/owner/reelBlend`, "voice")
-		}
+		// BLEND alone is also the track's live BLEND; surface glides it (150 ms).
+		if (a.mod === "blend" && next) ctx.surface?.send(`${LINE}/blend`, a.t + 1, next)
 	}
 
 	private recorderKey(idx: number, ctx: PageContext) {
@@ -346,14 +369,15 @@ export class ReelSurfacePage implements Page {
 		else if (path === `${LINE}/mode`) { if (v === "one-slice" || v === "one-each") { this.mode = v; this.emitSettings(ctx) } }
 		else if (path === `${LINE}/state`) {
 			const st = parseLineState(String(v ?? ""))
-			if (st) this.steps = st
+			if (st) {
+				this.steps = st.steps
+				this.length = st.length
+				if (st.mode !== this.mode) { this.mode = st.mode; this.emitSettings(ctx) }
+				for (const t of [0, 1] as const) this.heardLane(t, st.lanes[t], ctx)
+			}
 		} else if (path === TRACK_ADDR[0] || path === TRACK_ADDR[1]) {
 			const t: Track = path === TRACK_ADDR[0] ? 0 : 1
-			if (n >= 0 && n <= LANES && n !== this.lanes[t]) {
-				this.lanes[t] = n
-				this.slices[t] = -1
-				if (n) ctx.surface?.send("/surface/get", `/surface/lane/${n}/reel/slices`)
-			}
+			if (n >= 0 && n <= LANES) this.heardLane(t, n, ctx)
 		} else {
 			const m = /^\/surface\/lane\/([1-8])\/reel\/slices$/.exec(path)
 			if (!m || !(n >= 0)) return
@@ -361,6 +385,13 @@ export class ReelSurfacePage implements Page {
 		}
 		this.syncTimer()
 		ctx.setDirty()
+	}
+
+	private heardLane(t: Track, n: number, ctx: PageContext) {
+		if (n === this.lanes[t]) return
+		this.lanes[t] = n
+		this.slices[t] = -1
+		if (n) ctx.surface?.send("/surface/get", `/surface/lane/${n}/reel/slices`)
 	}
 
 	/** The playing step moved: flash the pads it fires, so the blocks show the line. */
@@ -382,13 +413,9 @@ export class ReelSurfacePage implements Page {
 			this.lastSubMs = nowMs
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "values")
 		}
-		if (this.playing && nowMs - this.lastAtMs >= AT_POLL_MS) {
-			this.lastAtMs = nowMs
-			link.send("/surface/get", `${LINE}/at`)
-		}
 		if (nowMs - this.lastPollMs < POLL_MS) return
 		this.lastPollMs = nowMs
-		for (const a of ["play", "length", "left", "right", "mode", "state"]) link.send("/surface/get", `${LINE}/${a}`)
+		for (const a of ["play", "at", "state"]) link.send("/surface/get", `${LINE}/${a}`)
 		for (const t of [0, 1] as const) if (this.lanes[t]) link.send("/surface/get", `/surface/lane/${this.lanes[t]}/reel/slices`)
 	}
 
