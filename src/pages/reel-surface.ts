@@ -268,13 +268,15 @@ export class ReelSurfacePage implements Page {
 		}
 		const a = this.active()
 		if (a) {
-			// A lit key: the step takes the value showing, for that key's track.
+			// A lit key: a written step takes the value showing, for that key's track.
 			if (this.modHeld) this.modHeld.used = true
 			const s = this.steps[a.t][i]
-			if (!s.slice) return
-			s[a.mod] = this.cur[a.t][a.mod]
-			this.touched = a.t
-			return this.sendStep(a.t, i, ctx)
+			if (s.slice) {
+				s[a.mod] = this.cur[a.t][a.mod]
+				this.touched = a.t
+				return this.sendStep(a.t, i, ctx)
+			}
+			// An empty step with a pad held is written below, as with no key lit.
 		}
 		const h = this.held[this.held.length - 1]
 		if (!h) return
@@ -575,7 +577,7 @@ export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
 	...(REEL_PAGE_LIVE
 		? ([
-				{ x: STEP_X0, y: 0, w: STEPS_A_ROW, h: STEP_ROWS, name: "Steps 1-36", short: "Steps", help: "Hold a pad and tap steps to write that slice; the same slice again clears it. Shift 1 + a step: the length. With SPEED, ROLL, CHANCE or BLEND lit, a tapped step takes the value showing.", lit: LVL_STEP_EMPTY },
+				{ x: STEP_X0, y: 0, w: STEPS_A_ROW, h: STEP_ROWS, name: "Steps 1-36", short: "Steps", help: "Hold a pad and tap steps to write that slice; the same slice again clears it. Shift 1 + a step: the length. With SPEED, ROLL, CHANCE or BLEND lit, a tapped written step takes the value showing; an empty one is still written while a pad is held.", lit: LVL_STEP_EMPTY },
 				{ x: BLOCK_X0[0], y: BLOCK_Y0, w: 4, h: 4, name: "LEFT pads", short: "Left", help: "Fire a slice of LEFT's lane: pad 1 at the bottom left.", lit: LVL_PAD },
 				{ x: BLOCK_X0[1], y: BLOCK_Y0, w: 4, h: 4, name: "RIGHT pads", short: "Right", help: "Fire a slice of RIGHT's lane: pad 1 at the bottom left.", lit: LVL_PAD },
 				{ x: MOD_X[0], y: BLOCK_Y0, h: 4, name: "LEFT: speed, roll, chance, blend", short: "L keys", help: "Hold (or tap to keep): the centre picks that value for LEFT.", lit: LVL_MOD },

@@ -77,6 +77,9 @@ Shift 2 does nothing on this page.
 
 - **Pick a value:** steps written afterwards take it.
 - **Tap a written step while the key is lit:** that step takes the value showing.
+- **Tap an empty step while the key is lit and a pad is held:** the step is written
+  with that pad's slice and the track's values as they stand, as with no key lit
+  (one slice a step still clears the other track). With no pad held it does nothing.
 - **BLEND alone:** picking a position also moves the lane's BLEND there now, with
   a short glide.
 

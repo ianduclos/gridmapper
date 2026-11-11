@@ -122,6 +122,23 @@ describe("reel-surface: REEL pads and the step line", () => {
 		expect(r.sent()).toEqual([["/surface/reel/line/step", 1, 3, 1, 2, 0, 100, 0]])
 	})
 
+	it("a key lit AND a pad held: an empty step is written with the pad's slice and the track's values; one slice clears the other track", () => {
+		const r = mk(); r.lanes()
+		r.key(10, 7, 1); r.tap(5, 0); r.key(10, 7, 0); r.sent() // RIGHT pad 1 on step 4
+		r.key(6, 4, 1); r.tap(8, 4) // LEFT SPEED x2, key still held
+		r.key(3, 7, 1); r.sent() // LEFT pad 2 held
+		r.tap(5, 0) // RIGHT's step, but empty for LEFT: LEFT writes it (one slice a step clears RIGHT's)
+		r.tap(2, 0) // empty step
+		expect(r.sent()).toEqual([
+			["/surface/reel/line/step", 1, 4, 2, 2, 0, 100, 0],
+			["/surface/reel/line/step", 1, 1, 2, 2, 0, 100, 0],
+		])
+		r.key(3, 7, 0)
+		r.tap(4, 0) // key lit, no pad held, empty step: nothing
+		expect(r.sent()).toEqual([])
+		r.key(6, 4, 0)
+	})
+
 	it("a tapped key stays lit; ROLL's lit value pressed again is none; BLEND moves the lane's blend", () => {
 		const r = mk(); r.lanes()
 		r.tap(9, 5) // RIGHT ROLL, latched
