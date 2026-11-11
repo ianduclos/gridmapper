@@ -39,6 +39,16 @@ export const SELECTOR_SLOT_AT_ROW: ReadonlyMap<number, Slot> = new Map<number, S
 	[5, 5], // home
 ])
 export const PLAY_SLOT: Slot = 2
+/**
+ * The REEL pads page (pages/reel-surface.ts, slot d) and its key on free row y4. OFF until
+ * the surface session says the step line's addresses are live in the running app. Cells
+ * (slot b) keeps its damp on that cell, so it shows no key for the page.
+ */
+export const REEL_PAGE_LIVE = false
+export const REEL_SLOT: Slot = 3
+export const REEL_ROW = 4
+const CELLS_SLOT: Slot = 1
+const reelKeyOn = (ctx: PageContext) => REEL_PAGE_LIVE && ctx.slot !== CELLS_SLOT
 export const TWISTER_ROW = 2
 /** The two rows a page may use for itself. */
 export const FREE_ROWS = [3, 4] as const
@@ -79,7 +89,7 @@ export function selectorKey(ev: KeyEvent, ctx: PageContext): boolean {
 		}
 		return true
 	}
-	const slot = SELECTOR_SLOT_AT_ROW.get(ev.y)
+	const slot = ev.y === REEL_ROW && reelKeyOn(ctx) ? REEL_SLOT : SELECTOR_SLOT_AT_ROW.get(ev.y)
 	if (slot === undefined) return false
 	if (ev.s === 1 && slot !== ctx.slot) ctx.focus(slot)
 	return true
@@ -109,6 +119,7 @@ export function drawSelector(f: LedFrame, ctx: PageContext): void {
 	for (const [y, slot] of SELECTOR_SLOT_AT_ROW) {
 		if (y < h) f[ledIndex(ctx.size, SELECTOR_COL, y)] = slot === ctx.slot ? LVL_SELF : LVL_OTHER
 	}
+	if (reelKeyOn(ctx) && REEL_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, REEL_ROW)] = ctx.slot === REEL_SLOT ? LVL_SELF : LVL_OTHER
 	if (TWISTER_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, TWISTER_ROW)] = twisterHeld ? LVL_TWISTER_HELD : LVL_TWISTER
 	if (SHIFT2_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, SHIFT2_ROW)] = ctx.modifiers?.shift2 ? LVL_SHIFT_HELD : LVL_SHIFT_IDLE
 	if (SHIFT1_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, SHIFT1_ROW)] = ctx.modifiers?.shift1 ? LVL_SHIFT_HELD : LVL_SHIFT_IDLE
