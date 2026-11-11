@@ -5,6 +5,10 @@
  * page uses; `alt` is the spec's alternative and `third` is room for one more — neither is
  * wired to a control yet (a CONTROL subtab in idk.surface will choose them later).
  *
+ * 2026-11-11: the six parameter layers that used this table were taken off the PLAY page
+ * (Ian). The table stays as the spec's data; the page now uses only the address builders
+ * below and, to read presets stored by the first version, suffixesFor.
+ *
  * A dial is named by its scope and key exactly as idk.surface's generated
  * docs/osc/reference.txt spells them: test/playSlots.test.ts checks every address this
  * file can produce against that list, so a name is never a guess.

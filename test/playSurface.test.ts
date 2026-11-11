@@ -3,7 +3,7 @@ import { PlaySurfacePage, readPresets, SLEW_TIMES } from "../src/pages/play-surf
 import { PAGE_MODULES } from "../src/pages/registry.js"
 import { SharedStore, SCALE_SURFACE } from "../src/core/sharedStore.js"
 import { OscFloat, ledIndex, type PageContext } from "../src/core/types.js"
-import { SurfaceMirror, barRow, levelLed, rowKey, rowValue, rowVelocity, slotReads } from "../src/util/playModel.js"
+import { SurfaceMirror, levelLed, rowKey, rowVelocity } from "../src/util/playModel.js"
 import { partsFor } from "../src/util/playSlots.js"
 
 const SIZE = { width: 16, height: 8 }
@@ -59,10 +59,7 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_000_000) })
 afterEach(() => { vi.useRealTimers() })
 
 describe("play model", () => {
-	it("a bar's rows and values are each other's inverse, and tremolo depth stops at 80%", () => {
-		for (let r = 0; r < 8; r++) expect(barRow(rowValue(r))).toBe(r)
-		expect(rowValue(7, 0.8)).toBeCloseTo(0.8)
-		expect(barRow(0.8, 0.8)).toBe(7)
+	it("a strike is soft at the bottom and full at the top", () => {
 		expect(rowVelocity(0)).toBeCloseTo(0.125)
 		expect(rowVelocity(7)).toBe(1)
 	})
@@ -88,8 +85,6 @@ describe("play model", () => {
 		expect(m.effective(1, p)).toBe(0.4)
 		m.feed("/surface/lane/2/owner/hardness", ["voice"], 1)
 		expect(m.effective(1, p)).toBe(0.9)
-		m.feed("/surface/lane/1/engine", ["modal"], 1)
-		expect(slotReads(m, [0])).toEqual(["/surface/lane/*/modal/hardness/norm", "/surface/lane/*/owner/hardness", "/surface/modal/hardness/norm"])
 	})
 })
 
@@ -202,76 +197,30 @@ describe("play-surface: latch", () => {
 	})
 })
 
-describe("play-surface: layers", () => {
-	it("a lane on the shared dial reads dim; a press pulls it to that level as its own", () => {
-		const r = rig(); r.world(); r.layer(1); r.sent()
-		expect(r.led(LANE_X0, 3)).toBe(6) // shared 0.5 → the tip on the fifth row up (3.5 rounds up)
-		expect(r.led(LANE_X0, 7)).toBe(3)
-		r.tapKey(LANE_X0, 0) // top: full
-		expect(r.sent()).toEqual([
-			["/surface/lane/1/modal/hardness/norm", 0.5], // its own dial starts where the shared one is
-			["/surface/lane/1/owner/hardness", "voice"],
-			["/surface/lane/1/modal/hardness/norm", 1],
-		])
-		expect(r.led(LANE_X0, 0)).toBe(15)
-		expect(r.led(LANE_X0, 7)).toBe(10)
-		expect(r.led(LANE_X0 + 1, 3)).toBe(6) // its neighbour has not moved
-	})
-
-	it("the all column is dimmer and moves the lanes that have the dial; a dark column stays dark", () => {
-		const r = rig(); r.world(); r.layer(1); r.sent()
+describe("play-surface: the chooser and SLEW", () => {
+	it("the six layer keys are gone: dark, and a press changes nothing", () => {
+		const r = rig(); r.world(); r.sent()
+		for (let y = 1; y <= 6; y++) {
+			expect(r.led(CHOOSER, y)).toBe(0)
+			r.tapKey(CHOOSER, y)
+		}
+		expect(r.led(CHOOSER, 0)).toBe(15) // still KEYS
+		r.tapKey(LANE_X0, 7)
+		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/1/note/off", 60]])
+		r.layer(7)
+		expect(r.led(CHOOSER, 7)).toBe(15)
 		expect(r.led(ALL, 3)).toBe(2)
-		expect(r.led(LANE_X0 + 6, 7)).toBe(0) // REEL has nothing in slot 1
-		r.tapKey(ALL, 7)
-		const m = r.sent()
-		expect(m.filter((x) => x[0].endsWith("/modal/hardness/norm") && x[1] === 0)).toHaveLength(6)
-		expect(m.some((x) => x[0].startsWith("/surface/lane/7/"))).toBe(false)
 	})
 
-	it("shift 1 then a lane sends it back to the shared dial; shift 1 then all sends every lane", () => {
-		const r = rig(); r.world(); r.layer(1)
-		r.tapKey(LANE_X0, 0); r.sent()
-		r.key(0, 7)
-		r.tapKey(LANE_X0, 5)
-		expect(r.sent()).toEqual([["/surface/lane/1/owner/hardness", "follow"]])
-		expect(r.led(LANE_X0, 3)).toBe(6)
-		r.tapKey(ALL, 0)
-		expect(r.sent().filter((x) => x[1] === "follow")).toHaveLength(7) // six MODAL lanes and the STRING one; REEL has no slot 1
-	})
-
-	it("layer 6 is tremolo: rate and depth together, depth at most 80%, TREM on above zero", () => {
-		const r = rig(); r.world(); r.layer(6); r.sent()
-		r.tapKey(LANE_X0 + 7, 0) // a STRING lane, full
-		const m = r.sent()
-		expect(m).toContainEqual(["/surface/lane/8/tremolo/tremoloRate/norm", 1])
-		expect(m).toContainEqual(["/surface/lane/8/tremolo/tremoloDepth", 0.8])
-		expect(m).toContainEqual(["/surface/lane/8/trem", 1])
-		r.tapKey(LANE_X0 + 7, 7)
-		const z = r.sent()
-		expect(z).toContainEqual(["/surface/lane/8/tremolo/tremoloDepth", 0])
-		expect(z).toContainEqual(["/surface/lane/8/trem", 0])
-	})
-
-	it("SLEW: hold it and the all column offers eight times; a level then travels", () => {
-		const r = rig(); r.world(); r.layer(1); r.sent()
+	it("SLEW: hold it and the all column offers eight times; choosing one moves nothing", () => {
+		const r = rig(); r.world(); r.layer(7); r.sent()
 		r.key(RIGHT, 6)
 		expect(r.led(ALL, 7)).toBe(15) // 0 s, at the bottom
 		r.tapKey(ALL, 2) // 2 s
 		r.key(RIGHT, 6, 0)
 		expect(SLEW_TIMES[5]).toBe(2)
-		expect(r.sent()).toEqual([]) // choosing a time moves nothing
-		expect(r.led(RIGHT, 6)).toBe(12)
-		r.tapKey(LANE_X0, 0)
-		r.sent()
-		vi.advanceTimersByTime(1000)
-		const half = r.sent().filter((x) => x[0] === "/surface/lane/1/modal/hardness/norm").map((x) => x[1])
-		expect(half.length).toBeGreaterThan(10)
-		expect(half.at(-1)).toBeGreaterThan(0.7)
-		expect(half.at(-1)).toBeLessThan(0.8)
-		vi.advanceTimersByTime(1100)
-		expect(r.sent().filter((x) => x[0] === "/surface/lane/1/modal/hardness/norm").at(-1)![1]).toBe(1)
-		vi.advanceTimersByTime(500)
 		expect(r.sent()).toEqual([])
+		expect(r.led(RIGHT, 6)).toBe(12)
 	})
 })
 
@@ -283,15 +232,15 @@ describe("play-surface: presets", () => {
 	/** Lane 1 (MODAL): row 0 = hardness full and decay pulled away; row 1 = hardness at zero only. */
 	const two = () => {
 		const r = rig(); r.world()
-		r.layer(1); r.tapKey(LANE_X0, 0)
-		r.say("/surface/lane/1/owner/decay", "voice") // made on screen or on the Twister
+		r.say("/surface/lane/1/owner/hardness", "voice") // made on screen or on the Twister
+		r.say("/surface/lane/1/modal/hardness/norm", 1)
+		r.say("/surface/lane/1/owner/decay", "voice")
 		r.say("/surface/lane/1/modal/decay/norm", 0.25)
 		r.say("/surface/lane/1/modal/coupling/norm", 0.9) // its own value, but still on the shared dial
 		r.layer(7)
 		store(r, 0, 0)
 		r.say("/surface/lane/1/owner/decay", "follow")
-		r.layer(1); r.tapKey(LANE_X0, 7)
-		r.layer(7)
+		r.say("/surface/lane/1/modal/hardness/norm", 0)
 		r.out.length = 0
 		store(r, 0, 1)
 		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/1/modal/*/norm"])
@@ -462,26 +411,25 @@ describe("play-surface: shift 2 and loopers", () => {
 		expect(r.sent()[0][0]).toBe("/surface/lane/1/note/on")
 	})
 
-	it("a loop catches notes and level moves, and plays them whatever layer is showing", () => {
+	it("a loop catches notes and recalls, and plays them whatever the chooser shows", () => {
 		const r = rig(); r.world(); r.sent()
 		r.tapKey(RIGHT, 0) // arm
 		expect(r.led(RIGHT, 0)).toBeGreaterThan(0)
 		r.key(LANE_X0, 7); vi.advanceTimersByTime(200); r.key(LANE_X0, 7, 0)
 		vi.advanceTimersByTime(100)
-		r.layer(1)
-		r.tapKey(LANE_X0 + 1, 0) // lane 2 hardness full
+		r.layer(7)
+		r.tapKey(LANE_X0 + 1, 7) // lane 2 home
 		vi.advanceTimersByTime(200)
 		r.tapKey(RIGHT, 0) // close: plays
 		expect(r.led(RIGHT, 0)).toBe(15)
-		r.layer(3) // a layer change is not recorded, and does not move what plays
-		r.key(0, 7); r.tapKey(LANE_X0 + 1, 0); r.key(0, 7, 0) // lane 2's slot 3 home: nothing to do with slot 1
-		r.say("/surface/lane/2/modal/hardness/norm", 0.1) // someone turned it away meanwhile
+		r.layer(0) // a chooser change is not recorded, and does not move what plays
+		r.say("/surface/lane/2/owner/decay", "voice") // someone pulled it away meanwhile
 		r.sent()
 		vi.advanceTimersByTime(520) // one more turn of the loop
 		const m = r.sent()
 		expect(m).toContainEqual(["/surface/lane/1/note/on", 60, 0.8])
 		expect(m).toContainEqual(["/surface/lane/1/note/off", 60])
-		expect(m).toContainEqual(["/surface/lane/2/modal/hardness/norm", 1])
+		expect(m).toContainEqual(["/surface/lane/2/owner/decay", "follow"])
 		r.tapKey(RIGHT, 0) // pause
 		r.sent()
 		vi.advanceTimersByTime(1200)
@@ -508,16 +456,15 @@ describe("play-surface: shift 2 and loopers", () => {
 })
 
 describe("play-surface: reading surface", () => {
-	it("subscribes for levels and the patch name, and asks about the layer on screen", () => {
+	it("subscribes for levels and the patch name, and asks nothing off the page", () => {
 		const r = rig()
 		vi.advanceTimersByTime(20)
 		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "lanes"])
 		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "preset"])
 		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/*/engine"])
-		r.world(); r.layer(1); r.out.length = 0
-		vi.advanceTimersByTime(300)
-		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/*/modal/hardness/norm"])
-		expect(r.out).toContainEqual(["/surface/get", "/surface/lane/*/owner/hardness"])
+		r.world(); r.out.length = 0
+		vi.advanceTimersByTime(2100)
+		expect(r.out.some((m) => m[0] === "/surface/get" && /hardness/.test(m[1]))).toBe(false) // no dial is polled
 		r.page.onBlur(r.ctx); r.out.length = 0
 		vi.advanceTimersByTime(5000)
 		expect(r.out).toEqual([]) // asks nothing while you are on another page

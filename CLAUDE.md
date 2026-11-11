@@ -388,8 +388,9 @@ src/
                          has no key. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
                          pageSelector.ts: own twisterHeld, nothing imported from the original.
                          iso-surface's panel/transposer keys sit on y3/y4, cells-surface's damp on y4.
-  pages/play-surface.ts  idk.surface's PLAY page (slot c): lanes 1-8 on x4-x11, chooser on x2 (KEYS, six
-                         parameter layers, PRESETS), all column x12, x15 loopers + PITCH/STRIKE/SLEW.
+  pages/play-surface.ts  idk.surface's PLAY page (slot c): lanes 1-8 on x4-x11, chooser on x2 (y0 KEYS,
+                         y7 PRESETS; y1-y6 dark since the six parameter layers were taken off), all
+                         column x12, x15 loopers + PITCH/STRIKE/SLEW/LATCH.
                          Plays idk.surface DIRECTLY over ctx.surface (io/liveLink.ts createSurfaceLink:
                          send 57150, listen 57133, lazy, loopback), never through Max's link. Reads by
                          /surface/get polling while focused + `lanes`/`preset` subscriptions. Spec:

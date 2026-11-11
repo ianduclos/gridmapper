@@ -1,19 +1,20 @@
-/* Page: Play Surface  (idk.surface's PLAY page, first version)
+/* Page: Play Surface  (idk.surface's PLAY page)
  * ------------------------------------------------------------------------------
  * Spec    : idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
  * Summary : Eight lanes side by side. A chooser picks what their columns mean: KEYS (play
- *           the lanes), six parameter layers (one dial per lane as a bar) or PRESETS
- *           (stored states of a lane's six). It plays idk.surface DIRECTLY over its own OSC
- *           (ctx.surface, UDP 57150), not through Max's link.
+ *           the lanes) or PRESETS (stored states of a lane's whole sound). It plays
+ *           idk.surface DIRECTLY over its own OSC (ctx.surface, UDP 57150), not through
+ *           Max's link. The spec's six parameter layers (chooser y1-y6, one dial per lane as
+ *           a bar) were taken off on 2026-11-11 (Ian): those six keys are dark and do nothing.
  *
  *   x:  0    1  2    3  4 ........ 11  12   13 14  15
  *   y0  iso  .  KEYS .  lane 1 ... 8   all  .  .   loop 1
- *   y1  PLAY .  1    .                 all  .  .   loop 2
- *   y2  twst .  2    .                 all  .  .   loop 3
- *   y3  .    .  3    .                 all  .  .   loop 4
- *   y4  .    .  4    .                 all  .  .   PITCH
- *   y5  home .  5    .                 all  .  .   STRIKE
- *   y6  sh 2 .  6    .                 all  .  .   SLEW
+ *   y1  PLAY .  .    .                 all  .  .   loop 2
+ *   y2  twst .  .    .                 all  .  .   loop 3
+ *   y3  .    .  .    .                 all  .  .   loop 4
+ *   y4  .    .  .    .                 all  .  .   PITCH
+ *   y5  home .  .    .                 all  .  .   STRIKE
+ *   y6  sh 2 .  .    .                 all  .  .   SLEW
  *   y7  sh 1 .  PRE  .                 all  .  .   LATCH
  *
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
@@ -25,10 +26,6 @@
  *           same cell again ends it (iso's "press a parked note to subtract it");
  *           unlighting LATCH ends every latched note. A loop records a latched note as a
  *           held one. Latched notes outlive a page switch, like iso's sustain.
- * LAYERS  : each lane's column is a bar for one dial (util/playSlots.ts). Dim = still on
- *           the shared dial (F), bright = its own (V). A press pulls the lane there; the
- *           all column pulls all eight; shift 1 + lane sends it back to the shared dial,
- *           shift 1 + all sends every lane back.
  * PRESETS : a cell is a lane's WHOLE SOUND, seven rows per engine: every continuous dial
  *           the lane has pulled away from the shared one (V), made on screen or on the
  *           Twister (util/playDials.ts). A press recalls: those dials go to their stored
@@ -38,17 +35,17 @@
  *           every move travels, the way home too (a dial glides to where the shared one
  *           stands, then hands itself back). All on a row
  *           does every lane's own row; shift 1 + all also strikes them.
- * SLEW    : hold it and the all column offers eight times. Levels and recalls travel at
- *           that time; the page sends the glide itself.
+ * SLEW    : hold it and the all column offers eight times. Recalls and the way home
+ *           travel at that time; the page sends the glide itself.
  * SHIFT 2 : while held, the lanes' bottom three rows are BOW, FREEZE and DAMP (damp held
  *           while pressed, the other two switch). Held `latchMs` with nothing pressed, it
  *           stays open; a tap closes it.
  * LOOPERS : four free-length loops of hand gestures (util/patternRecorder.ts): notes,
- *           strikes, levels, ways back, recalls and the big three, on the lanes and the
- *           all column, whatever layer is showing. Not layer changes, shifts or stores.
- * Reads   : engine and mode per lane, each mapped dial's value and owner, the lanes'
- *           levels and pitches, the loaded patch's name. Polled with /surface/get while the
- *           page is focused; `lanes` and `preset` come by subscription.
+ *           strikes, recalls and the big three, on the lanes and the all column, whatever
+ *           the chooser shows. Not chooser changes, shifts or stores.
+ * Reads   : engine and mode per lane, the lanes' levels, the loaded patch's name. Polled
+ *           with /surface/get while the page is focused; `lanes` and `preset` come by
+ *           subscription. A store or a travelling recall asks for the lane's dials first.
  * Kept    : presets per surface patch name (the grid preset's own bank when no patch is
  *           loaded); loops and settings as iso keeps them. Restoring never makes a sound.
  * ------------------------------------------------------------------------------
@@ -80,32 +77,25 @@ import { SCALE_SURFACE } from "../core/sharedStore.js"
 import { SCALE_NAMES, DEFAULT_SCALE, isScaleName } from "../util/scales.js"
 import {
 	ENGINES,
-	SLOTS,
-	TREMOLO_SLOT,
 	isEngine,
 	laneAddr,
 	ownerAddr,
 	sharedAddr,
 	partSuffix,
-	partsFor,
 	suffixesFor,
 	type Engine,
 	type Part,
 } from "../util/playSlots.js"
 import { dialsFor, partOfSuffix } from "../util/playDials.js"
 import {
-	ALL_SLOTS,
 	BASE_READS,
 	LANES,
 	PRESET_TREM,
 	ROWS,
 	SurfaceMirror,
-	barRow,
 	levelLed,
 	rowKey,
-	rowValue,
 	rowVelocity,
-	slotReads,
 	type PresetState,
 } from "../util/playModel.js"
 
@@ -120,7 +110,7 @@ const STRIKE_Y = 5
 const SLEW_Y = 6
 const LATCH_Y = 7
 
-/** Chooser rows: 0 KEYS, 1-6 the parameter layers, 7 PRESETS. */
+/** Chooser rows: 0 KEYS, 7 PRESETS. Rows 1-6 held the six parameter layers; now dark. */
 export const LAYER_KEYS = 0
 export const LAYER_PRESETS = 7
 /** On PRESETS the bottom row is HOME: every dial of the lane back to the shared one. */
@@ -142,10 +132,6 @@ const LVL_KEY_ROOT = 3 // the scale's root rows, so the hand can find the octave
 const LVL_KEY_PAD = 2 // a REEL lane in SLICES: pads, not pitches
 const LVL_KEY_HELD = 15
 const LVL_KEY_LATCHED = 12
-const LVL_BAR_F = 3 // on the shared dial
-const LVL_TIP_F = 6
-const LVL_BAR_V = 10 // pulled away
-const LVL_TIP_V = 15
 const LVL_ALL = 2 // clearly dimmer than the lanes
 const LVL_PRE_EMPTY = 1
 const LVL_PRE_STORED = 5
@@ -164,7 +150,7 @@ const BLINK_MS = 220
 const TIMER_MS = 10
 const GLIDE_SEND_MS = 30 // how often a travelling level is sent…
 const GLIDE_MAX_PER_S = 600 // …slower when many travel at once, so surface is never flooded
-const FAST_POLL_MS = 250 // the layer on screen
+const FAST_POLL_MS = 250 // the big three, while they are open
 const SLOW_POLL_MS = 2000 // everything else
 const SUBSCRIBE_MS = 3000 // a subscription is a lease: 10 s without renewal and it lapses
 const LINK_LOST_MS = 5000
@@ -174,13 +160,13 @@ const MAX_PATCHES = 64
 
 // --- What a loop records --------------------------------------------------------------
 // Held notes and held damp are NOTES in the recorder (a set of things sounding); everything
-// else is a control event, named so playback acts on the same lane and slot whatever layer
-// is showing.
+// else is a control event, named so playback acts on the same lane whatever the chooser
+// shows.
 const NOTE_LANE = 512 // note step = lane * 512 + (pad ? 256 : 0) + key
 const NOTE_PAD = 256
 const DAMP_STEP = 8192 // damp step = DAMP_STEP + lane
 const noteStep = (lane: number, key: number, pad: boolean) => lane * NOTE_LANE + (pad ? NOTE_PAD : 0) + key
-const CTL_RE = /^(lvl|home)\/([0-5])\/([0-7]|all)$|^(rec)\/([0-7]|all)$|^(strike|bow|frz)\/([0-7])$/
+const CTL_RE = /^(rec)\/([0-7]|all)$|^(strike|bow|frz)\/([0-7])$/
 /** The largest value a control event carries (a recall's row, plus 8 when it strikes). */
 const CTL_MAX = 15
 
@@ -323,7 +309,7 @@ export class PlaySurfacePage implements Page {
 		if (shiftKey(ev, ctx)) return
 		const down = ev.s === 1
 		if (ev.x === CHOOSER_X) {
-			if (down && ev.y < ROWS) this.layer = ev.y
+			if (down && (ev.y === LAYER_KEYS || ev.y === LAYER_PRESETS)) this.layer = ev.y
 			return
 		}
 		if (ev.x === RIGHT_X) return this.rightKey(ev.y, down, ctx)
@@ -363,8 +349,7 @@ export class PlaySurfacePage implements Page {
 			if (!isAll) this.playKey(ev, lane, row, ctx)
 			return
 		}
-		if (this.layer === LAYER_PRESETS) return this.presetKey(isAll ? -1 : lane, ev.y, ctx)
-		this.levelKey(this.layer - 1, isAll ? -1 : lane, row, ctx)
+		this.presetKey(isAll ? -1 : lane, ev.y, ctx)
 	}
 
 	/** Shift 2's own timing: held long with nothing pressed, the big three stay open. */
@@ -426,17 +411,6 @@ export class PlaySurfacePage implements Page {
 		this.commit(ctx)
 	}
 
-	private levelKey(slot: number, lane: number, row: number, ctx: PageContext) {
-		const who = lane < 0 ? "all" : String(lane)
-		if (ctx.modifiers.shift1) {
-			this.tap(`home/${slot}/${who}`, 1)
-			this.forLanes(lane, (l) => this.home(slot, l, ctx))
-		} else {
-			this.tap(`lvl/${slot}/${who}`, row)
-			this.forLanes(lane, (l) => this.level(slot, l, row, ctx))
-		}
-	}
-
 	private presetKey(lane: number, y: number, ctx: PageContext) {
 		const shift = ctx.modifiers.shift1
 		// A store is never recorded. HOME holds nothing to store: shift there is just home.
@@ -464,11 +438,6 @@ export class PlaySurfacePage implements Page {
 		}
 	}
 
-	private forLanes(lane: number, fn: (lane: number) => void) {
-		if (lane >= 0) return fn(lane)
-		for (let l = 0; l < LANES; l++) fn(l)
-	}
-
 	// ---------------------------------------------------------------- what a gesture does
 	// These are shared by the hand and by loop playback: a loop never taps another loop.
 
@@ -481,26 +450,6 @@ export class PlaySurfacePage implements Page {
 		const now = Date.now()
 		for (const r of this.recorders) r.recordControl(id, value, now)
 		if (this.recorders.some((r) => r.state === "recording")) this.syncTimer()
-	}
-
-	/** Pull a lane's dial(s) for `slot` to a bar row. */
-	private level(slot: number, lane: number, row: number, ctx: PageContext) {
-		const parts = partsFor(this.mirror.engine(lane), slot)
-		if (!parts.length) return
-		for (const p of parts) this.setPart(lane, p, rowValue(row, p.scale), ctx)
-		// One bar is the tremolo's rate and depth, and the lane's TREM switch above zero.
-		if (slot === TREMOLO_SLOT) this.setFlag(lane, "trem", row > 0, ctx)
-		this.currentPreset[lane] = -1
-	}
-
-	/** Send a lane back to the shared dial. */
-	private home(slot: number, lane: number, ctx: PageContext) {
-		for (const p of partsFor(this.mirror.engine(lane), slot)) {
-			this.glides.delete(laneAddr(lane + 1, p))
-			this.send(ctx, ownerAddr(lane + 1, p), "follow")
-			this.mirror.set(ownerAddr(lane + 1, p), "follow")
-		}
-		this.currentPreset[lane] = -1
 	}
 
 	/** One address of a lane to a value, as the lane's own, travelling at SLEW. */
@@ -575,7 +524,7 @@ export class PlaySurfacePage implements Page {
 
 	/**
 	 * Ask surface where these lanes' dials stand (value, owner, the shared dial), then run.
-	 * The page only keeps the six layers' dials in step; a preset is every dial.
+	 * The page does not keep the dials in step while idle; a preset is every dial.
 	 */
 	private readThen(lanes: number[], ctx: PageContext, run: () => void) {
 		const link = ctx.surface
@@ -657,13 +606,10 @@ export class PlaySurfacePage implements Page {
 	private replay(id: string, value: number, ctx: PageContext) {
 		const m = CTL_RE.exec(id)
 		if (!m) return
-		const kind = m[1] ?? m[4] ?? m[6]
-		const who = m[3] ?? m[5] ?? m[7]
+		const kind = m[1] ?? m[3]
+		const who = m[2] ?? m[4]
 		const lane = who === "all" ? -1 : Number(who)
-		const slot = Number(m[2])
-		if (kind === "lvl") this.forLanes(lane, (l) => this.level(slot, l, value, ctx))
-		else if (kind === "home") this.forLanes(lane, (l) => this.home(slot, l, ctx))
-		else if (kind === "rec") this.recallLanes(lane < 0 ? [...Array(LANES).keys()] : [lane], value % ROWS, value >= ROWS, ctx)
+		if (kind === "rec") this.recallLanes(lane < 0 ? [...Array(LANES).keys()] : [lane], value % ROWS, value >= ROWS, ctx)
 		else if (kind === "strike") this.strikeOwn(lane, rowVelocity(value), ctx)
 		else if (kind === "bow") this.setFlag(lane, "arm", value !== 0, ctx)
 		else if (kind === "frz") this.setFlag(lane, "freeze", value !== 0, ctx)
@@ -792,7 +738,7 @@ export class PlaySurfacePage implements Page {
 		ctx.setDirty()
 	}
 
-	/** Keep the mirror in step with surface: the layer on screen often, the rest slowly. */
+	/** Keep the mirror in step with surface: engines and modes slowly, the big three often while open. */
 	private poll(now: number, ctx: PageContext) {
 		const link = ctx.surface
 		if (!link) return
@@ -805,12 +751,9 @@ export class PlaySurfacePage implements Page {
 		if (now - this.lastSlowMs >= SLOW_POLL_MS) {
 			this.lastSlowMs = now
 			for (const a of BASE_READS) get(a)
-			// With nobody answering, one small question every two seconds is enough.
-			if (now - this.mirror.heardAt < LINK_LOST_MS) for (const a of slotReads(this.mirror, ALL_SLOTS)) get(a)
 		}
 		if (now - this.lastFastMs >= FAST_POLL_MS && now - this.mirror.heardAt < LINK_LOST_MS) {
 			this.lastFastMs = now
-			if (this.layer >= 1 && this.layer <= SLOTS) for (const a of slotReads(this.mirror, [this.layer - 1])) get(a)
 			if (this.bigThreeOpen(ctx)) {
 				get("/surface/lane/*/arm")
 				get("/surface/lane/*/freeze")
@@ -828,19 +771,19 @@ export class PlaySurfacePage implements Page {
 		const now = Date.now()
 		const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
 
-		for (let y = 0; y < ROWS; y++) set(CHOOSER_X, y, y === this.layer ? LVL_CHOOSER_ON : LVL_CHOOSER)
+		for (const y of [LAYER_KEYS, LAYER_PRESETS]) set(CHOOSER_X, y, y === this.layer ? LVL_CHOOSER_ON : LVL_CHOOSER)
 
 		for (let lane = 0; lane < LANES; lane++) {
 			const x = LANE_X0 + lane
 			if (this.layer === LAYER_KEYS) this.drawKeys(lane, x, set, ctx)
-			else if (this.layer === LAYER_PRESETS) {
+			else {
 				const e = this.mirror.engine(lane)
 				if (!isEngine(e)) continue
 				for (let y = 0; y < ROWS; y++) {
 					const there = y === HOME_ROW || !!this.stored(lane, y)
 					set(x, y, !there ? LVL_PRE_EMPTY : this.currentPreset[lane] === y ? LVL_PRE_CURRENT : LVL_PRE_STORED)
 				}
-			} else this.drawBar(lane, x, this.layer - 1, set)
+			}
 		}
 		if (this.layer !== LAYER_KEYS) for (let y = 0; y < ROWS; y++) set(ALL_X, y, LVL_ALL)
 
@@ -902,19 +845,6 @@ export class PlaySurfacePage implements Page {
 		const s = { npo: 12, root: 0, scale, base: 0 }
 		for (let n = 1; n <= 12; n++) if (rowKey(n, s) - rowKey(0, s) === 12) return n
 		return 12
-	}
-
-	private drawBar(lane: number, x: number, slot: number, set: (x: number, y: number, l: number) => void) {
-		const parts = partsFor(this.mirror.engine(lane), slot)
-		if (!parts.length) return // nothing for this slot on this engine: a dark column
-		const p = parts[0]
-		const own = this.mirror.owned(lane, p)
-		let v = this.mirror.effective(lane, p)
-		if (v === undefined) return
-		if (slot === TREMOLO_SLOT && !this.mirror.flag(lane, "trem")) v = 0
-		const tip = barRow(v, p.scale)
-		for (let row = 0; row <= tip; row++)
-			set(x, ROWS - 1 - row, row === tip ? (own ? LVL_TIP_V : LVL_TIP_F) : own ? LVL_BAR_V : LVL_BAR_F)
 	}
 
 	// ---------------------------------------------------------------- settings, saving
@@ -1036,15 +966,14 @@ function readEvent(e: Record<string, unknown>): PatternEvent | undefined {
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
 	{ x: CHOOSER_X, y: 0, name: "Keys", help: "The lanes play: the row is the pitch (or a REEL lane's pad).", lit: LVL_CHOOSER_ON },
-	{ x: CHOOSER_X, y: 1, h: SLOTS, name: "Layers 1-6", short: "Layer", help: "tone, time, force, move, place, tremolo: each lane's column is a bar for one dial.", lit: LVL_CHOOSER },
 	{ x: CHOOSER_X, y: 7, name: "Presets", short: "Pre", help: "A lane's whole sound: every dial it has pulled away. Shift 1 + cell stores; the bottom row is home (all back to the shared dials).", lit: LVL_CHOOSER },
-	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes, a bar, or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
-	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "The same press on all eight (not on KEYS). Shift 1 + all: every lane back to the shared dial; on PRESETS, recall and strike all.", lit: LVL_ALL },
+	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
+	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "On PRESETS: every lane to its own engine's row. Shift 1 + all also strikes them. Nothing on KEYS.", lit: LVL_ALL },
 	{ x: RIGHT_X, y: 0, h: LOOPERS, name: "Loopers 1-4", short: "Loop", help: "Record hand gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it strikes the lane's own note, the row is how hard.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
-	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Levels and recalls travel at that time.", lit: LVL_SW_OFF },
+	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
 ]
 
 export const page: PageModule = {

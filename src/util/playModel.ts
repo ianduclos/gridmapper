@@ -7,15 +7,7 @@
  */
 
 import { foldedStep } from "./scales.js"
-import {
-	ENGINES,
-	SLOTS,
-	laneAddr,
-	ownerAddr,
-	partsFor,
-	sharedAddr,
-	type Part,
-} from "./playSlots.js"
+import { laneAddr, ownerAddr, sharedAddr, type Part } from "./playSlots.js"
 
 export const LANES = 8
 /** Rows of a bar or a lane column: 0 at the bottom, 7 at the top. */
@@ -113,7 +105,7 @@ export class SurfaceMirror {
 	}
 }
 
-/** What is read once in a while whatever layer is up (wildcards: one reply per lane). */
+/** What is read once in a while (wildcards: one reply per lane). */
 export const BASE_READS = [
 	"/surface/lane/*/engine",
 	"/surface/lane/*/reel/reelMode",
@@ -124,38 +116,6 @@ export const BASE_READS = [
 	"/surface/lane/*/freeze",
 	"/surface/lane/*/trem",
 ] as const
-
-/**
- * The reads that keep `slots` (0-5) in step for the engines now on the lanes: each dial's
- * own value on every lane, who owns it, and the shared dial.
- */
-export function slotReads(mirror: SurfaceMirror, slots: readonly number[]): string[] {
-	const engines = new Set<string>()
-	for (let l = 0; l < LANES; l++) {
-		const e = mirror.engine(l)
-		if (e) engines.add(e)
-	}
-	const out = new Set<string>()
-	for (const e of ENGINES) {
-		if (!engines.has(e)) continue
-		for (const s of slots)
-			for (const p of partsFor(e, s)) {
-				out.add(laneAddr("*", p))
-				out.add(ownerAddr("*", p))
-				out.add(sharedAddr(p))
-			}
-	}
-	return [...out]
-}
-
-export const ALL_SLOTS = Array.from({ length: SLOTS }, (_, i) => i)
-
-/** A dial's 0-1 value as a bar: which row (0 bottom … 7 top) its tip sits on. */
-export const barRow = (v: number, scale = 1): number =>
-	Math.max(0, Math.min(ROWS - 1, Math.round((v / scale) * (ROWS - 1))))
-
-/** The 0-1 value a press on `row` asks for. */
-export const rowValue = (row: number, scale = 1): number => (row / (ROWS - 1)) * scale
 
 /** How hard a strike on `row` is: soft at the bottom, full at the top. */
 export const rowVelocity = (row: number): number => (row + 1) / ROWS
