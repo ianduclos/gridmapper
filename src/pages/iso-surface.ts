@@ -187,7 +187,7 @@ import {
 } from "../core/types.js"
 import type { ClockState } from "../core/clock.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
-import { selectorKey, shiftKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
+import { selectorKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
 import { clamp } from "../util/scale.js"
 import { SCALE_SURFACE, PEER_OSC } from "../core/sharedStore.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
@@ -215,7 +215,8 @@ const cleanLanes = (s: string) => [...new Set(s.replace(/[^1-8]/g, ""))].sort().
 const KEYS_X0 = 1 // ... and starts at column 1: column 0 is the page selector
 
 /** Transposer: col 0 row 4 shows it on the bottom row, whose col 8 is "no transpose". */
-const TRANSPOSE_TOGGLE_ROW = 4 // col 0's second free row (the left column is the system's)
+const TRANSPOSE_TOGGLE_ROW = 7 // col 0's bottom key. Iso keeps y6-y7 for its own two toggles
+// (Ian, 2026-11-11): its shifts are the right column's only, the left column's are not drawn here.
 const TRANSPOSE_ZERO_COL = 8
 const TRANSPOSE_MIN = KEYS_X0 - TRANSPOSE_ZERO_COL // −7
 const TRANSPOSE_MAX = KEYS_W - 1 - TRANSPOSE_ZERO_COL // +4
@@ -248,7 +249,7 @@ const CTL_BOUNDS: Record<string, [number, number]> = {
 }
 
 /** Performance panel: col 0 row 3 shows it over keyboard cols 1-4. */
-const PANEL_TOGGLE_ROW = 3 // col 0's first free row
+const PANEL_TOGGLE_ROW = 6
 const PANEL_X0 = KEYS_X0
 const PANEL_W = 4
 const PANEL_TINT_COL = PANEL_X0 // row 0 tint, rows 1-3 tint mode, rows 4-7 octave
@@ -679,7 +680,6 @@ export class IsoSurfacePage implements Page {
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		if (selectorKey(ev, ctx)) return
-		if (shiftKey(ev, ctx)) return // the left column's shifts; col 15's still work
 		if (ev.x === 0) {
 			if (ev.y === TRANSPOSE_TOGGLE_ROW && ev.s) {
 				this.transposerShown = !this.transposerShown
@@ -1392,7 +1392,7 @@ export class IsoSurfacePage implements Page {
 				f[ledIndex(this.size, cx, slot)] = lvl
 			}
 		}
-		if (this.transposerShown) {
+		if (this.transposerShown && this.editingTrack === null) { // the lane picker has the row meanwhile
 			const y = this.size.height - 1
 			for (let x = KEYS_X0; x < this.keysW; x++) {
 				const t = x - TRANSPOSE_ZERO_COL
@@ -1400,16 +1400,15 @@ export class IsoSurfacePage implements Page {
 					t === this.transpose ? LVL_TR_CURRENT : t === 0 ? LVL_TR_ZERO : LVL_TR_OTHER
 			}
 		}
+		if (this.hasPanel() && this.panelShown) this.renderPanel(f)
+		drawSelector(f, ctx)
+		// Iso's own two toggles sit where the other surface pages have the left shifts.
+		f[ledIndex(this.size, 0, PANEL_TOGGLE_ROW)] = !this.hasPanel() ? 0
+			: this.panelShown ? LVL_TR_TOGGLE_SHOWN
+			: this.isPanelDefault() ? LVL_TR_TOGGLE_IDLE : LVL_TR_TOGGLE_OFFSET
 		f[ledIndex(this.size, 0, TRANSPOSE_TOGGLE_ROW)] = this.transposerShown
 			? LVL_TR_TOGGLE_SHOWN
 			: this.transpose !== 0 ? LVL_TR_TOGGLE_OFFSET : LVL_TR_TOGGLE_IDLE
-		if (this.hasPanel()) {
-			if (this.panelShown) this.renderPanel(f)
-			f[ledIndex(this.size, 0, PANEL_TOGGLE_ROW)] = this.panelShown
-				? LVL_TR_TOGGLE_SHOWN
-				: this.isPanelDefault() ? LVL_TR_TOGGLE_IDLE : LVL_TR_TOGGLE_OFFSET
-		}
-		drawSelector(f, ctx)
 		return f
 	}
 
@@ -2183,7 +2182,7 @@ const pick = (n: number, cur: number, home: number) =>
 
 /** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
 export const keymap: KeySpec[] = [
-	...SELECTOR_KEYS,
+	...SELECTOR_KEYS.filter((k) => k.y !== PANEL_TOGGLE_ROW && k.y !== TRANSPOSE_TOGGLE_ROW), // no left shifts on iso
 	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Performance panel", short: "Panel", help: "Show the octave / arp speed / probability / strum / tint panel on cols 1-4. Dim-bright when a non-default value is in force while hidden. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },

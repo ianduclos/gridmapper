@@ -387,7 +387,9 @@ src/
                          y5 home (slot f, set-surface for now) · y6 shift 2 · y7 shift 1. Cells (slot b)
                          has no key. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
                          pageSelector.ts: own twisterHeld, nothing imported from the original.
-                         iso-surface's panel/transposer keys sit on y3/y4, cells-surface's damp on y4.
+                         EXCEPT iso-surface: its x0 y6/y7 are its own PANEL and TRANSPOSER toggles, as
+                         before the column existed (Ian, 2026-11-11); iso's shifts are x15 y6/y7 only
+                         and its y3-y4 are dark. cells-surface's damp sits on y4.
   pages/play-surface.ts  idk.surface's PLAY page (slot c): lanes 1-8 on x4-x11, chooser on x2 (y0 KEYS,
                          y7 PRESETS; y1-y6 dark since the six parameter layers were taken off), all
                          column x12, x15 loopers + PITCH/STRIKE/SLEW/LATCH.

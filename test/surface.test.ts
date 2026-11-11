@@ -312,3 +312,33 @@ describe("iso-surface: the lane picker", () => {
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 })
+
+describe("iso-surface: the left column's bottom two keys are iso's own", () => {
+	it("x0 y6 is the panel and x0 y7 the transposer, not shifts; the shifts are the right column's", () => {
+		const shifts: Array<[number, boolean]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		const ctx = {
+			size: SIZE, modifiers, slot: 0, slotLabel: "a", shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [{ div: 1 }, { div: 1 }, { div: 1 }, { div: 1 }] },
+			osc: { send() {} }, setDirty() {}, focus() {}, persist() {},
+			setShift: (w: number, d: boolean) => shifts.push([w, d]),
+		} as unknown as PageContext
+		const page = new IsoSurfacePage()
+		page.init(ctx)
+		const led = (x: number, y: number) => page.render(ctx)![ledIndex(SIZE, x, y)]
+		const idle7 = led(0, 7), idle6 = led(0, 6), other = led(8, 7)
+		page.onKey({ x: 0, y: 7, s: 1 }, ctx); page.onKey({ x: 0, y: 7, s: 0 }, ctx)
+		expect(shifts).toEqual([])
+		expect(led(0, 7)).toBeGreaterThan(idle7) // transposer shown
+		expect(led(8, 7)).not.toBe(other) // the bottom row is the transposer
+		page.onKey({ x: 0, y: 6, s: 1 }, ctx); page.onKey({ x: 0, y: 6, s: 0 }, ctx)
+		expect(shifts).toEqual([])
+		expect(led(0, 6)).toBeGreaterThan(idle6) // panel shown, transposer hidden
+		expect(led(0, 7)).toBe(idle7)
+		expect(led(0, 3)).toBe(0)
+		expect(led(0, 4)).toBe(0)
+		page.onKey({ x: 15, y: 7, s: 1 }, ctx)
+		page.onKey({ x: 15, y: 6, s: 1 }, ctx)
+		expect(shifts).toEqual([[1, true], [2, true]])
+	})
+})
