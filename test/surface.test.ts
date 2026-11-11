@@ -159,7 +159,7 @@ describe("surface left column", () => {
 describe("idk.surface layout", () => {
 	// Reads the real preset file through the store (read-only: construction only reads slots.json).
 	it("configs/presets/idk.surface.json loads the surface pages, nothing degrading to the default", () => {
-		const page = { a: "iso-surface", b: "cells-surface", c: "blank-surface", d: "blank-surface", e: "blank-surface", f: "set-surface", g: "blank-surface", h: "blank-surface" }
+		const page = { a: "iso-surface", b: "cells-surface", c: "play-surface", d: "blank-surface", e: "blank-surface", f: "set-surface", g: "blank-surface", h: "blank-surface" }
 		const store = createPresetStore(fileURLToPath(new URL("../configs", import.meta.url)))
 		expect(store.list()).toContain("idk.surface")
 		const cfg = store.read("idk.surface")!

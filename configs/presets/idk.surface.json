@@ -1,13 +1,41 @@
 {
 	"version": 1,
 	"slots": {
-		"a": { "page": "iso-surface" },
-		"b": { "page": "cells-surface" },
-		"c": { "page": "blank-surface" },
-		"d": { "page": "blank-surface" },
-		"e": { "page": "blank-surface" },
-		"f": { "page": "set-surface" },
-		"g": { "page": "blank-surface" },
-		"h": { "page": "blank-surface" }
+		"a": {
+			"page": "iso-surface",
+			"config": {
+				"octave": 0,
+				"tintOn": false,
+				"arpSpeed": "x1",
+				"arpProb": 0.5,
+				"strum": false,
+				"strumMs": 25,
+				"strumDir": "up",
+				"tintMode": "above",
+				"tintOctave": 0,
+				"tintJitterMs": 20
+			}
+		},
+		"b": {
+			"page": "cells-surface"
+		},
+		"c": {
+			"page": "play-surface"
+		},
+		"d": {
+			"page": "blank-surface"
+		},
+		"e": {
+			"page": "blank-surface"
+		},
+		"f": {
+			"page": "set-surface"
+		},
+		"g": {
+			"page": "blank-surface"
+		},
+		"h": {
+			"page": "blank-surface"
+		}
 	}
 }
