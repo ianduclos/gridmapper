@@ -14,7 +14,7 @@ y0  iso   KEYS  lane 1 ... 8    all   loop 1
 y1  PLAY  .                     all   loop 2
 y2  twist .                     all   loop 3
 y3  .     .                     all   loop 4
-y4  .     .                     all   PITCH
+y4  REEL  .                     all   PITCH
 y5  home  .                     all   STRIKE
 y6  sh 2  .                     all   SLEW
 y7  sh 1  PRE                   all   LATCH
@@ -22,7 +22,7 @@ y7  sh 1  PRE                   all   LATCH
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y5 | iso / PLAY / home | Go to that page. |
+| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y2 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | shift 2 | Hold: BOW, FREEZE, DAMP on the lanes (below). |
 | x0 y7 | shift 1 | Hold, then press a thing: store, clear, or strike all. |

@@ -14,7 +14,7 @@ y0  iso         A B C D . S1 S2 M    loop 1
 y1  PLAY                             loop 2
 y2  twist                            loop 3
 y3  .     all   FOCUS  lane 1 ... 8  Twister a
-y4  .     all   MOTION               Twister b
+y4  REEL  all   MOTION               Twister b
 y5  home  all   BOW                  Twister c
 y6  sh 2  all   FREEZE               Twister d
 y7  sh 1  all   DAMP                 Twister e
@@ -22,7 +22,7 @@ y7  sh 1  all   DAMP                 Twister e
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y5 | iso / PLAY / home | Go to that page. |
+| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y2 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | shift 2 | Hold, then press a FOCUS key: the way home (below). |
 | x0 y7 | shift 1 | Hold, then press: add to the selection, or clear a looper. |

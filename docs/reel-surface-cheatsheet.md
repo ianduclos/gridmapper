@@ -4,10 +4,6 @@ The grid's REEL pads and step line page for idk.surface
 (`src/pages/reel-surface.ts`, slot d). Positions are `x y`, x0 at the left, y0 at
 the top. Last updated 2026-11-11.
 
-> **Not switched on yet.** The page is built and waits for idk.surface's step line
-> to be live (`REEL_PAGE_LIVE` in `src/util/pageSelectorSurface.ts`). Until then
-> its key is dark and the page shows only the left column.
-
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `reel-surface.ts` changes this file in the same commit.
 

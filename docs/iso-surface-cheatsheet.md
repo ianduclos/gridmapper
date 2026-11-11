@@ -14,7 +14,7 @@ y0  iso    keyboard            chord 1 track 1  loop 1
 y1  PLAY                       chord 2 track 2  loop 2
 y2  twist                      chord 3 track 3  loop 3
 y3  .                          chord 4 track 4  loop 4
-y4  .                          chord 5 arp up   SUSTAIN
+y4  REEL                       chord 5 arp up   SUSTAIN
 y5  home                       chord 6 arp down PEDAL
 y6  PANEL                      chord 7 arp pal. shift 2
 y7  TRANSP                     chord 8 arp urn  shift 1
@@ -22,7 +22,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y5 | iso / PLAY / home | Go to that page. |
+| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y2 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | PANEL | Show or hide the performance panel on x1-x4. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
@@ -37,7 +37,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 | x15 y7 | shift 1 | Hold + looper or chord: clear. Hold + track: edit its routing. |
 
 On this page the shifts are on the right (x15). The left x0 y6 and y7 are the
-panel and the transposer; x0 y3 and y4 are dark.
+panel and the transposer; x0 y3 is dark.
 
 ## Keyboard (x1-x12)
 

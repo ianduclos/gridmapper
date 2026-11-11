@@ -4,8 +4,9 @@
  * docs/design/2026-11-11-reel-pads-grid-ideas.md. The app owns the line and its timing;
  * this page edits and shows it, and plays the two lanes' slices by hand.
  *
- * OFF until the surface session says the names are live: `REEL_PAGE_LIVE` in
+ * On since the surface session confirmed the names live (2026-11-11): `REEL_PAGE_LIVE` in
  * util/pageSelectorSurface.ts. Off, the page is the left column only and sends nothing.
+ * Sheet: docs/reel-surface-cheatsheet.md changes in the same commit as any key or light here.
  *
  * Layout  : x0 the system's column, this page's key at y4.
  *           Steps 1-36 on x2-x13, y0-y2 (twelve a row, step 1 top left).

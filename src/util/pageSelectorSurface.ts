@@ -40,11 +40,11 @@ export const SELECTOR_SLOT_AT_ROW: ReadonlyMap<number, Slot> = new Map<number, S
 ])
 export const PLAY_SLOT: Slot = 2
 /**
- * The REEL pads page (pages/reel-surface.ts, slot d) and its key on free row y4. OFF until
- * the surface session says the step line's addresses are live in the running app. Cells
+ * The REEL pads page (pages/reel-surface.ts, slot d) and its key on free row y4. On since
+ * the surface session confirmed the step line live in the running app (2026-11-11). Cells
  * (slot b) keeps its damp on that cell, so it shows no key for the page.
  */
-export const REEL_PAGE_LIVE = false
+export const REEL_PAGE_LIVE = true
 export const REEL_SLOT: Slot = 3
 export const REEL_ROW = 4
 const CELLS_SLOT: Slot = 1
@@ -72,6 +72,7 @@ export const SELECTOR_KEYS: KeySpec[] = [
 	{ x: 0, y: 0, name: "Iso", help: "Jump to the iso keyboard. Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: 1, name: "Play", help: "Jump to the PLAY page. Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: TWISTER_ROW, name: "Twister pages", short: "Twister", help: "Hold to show the Twister's page chooser; pick a page on the Twister, let go to close.", lit: LVL_TWISTER },
+	...(REEL_PAGE_LIVE ? [{ x: 0, y: 4, name: "Reel pads", short: "Reel", help: "Jump to the REEL pads page. Lit when you're on it. Held while on it: the top row picks the two lanes.", lit: 2 }] : []),
 	{ x: 0, y: 5, name: "Home", help: "Jump to home (the set page for now). Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: SHIFT2_ROW, name: "Shift 2", short: "Shift 2", help: "The second shift.", lit: LVL_SHIFT_IDLE },
 	{ x: 0, y: SHIFT1_ROW, name: "Shift 1", short: "Shift 1", help: "Hold, then press a thing: its way back, or its store.", lit: LVL_SHIFT_IDLE },

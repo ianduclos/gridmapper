@@ -139,18 +139,24 @@ describe("surface left column", () => {
 		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 0 }, r.ctx)
 	})
 
-	it("iso at the top, PLAY under it, home third from the bottom; cells has no key", () => {
+	it("iso at the top, PLAY under it, REEL pads on y4, home third from the bottom; cells has no key", () => {
 		const r = mk(5)
 		for (let y = 0; y < 8; y++) surfaceKey({ x: 0, y, s: 1 }, r.ctx)
-		expect(r.focused).toEqual([0, 2]) // y0 iso (a), y1 PLAY (c); y5 is where we already are
+		expect(r.focused).toEqual([0, 2, 3]) // y0 iso (a), y1 PLAY (c), y4 REEL pads (d); y5 is where we already are
 		const f = r.draw(surfaceDraw)
 		expect(f[ledIndex(SIZE, 0, 5)]).toBe(12)
 		expect(f[ledIndex(SIZE, 0, 0)]).toBe(2)
+		expect(f[ledIndex(SIZE, 0, 4)]).toBe(2)
+		// Cells (slot b) keeps its damp on y4: no REEL key there, pressed or drawn.
+		const c = mk(1)
+		expect(surfaceKey({ x: 0, y: 4, s: 1 }, c.ctx)).toBe(false)
+		expect(c.focused).toEqual([])
+		expect(c.draw(surfaceDraw)[ledIndex(SIZE, 0, 4)]).toBe(0)
 	})
 
-	it("leaves rows 3-4 to the page and gives rows 6-7 to the shifts", () => {
+	it("leaves row 3 to the page and gives rows 6-7 to the shifts", () => {
 		const r = mk()
-		for (const y of [3, 4, 6, 7]) expect(surfaceKey({ x: 0, y, s: 1 }, r.ctx)).toBe(false)
+		for (const y of [3, 6, 7]) expect(surfaceKey({ x: 0, y, s: 1 }, r.ctx)).toBe(false)
 		expect(surfaceShift({ x: 0, y: 3, s: 1 }, r.ctx)).toBe(false)
 		expect(surfaceShift({ x: 0, y: 6, s: 1 }, r.ctx)).toBe(true)
 		expect(r.modifiers).toMatchObject({ shift1: false, shift2: true })
@@ -165,7 +171,7 @@ describe("surface left column", () => {
 describe("idk.surface layout", () => {
 	// Reads the real preset file through the store (read-only: construction only reads slots.json).
 	it("configs/presets/idk.surface.json loads the surface pages, nothing degrading to the default", () => {
-		const page = { a: "iso-surface", b: "cells-surface", c: "play-surface", d: "blank-surface", e: "blank-surface", f: "set-surface", g: "blank-surface", h: "blank-surface" }
+		const page = { a: "iso-surface", b: "cells-surface", c: "play-surface", d: "reel-surface", e: "blank-surface", f: "set-surface", g: "blank-surface", h: "blank-surface" }
 		const store = createPresetStore(fileURLToPath(new URL("../configs", import.meta.url)))
 		expect(store.list()).toContain("idk.surface")
 		const cfg = store.read("idk.surface")!
@@ -339,7 +345,7 @@ describe("iso-surface: the left column's bottom two keys are iso's own", () => {
 		expect(led(0, 6)).toBeGreaterThan(idle6) // panel shown, transposer hidden
 		expect(led(0, 7)).toBe(idle7)
 		expect(led(0, 3)).toBe(0)
-		expect(led(0, 4)).toBe(0)
+		expect(led(0, 4)).toBe(2) // the REEL pads key, the system's
 		page.onKey({ x: 15, y: 7, s: 1 }, ctx)
 		page.onKey({ x: 15, y: 6, s: 1 }, ctx)
 		expect(shifts).toEqual([[1, true], [2, true]])

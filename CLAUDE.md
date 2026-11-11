@@ -387,8 +387,8 @@ src/
                          session confirms /surface/view/{focus,linked,fx}, /surface/lane/<n>/home and
                          /surface/home are live): y3 FOCUS + activity, y4 MOTION (lane trem), y0 FX tracks,
                          over ctx.surface. The loopers record MOTION, never focus, FX or home presses
-  pages/reel-surface.ts  idk.surface's REEL PADS + STEP LINE page (slot d, key x0 y4). BUILT, OFF: `REEL_PAGE_LIVE`
-                         in util/pageSelectorSurface.ts, on only when the surface session confirms
+  pages/reel-surface.ts  idk.surface's REEL PADS + STEP LINE page (slot d, key x0 y4). ON since 2026-11-11: `REEL_PAGE_LIVE`
+                         in util/pageSelectorSurface.ts, switched on once the surface session confirmed
                          /surface/reel/line/* and /surface/lane/<n>/reel/{slice,slices} are live. Steps x2-x13
                          y0-y2, two 4x4 pad blocks (x2-x5, x10-x13), SPEED/ROLL/CHANCE/BLEND keys x6 and x9,
                          value in the centre x7-x8, play x14 y7, loops x15 y0-y2. The line is surface's (its

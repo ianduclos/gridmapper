@@ -1463,7 +1463,7 @@ const PHASE_LIT = Array.from({ length: VOICES }, (_, y) =>
 ).flat()
 /** The web cheat-sheet: views are the row-6 modes, plus damp mode. */
 export const keymap: KeySpec[] = [
-	...SELECTOR_KEYS.filter((k) => k.y !== 7), // this page words its own shift 1
+	...SELECTOR_KEYS.filter((k) => k.y !== 7 && k.y !== DAMP_Y), // this page words its own shift 1; its damp sits on the REEL key's cell
 	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve.", lit: [8, 8, 8, 8, 3, 8] },
 	{ x: MUTE_X, y: 0, h: VOICES, view: "damp", name: "Damp voice", short: "Damp", help: "Hold to damp that voice (sent through set-surface). Press Damp or Shift to leave damp mode.", lit: [6, 15, 6, 6, 6, 6] },
 	...(["cells", "damp"] as const).flatMap((view): KeySpec[] => [
