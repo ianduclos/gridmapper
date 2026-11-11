@@ -3,10 +3,9 @@ project: gridmapper
 state: active
 updated: 2026-11-11
 machine: mac
-summary: Branch feat/play-surface holds the idk.surface work (PLAY page, the new home page switched on, iso lane picker, a REEL pads page built but switched off, a cheat sheet per surface page); none of it has been played by Ian yet and the grid was off USB at session end.
+summary: Branch feat/play-surface holds the idk.surface work (PLAY page, the new home page switched on, iso lane picker, a REEL pads page switched on 2026-11-11, a cheat sheet per surface page); none of it has been played by Ian yet and the grid was off USB at session end.
 next:
-  - Plug the grid in and let Ian play PLAY, home and iso against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
-  - When the idk.surface session says the step line is live, set REEL_PAGE_LIVE true in src/util/pageSelectorSurface.ts, restart the agent while surface is silent, report to surface-inbox
+  - Plug the grid in and let Ian play PLAY, home, iso and REEL pads against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
   - Merge feat/play-surface to main once Ian has played it
   - Build the ARP key on PLAY once idk.surface lets lane notes feed its arp (asked, not answered)
   - Tune PLAY's shift 2 latch time (latchMs) with Ian
