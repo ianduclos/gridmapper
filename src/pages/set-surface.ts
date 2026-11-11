@@ -34,6 +34,19 @@
  *           preset can never unfreeze a voice. The LOOPS are content and are saved in a
  *           preset (serialize/restore); they come back stopped. Damp is
  *           released on blur, since the key-up would otherwise land on another page.
+ * VIEW    : (the next home page, agreed 2026-11-11; OFF until idk.surface's addresses are
+ *           live: HOME_VIEW_LIVE below.) Spoken DIRECTLY to idk.surface over ctx.surface,
+ *           read back by /surface/get while the page is focused:
+ *           y3 x4-x11 FOCUS, also the activity light (focused bright, linked medium; a
+ *             sound flashes a lane, and dips the focused one). Press = focus that lane
+ *             alone; shift 1 + press = add it to / drop it from the selection; hold one
+ *             FOCUS and long-press another = the range between. Shift 2 + press = that
+ *             lane home (all its dials back to the shared ones). x2 y3 = select all
+ *             eight; shift 2 + x2 y3 = everyone home.
+ *           y4 x4-x11 MOTION on/off (/surface/lane/N/trem); x2 y4 = all.
+ *           y0 x4-x7 FX tracks A B C D, x9 x10 S1 S2, x11 MASTER: shows that chain.
+ *           The loopers record MOTION with the rest; never focus or selection changes,
+ *           FX track changes or the ways home.
  * ------------------------------------------------------------------------------
  */
 
@@ -55,6 +68,28 @@ export const VOICES = 8
 const COL_ALL = 2
 const VOICE_COL0 = 4 // voice 1; voices run to col 11
 const FEEDBACK_ROW = 4
+
+/**
+ * The next home page (FOCUS, MOTION, FX tracks, lane home) speaks addresses idk.surface is
+ * still adding: /surface/view/{focus,linked,fx}, /surface/lane/<n>/home, /surface/home.
+ * Off, the page is exactly the old one and sends idk.surface nothing. Switch it on when the
+ * surface session confirms they are live in the running app.
+ */
+export const HOME_VIEW_LIVE = false
+const FOCUS_ROW = 3
+const MOTION_ROW = 4
+const FX_ROW = 0
+/** x → the FX track a top-row key shows. */
+const FX_AT_X = new Map<number, string>([[4, "a"], [5, "b"], [6, "c"], [7, "d"], [9, "s1"], [10, "s2"], [11, "master"]])
+const LONG_PRESS_MS = 400
+const VIEW_POLL_MS = 500
+const SUBSCRIBE_MS = 3000 // a subscription is a lease: renew well inside its 10 s
+const LVL_FOCUS = 12
+const LVL_LINKED = 6
+const LVL_FOCUS_DIP = 4
+const LVL_FX_OFF = 3
+/** A selection as surface spells it: lane digits 1-8, each once, in order. */
+const cleanLinked = (v: unknown) => [...new Set(String(v ?? "").replace(/[^1-8]/g, ""))].sort().join("")
 
 export const PARAMS = ["damp", "freeze", "bow"] as const
 export type Param = (typeof PARAMS)[number]
@@ -90,9 +125,9 @@ const MAX_PATTERN_EVENTS = 20_000
 type Toggle = Exclude<Param, "damp">
 const TOGGLES: readonly Toggle[] = ["freeze", "bow"]
 const ctlId = (param: Toggle, voice: number) => `${param}/${voice + 1}`
-const parseCtl = (id: string): { param: Toggle; voice: number } | null => {
-	const m = /^(freeze|bow)\/([1-8])$/.exec(id)
-	return m ? { param: m[1] as Toggle, voice: Number(m[2]) - 1 } : null
+const parseCtl = (id: string): { param: Toggle | "motion"; voice: number } | null => {
+	const m = /^(freeze|bow|motion)\/([1-8])$/.exec(id)
+	return m ? { param: m[1] as Toggle | "motion", voice: Number(m[2]) - 1 } : null
 }
 
 const allOn = (a: readonly boolean[]) => a.every(Boolean)
@@ -125,8 +160,26 @@ export class SetSurfacePage implements Page {
 	private remoteDamp = new Array<boolean>(VOICES).fill(false)
 	private unsubscribe: (() => void) | null = null
 
+	// The view (only when `live`): what idk.surface last said, plus our own presses.
+	private focus = 0 // lane 1-8, 0 = not heard yet
+	private linked = ""
+	private fx = ""
+	private motion = new Array<boolean>(VOICES).fill(false)
+	private sounding = new Array<boolean>(VOICES).fill(false)
+	/** FOCUS keys now down, in the order they went down. */
+	private focusDown: number[] = []
+	/** A second FOCUS key held while another is: a range once it has been down long enough. */
+	private rangePending: { anchor: number; lane: number; at: number } | null = null
+	private focused = false
+	private lastPollMs = 0
+	private lastSubMs = 0
+	private unsurface: (() => void) | null = null
+
+	constructor(private live: boolean = HOME_VIEW_LIVE) {}
+
 	init(ctx: PageContext) {
 		this.ctx = ctx
+		if (this.live) this.unsurface = ctx.surface?.on((path, args) => this.hear(path, args, ctx)) ?? null
 		// Another page's damp keys drive the same voices. This page stays the ONE sender of
 		// damp to Max, so both surfaces agree and nothing is sent twice.
 		this.unsubscribe =
@@ -138,15 +191,22 @@ export class SetSurfacePage implements Page {
 	}
 
 	onFocus(ctx: PageContext) {
+		this.focused = true
+		this.lastPollMs = this.lastSubMs = 0 // ask at once
 		this.announce(ctx)
+		this.syncTimer()
 	}
 
 	onBlur(ctx: PageContext) {
 		// Your hands let go; the loops keep playing (same rule as isometric).
+		this.focused = false
+		this.focusDown = []
+		this.rangePending = null
 		this.dampHeld.clear()
 		this.dampAllHeld = false
 		this.syncDamp(ctx)
 		releaseShifts(ctx)
+		this.syncTimer()
 	}
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
@@ -165,6 +225,7 @@ export class SetSurfacePage implements Page {
 			if (ev.s) this.recorderKey(ev.y, ctx)
 			return
 		}
+		if (this.live && this.viewKey(ev, ctx)) return
 		const param = PARAM_AT_ROW.get(ev.y)
 		if (!param) return
 		const voice = ev.x - VOICE_COL0
@@ -184,6 +245,127 @@ export class SetSurfacePage implements Page {
 			const next = !allOn(row)
 			for (let v = 0; v < VOICES; v++) this.setToggle(param, v, next, ctx, true)
 		} else this.setToggle(param, voice, !row[voice], ctx, true)
+	}
+
+	// ---------------------------------------------------------------- the view (live only)
+
+	/** FOCUS, MOTION and the FX row. True when the key was one of theirs. */
+	private viewKey(ev: KeyEvent, ctx: PageContext): boolean {
+		const lane = ev.x - VOICE_COL0 // 0-7
+		const isAll = ev.x === COL_ALL
+		const isLane = lane >= 0 && lane < VOICES
+		if (ev.y === FX_ROW) {
+			const track = FX_AT_X.get(ev.x)
+			if (!track) return false
+			if (ev.s) {
+				this.fx = track
+				ctx.surface?.send("/surface/view/fx", track)
+			}
+			return true
+		}
+		if (ev.y === MOTION_ROW && (isLane || isAll)) {
+			if (!ev.s) return true
+			if (isAll) {
+				const next = !allOn(this.motion)
+				for (let v = 0; v < VOICES; v++) this.setMotion(v, next, ctx, true)
+			} else this.setMotion(lane, !this.motion[lane], ctx, true)
+			return true
+		}
+		if (ev.y !== FOCUS_ROW || !(isLane || isAll)) return false
+		if (isAll) {
+			if (!ev.s) return true
+			if (ctx.modifiers.shift2) ctx.surface?.send("/surface/home")
+			else this.setLinked("12345678", ctx)
+			return true
+		}
+		if (!ev.s) {
+			this.focusDown = this.focusDown.filter((l) => l !== lane)
+			if (this.rangePending?.lane === lane) {
+				// Let go before it became a range: an ordinary press after all.
+				this.rangePending = null
+				this.focusAlone(lane, ctx)
+			} else if (this.rangePending?.anchor === lane) this.rangePending = null
+			this.syncTimer()
+			return true
+		}
+		if (ctx.modifiers.shift2) {
+			ctx.surface?.send(`/surface/lane/${lane + 1}/home`)
+			return true
+		}
+		if (ctx.modifiers.shift1) {
+			// Add or drop; surface always keeps the focused lane in.
+			const d = String(lane + 1)
+			if (lane + 1 !== this.focus) this.setLinked(this.linked.includes(d) ? this.linked.replace(d, "") : this.linked + d, ctx)
+			return true
+		}
+		if (this.focusDown.length) {
+			this.rangePending = { anchor: this.focusDown[0], lane, at: Date.now() }
+			this.focusDown.push(lane)
+			this.syncTimer()
+			return true
+		}
+		this.focusDown.push(lane)
+		this.focusAlone(lane, ctx)
+		return true
+	}
+
+	private focusAlone(lane: number, ctx: PageContext) {
+		this.focus = lane + 1
+		ctx.surface?.send("/surface/view/focus", lane + 1)
+		this.setLinked("", ctx)
+	}
+
+	private setLinked(digits: string, ctx: PageContext) {
+		const clean = cleanLinked(digits)
+		ctx.surface?.send("/surface/view/linked", clean)
+		// As surface will report it: the focused lane is always in, unless nothing else is.
+		this.linked = clean && this.focus ? cleanLinked(clean + this.focus) : clean
+	}
+
+	/** `byHand` = your press, which armed loopers record; loop playback passes false. */
+	private setMotion(voice: number, on: boolean, ctx: PageContext, byHand: boolean) {
+		if (this.motion[voice] === on) return
+		this.motion[voice] = on
+		if (byHand) {
+			const nowMs = Date.now()
+			for (const r of this.recorders) r.recordControl(`motion/${voice + 1}`, on ? 1 : 0, nowMs)
+			if (this.recorders.some((r) => r.state === "recording")) this.syncTimer()
+		}
+		ctx.surface?.send(`/surface/lane/${voice + 1}/trem`, on ? 1 : 0)
+	}
+
+	/** What idk.surface says: replies to our gets, and the `lanes` reports. */
+	private hear(path: string, args: any[], ctx: PageContext) {
+		const v = args[0]
+		if (path === "/surface/view/focus") {
+			const n = Math.round(Number(v))
+			if (n >= 1 && n <= VOICES) this.focus = n
+		} else if (path === "/surface/view/linked") this.linked = cleanLinked(v)
+		else if (path === "/surface/view/fx") this.fx = typeof v === "string" ? v : ""
+		else {
+			const m = /^\/surface\/(state\/)?lane\/([1-8])\/(trem|sounding)$/.exec(path)
+			if (!m || !!m[1] !== (m[3] === "sounding")) return
+			const i = Number(m[2]) - 1
+			const on = Number(v) !== 0
+			if (m[3] === "trem") this.motion[i] = on
+			else {
+				if (on && !this.sounding[i]) this.triggeredAt[i] = Date.now()
+				this.sounding[i] = on
+			}
+		}
+		ctx.setDirty()
+	}
+
+	private pollView(nowMs: number, ctx: PageContext) {
+		const link = ctx.surface
+		if (!link) return
+		if (nowMs - this.lastSubMs >= SUBSCRIBE_MS) {
+			this.lastSubMs = nowMs
+			link.send("/surface/subscribe", "127.0.0.1", link.port, "lanes")
+		}
+		if (nowMs - this.lastPollMs < VIEW_POLL_MS) return
+		this.lastPollMs = nowMs
+		for (const a of ["/surface/view/focus", "/surface/view/linked", "/surface/view/fx", "/surface/lane/*/trem"]) link.send("/surface/get", a)
 	}
 
 	private recorderKey(idx: number, ctx: PageContext) {
@@ -245,11 +427,26 @@ export class SetSurfacePage implements Page {
 		for (let i = 0; i < TWISTER_PAGES.length; i++) {
 			set(lastCol, TWISTER_ROW0 + i, i === this.twisterPage ? LVL_TWISTER_ON : LVL_TWISTER_OFF)
 		}
-		for (let v = 0; v < VOICES; v++) {
-			const s = this.activity[v]
-			const flashing = s === 1 && now - this.triggeredAt[v] < TRIGGER_MS
-			set(VOICE_COL0 + v, FEEDBACK_ROW, flashing ? LVL_TRIGGERED : s ? LVL_RINGING : 0)
-		}
+		if (this.live) {
+			for (let v = 0; v < VOICES; v++) {
+				const isFocus = this.focus === v + 1
+				const flashing = now - this.triggeredAt[v] < TRIGGER_MS
+				// A sound flashes a lane; the focused one is bright already, so it dips instead.
+				set(VOICE_COL0 + v, FOCUS_ROW,
+					isFocus ? (flashing ? LVL_FOCUS_DIP : LVL_FOCUS)
+					: flashing ? LVL_TRIGGERED
+					: this.linked.includes(String(v + 1)) ? LVL_LINKED : LVL_OFF)
+				set(VOICE_COL0 + v, MOTION_ROW, this.motion[v] ? LVL_ON : LVL_OFF)
+			}
+			set(COL_ALL, FOCUS_ROW, this.linked.length === VOICES ? LVL_ON : LVL_OFF)
+			set(COL_ALL, MOTION_ROW, allOn(this.motion) ? LVL_ON : this.motion.some(Boolean) ? LVL_SOME : LVL_OFF)
+			for (const [x, track] of FX_AT_X) set(x, FX_ROW, track === this.fx ? LVL_ON : LVL_FX_OFF)
+		} else
+			for (let v = 0; v < VOICES; v++) {
+				const s = this.activity[v]
+				const flashing = s === 1 && now - this.triggeredAt[v] < TRIGGER_MS
+				set(VOICE_COL0 + v, FEEDBACK_ROW, flashing ? LVL_TRIGGERED : s ? LVL_RINGING : 0)
+			}
 		drawSelector(f, ctx)
 		return f
 	}
@@ -285,6 +482,8 @@ export class SetSurfacePage implements Page {
 
 	dispose(ctx: PageContext) {
 		this.unsubscribe?.()
+		this.unsurface?.()
+		this.unsurface = null
 		this.remoteDamp.fill(false)
 		for (const r of this.recorders) r.clear()
 		this.onBlur(ctx)
@@ -349,7 +548,7 @@ export class SetSurfacePage implements Page {
 	}
 
 	private syncTimer() {
-		const needed = this.recorders.some((r) => r.isRunning)
+		const needed = this.recorders.some((r) => r.isRunning) || (this.live && (this.focused || this.rangePending !== null))
 		if (needed && !this.timer) {
 			this.lastTickMs = Date.now()
 			this.timer = setInterval(() => this.onTimer(), TIMER_MS)
@@ -370,9 +569,21 @@ export class SetSurfacePage implements Page {
 			r.advance(nowMs, dt)
 			for (const [id, value] of r.takeControls()) {
 				const c = parseCtl(id)
-				if (c) this.setToggle(c.param, c.voice, value !== 0, ctx, false)
+				if (!c) continue
+				if (c.param !== "motion") this.setToggle(c.param, c.voice, value !== 0, ctx, false)
+				else if (this.live) this.setMotion(c.voice, value !== 0, ctx, false)
 			}
 		}
+		// A second FOCUS key held long enough: the lanes between the two become the selection.
+		const rp = this.rangePending
+		if (rp && nowMs - rp.at >= LONG_PRESS_MS) {
+			this.rangePending = null
+			const [lo, hi] = [Math.min(rp.anchor, rp.lane), Math.max(rp.anchor, rp.lane)]
+			let digits = ""
+			for (let l = lo; l <= hi; l++) digits += String(l + 1)
+			this.setLinked(digits, ctx)
+		}
+		if (this.live && this.focused) this.pollView(nowMs, ctx)
 		this.syncDamp(ctx)
 		// A take that hit the length cap closes itself into playing.
 		if (this.recorders.some((r, i) => r.state !== before[i])) this.emitPatterns(ctx)
@@ -391,6 +602,15 @@ export const keymap: KeySpec[] = [
 	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice.", lit: [LVL_ON, LVL_OFF, LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] },
+	...(HOME_VIEW_LIVE
+		? ([
+				{ x: VOICE_COL0, y: FOCUS_ROW, w: VOICES, name: "Focus", help: "Focus that lane alone. Shift 1 + press adds or drops it; hold one and long-press another for the range. Shift 2 + press: that lane home. Flashes on sound.", lit: [LVL_FOCUS, LVL_LINKED, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
+				{ x: VOICE_COL0, y: MOTION_ROW, w: VOICES, name: "Motion", help: "Toggle the lane's motion (tremolo).", lit: LVL_OFF },
+				{ x: COL_ALL, y: FOCUS_ROW, h: 2, name: "All: select / motion", short: "All", help: "y3 selects all eight (shift 2: everyone home); y4 switches motion for all.", lit: LVL_OFF },
+				{ x: 4, y: FX_ROW, w: 4, name: "FX tracks A-D", short: "FX", help: "Show that track's chain in the window.", lit: LVL_FX_OFF },
+				{ x: 9, y: FX_ROW, w: 3, name: "S1, S2, Master", short: "FX", help: "Show that chain in the window.", lit: LVL_FX_OFF },
+			] as KeySpec[])
+		: []),
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
 	{ x: 15, y: TWISTER_ROW0, h: TWISTER_PAGES.length, name: "Twister pages", short: "Twister", help: `Switch the Twister's page: ${TWISTER_PAGES.join(", ")}.`, lit: [LVL_TWISTER_ON, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF] },
 ]

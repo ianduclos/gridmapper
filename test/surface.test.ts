@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PAGE_MODULES, PAGE_TYPES, DEFAULT_PAGE } from "../src/pages/registry.js"
 import { CellsSurfacePage } from "../src/pages/cells-surface.js"
 import { SetSurfacePage } from "../src/pages/set-surface.js"
@@ -343,5 +343,136 @@ describe("iso-surface: the left column's bottom two keys are iso's own", () => {
 		page.onKey({ x: 15, y: 7, s: 1 }, ctx)
 		page.onKey({ x: 15, y: 6, s: 1 }, ctx)
 		expect(shifts).toEqual([[1, true], [2, true]])
+	})
+})
+
+describe("set-surface: the next home page (view on)", () => {
+	const mk = (live = true) => {
+		const out: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		let hear: (path: string, args: any[]) => void = () => {}
+		const ctx = {
+			size: SIZE, modifiers, slot: 5, slotLabel: "f", shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [] },
+			osc: { send() {} },
+			surface: { port: 57133, send: (path: string, ...a: any[]) => out.push([path, ...a]), on: (fn: any) => ((hear = fn), () => {}) },
+			setDirty() {}, focus() {}, persist() {},
+			setShift: (w: number, d: boolean) => { if (w === 1) modifiers.shift1 = d; else modifiers.shift2 = d },
+		} as unknown as PageContext
+		const page = new SetSurfacePage(live)
+		page.init(ctx)
+		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
+		const tap = (x: number, y: number) => { key(x, y, 1); key(x, y, 0) }
+		const sent = () => out.splice(0).filter((m) => m[0] !== "/surface/get" && m[0] !== "/surface/subscribe")
+		const led = (x: number, y: number) => page.render(ctx)![ledIndex(SIZE, x, y)]
+		return { page, ctx, out, key, tap, sent, led, modifiers, say: (p: string, v: any) => hear(p, [v]) }
+	}
+	beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(2_000_000) })
+	afterEach(() => { vi.useRealTimers() })
+
+	it("off, the page sends idk.surface nothing and the new keys do nothing", () => {
+		const r = mk(false)
+		r.page.onFocus(r.ctx)
+		r.tap(4, 3); r.tap(4, 0); r.tap(2, 3)
+		vi.advanceTimersByTime(4000)
+		expect(r.out).toEqual([])
+		r.page.dispose(r.ctx)
+	})
+
+	it("FOCUS: a press focuses a lane alone; shift 1 adds and drops; shift 2 sends it home", () => {
+		const r = mk()
+		r.tap(6, 3)
+		expect(r.sent()).toEqual([["/surface/view/focus", 3], ["/surface/view/linked", ""]])
+		expect(r.led(6, 3)).toBe(12)
+		r.key(0, 7, 1); r.tap(8, 3); r.tap(4, 3)
+		expect(r.sent()).toEqual([["/surface/view/linked", "5"], ["/surface/view/linked", "135"]])
+		expect(r.led(8, 3)).toBe(6)
+		r.tap(8, 3) // drop lane 5
+		r.tap(6, 3) // the focused lane cannot be dropped
+		expect(r.sent()).toEqual([["/surface/view/linked", "13"]])
+		r.key(0, 7, 0)
+		r.key(0, 6, 1); r.tap(9, 3); r.tap(2, 3); r.key(0, 6, 0)
+		expect(r.sent()).toEqual([["/surface/lane/6/home"], ["/surface/home"]])
+		r.tap(2, 3) // all: select all eight
+		expect(r.sent()).toEqual([["/surface/view/linked", "12345678"]])
+		// What surface reports wins.
+		r.say("/surface/view/focus", 8); r.say("/surface/view/linked", "78")
+		expect(r.led(11, 3)).toBe(12)
+		expect(r.led(10, 3)).toBe(6)
+		expect(r.led(6, 3)).toBe(2)
+		r.page.dispose(r.ctx)
+	})
+
+	it("hold one FOCUS and long-press another: the range between; a short press is just a press", () => {
+		const r = mk()
+		r.key(5, 3, 1); r.sent() // lane 2 focused and held
+		r.key(8, 3, 1)
+		expect(r.sent()).toEqual([])
+		vi.advanceTimersByTime(450)
+		expect(r.sent()).toEqual([["/surface/view/linked", "2345"]])
+		r.key(8, 3, 0); r.key(5, 3, 0)
+		expect(r.sent()).toEqual([])
+		r.key(5, 3, 1); r.sent()
+		r.key(10, 3, 1); vi.advanceTimersByTime(100); r.key(10, 3, 0)
+		expect(r.sent()).toEqual([["/surface/view/focus", 7], ["/surface/view/linked", ""]])
+		r.key(5, 3, 0)
+		r.page.dispose(r.ctx)
+	})
+
+	it("MOTION switches a lane's trem; all does all; the FX row shows a track", () => {
+		const r = mk()
+		r.tap(4, 4)
+		expect(r.sent()).toEqual([["/surface/lane/1/trem", 1]])
+		expect(r.led(4, 4)).toBe(12)
+		r.tap(2, 4)
+		expect(r.sent()).toHaveLength(7) // the other seven on
+		r.tap(2, 4)
+		expect(r.sent().every((m) => m[1] === 0)).toBe(true)
+		r.say("/surface/lane/3/trem", 1)
+		expect(r.led(6, 4)).toBe(12)
+		r.tap(5, 0); r.tap(11, 0); r.tap(8, 0) // B, MASTER, the gap
+		expect(r.sent()).toEqual([["/surface/view/fx", "b"], ["/surface/view/fx", "master"]])
+		expect(r.led(11, 0)).toBe(12)
+		expect(r.led(5, 0)).toBe(3)
+		r.page.dispose(r.ctx)
+	})
+
+	it("a sound flashes a lane and dips the focused one; the page polls only while focused", () => {
+		const r = mk()
+		r.tap(4, 3)
+		r.say("/surface/state/lane/1/sounding", 1); r.say("/surface/state/lane/2/sounding", 1)
+		expect(r.led(4, 3)).toBe(4)
+		expect(r.led(5, 3)).toBe(15)
+		vi.advanceTimersByTime(200)
+		expect(r.led(4, 3)).toBe(12)
+		expect(r.led(5, 3)).toBe(2)
+		r.out.length = 0
+		vi.advanceTimersByTime(2000)
+		expect(r.out).toEqual([])
+		r.page.onFocus(r.ctx)
+		vi.advanceTimersByTime(20)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/view/focus"])
+		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "lanes"])
+		r.page.onBlur(r.ctx); r.out.length = 0
+		vi.advanceTimersByTime(3000)
+		expect(r.out).toEqual([])
+		r.page.dispose(r.ctx)
+	})
+
+	it("loopers record MOTION, never focus, FX or the ways home", () => {
+		const r = mk()
+		r.tap(15, 0) // arm
+		r.tap(4, 4); vi.advanceTimersByTime(100)
+		r.tap(6, 3); r.tap(5, 0)
+		r.key(0, 6, 1); r.tap(4, 3); r.key(0, 6, 0)
+		vi.advanceTimersByTime(100)
+		r.tap(4, 4); vi.advanceTimersByTime(100)
+		r.tap(15, 0) // close: plays
+		r.sent()
+		vi.advanceTimersByTime(320)
+		const m = r.sent()
+		expect(m).toContainEqual(["/surface/lane/1/trem", 1])
+		expect(m.every((x) => x[0] === "/surface/lane/1/trem")).toBe(true)
+		r.page.dispose(r.ctx)
 	})
 })
