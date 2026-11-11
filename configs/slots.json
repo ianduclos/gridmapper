@@ -2,7 +2,7 @@
 	"version": 1,
 	"slots": {
 		"a": {
-			"page": "iso-hot",
+			"page": "iso-surface",
 			"config": {
 				"npo": 12,
 				"vertical": 5,
@@ -11,9 +11,19 @@
 				"layout": "chromatic",
 				"orientation": "standard",
 				"lane": 0,
-				"arp": "off",
+				"arp": "urn",
 				"arpRate": 125,
 				"arpDiv": 1,
+				"arpSpeed": "x1",
+				"arpProb": 1,
+				"strum": false,
+				"strumMs": 25,
+				"strumDir": "up",
+				"tintMode": "above",
+				"tintOctave": 0,
+				"tintJitterMs": 20,
+				"transposeChords": true,
+				"transposeLoops": true,
 				"quant1": "off",
 				"quant2": "off",
 				"quant3": "off",
@@ -27,6 +37,16 @@
 					null,
 					null,
 					null
+				],
+				"chordTranspose": [
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0
 				],
 				"patterns": [
 					{
@@ -54,12 +74,17 @@
 					[],
 					[],
 					[]
-				]
+				],
+				"tintPcs": [],
+				"octave": 0,
+				"tintOn": false
 			}
 		},
 		"b": {
-			"page": "cells-hot",
+			"page": "cells-surface",
 			"config": {
+				"rhythmWorld": "horn-relay",
+				"durationMode": "gate",
 				"selected": [
 					0,
 					0,
@@ -76,31 +101,119 @@
 					false,
 					false
 				],
+				"locks": [
+					false,
+					false,
+					false,
+					false,
+					false,
+					false
+				],
 				"tuning": "tritave",
 				"rootMultiplier": 1,
-				"pulseRate": 7.228915662650602,
+				"pulseRate": 7.228915662650603,
+				"bpm": 144.578,
 				"lane": 0,
-				"humanizeMs": 4
+				"allowSilence": false,
+				"evolveActivity": 0.5,
+				"restChance": 0.25,
+				"humanizeMs": 4,
+				"decayScale": 1,
+				"decayStretch": 1,
+				"decayThreshold": 1,
+				"patterns": [
+					{
+						"lengthPulses": 0,
+						"anchor": 0,
+						"cycle": 0,
+						"events": []
+					},
+					{
+						"lengthPulses": 0,
+						"anchor": 0,
+						"cycle": 0,
+						"events": []
+					},
+					{
+						"lengthPulses": 0,
+						"anchor": 0,
+						"cycle": 0,
+						"events": []
+					},
+					{
+						"lengthPulses": 0,
+						"anchor": 0,
+						"cycle": 0,
+						"events": []
+					}
+				]
 			}
 		},
 		"c": {
-			"page": "blank-hot"
+			"page": "play-surface",
+			"config": {
+				"velocity": 0.8,
+				"followIso": true,
+				"npo": 12,
+				"root": 0,
+				"scale": "ionian",
+				"base": 24,
+				"slew": "0",
+				"latchMs": 1000,
+				"pitch": true,
+				"strike": true,
+				"presets": {},
+				"patterns": [
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					}
+				]
+			}
 		},
 		"d": {
-			"page": "blank-hot"
+			"page": "blank-surface"
 		},
 		"e": {
-			"page": "blank-hot"
+			"page": "blank-surface"
 		},
 		"f": {
-			"page": "set-hot"
+			"page": "set-surface",
+			"config": {
+				"patterns": [
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					}
+				]
+			}
 		},
 		"g": {
-			"page": "blank-hot"
+			"page": "blank-surface"
 		},
 		"h": {
-			"page": "blank-hot"
+			"page": "blank-surface"
 		}
 	},
-	"activePreset": "hotelier"
+	"activePreset": "idk.surface"
 }

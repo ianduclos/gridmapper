@@ -7,7 +7,7 @@
 				"octave": 0,
 				"tintOn": false,
 				"arpSpeed": "x1",
-				"arpProb": 0.5,
+				"arpProb": 1,
 				"strum": false,
 				"strumMs": 25,
 				"strumDir": "up",

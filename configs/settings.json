@@ -1,10 +1,11 @@
 {
 	"osc": {
 		"inPort": 57131,
-		"outPort": 57130
+		"outPort": 57130,
+		"twisterPort": 57121
 	},
 	"clock": {
-		"rate": 15,
+		"rate": 5.1,
 		"lanes": [
 			{
 				"source": "internal",

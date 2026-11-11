@@ -54,7 +54,18 @@
 					[],
 					[],
 					[]
-				]
+				],
+				"tintPcs": [],
+				"octave": 1,
+				"tintOn": true,
+				"arpSpeed": "x1",
+				"arpProb": 0.75,
+				"strum": false,
+				"strumMs": 25,
+				"strumDir": "up",
+				"tintMode": "below",
+				"tintOctave": -1,
+				"tintJitterMs": 20
 			}
 		},
 		"b": {
@@ -66,7 +77,7 @@
 					0,
 					0,
 					1,
-					0
+					1
 				],
 				"muted": [
 					false,
@@ -78,9 +89,42 @@
 				],
 				"tuning": "tritave",
 				"rootMultiplier": 1,
-				"pulseRate": 7.228915662650602,
+				"pulseRate": 5.795000000000001,
 				"lane": 0,
-				"humanizeMs": 4
+				"humanizeMs": 3,
+				"rhythmWorld": "horn-relay",
+				"durationMode": "gate",
+				"locks": [
+					false,
+					false,
+					false,
+					false,
+					false,
+					false
+				],
+				"allowSilence": true,
+				"decayScale": 1,
+				"decayStretch": 1,
+				"decayThreshold": 1,
+				"bpm": 115.9,
+				"patterns": [
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					},
+					{
+						"lengthMs": 0,
+						"events": []
+					}
+				]
 			}
 		},
 		"c": {

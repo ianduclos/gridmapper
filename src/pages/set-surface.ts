@@ -74,8 +74,8 @@ const FEEDBACK_ROW = 4
  * The next home page (FOCUS, MOTION, FX tracks, lane home) speaks addresses idk.surface is
  * added on 2026-11-11: /surface/view/{focus,linked,fx}, /surface/lane/<n>/home, /surface/home.
  * Off, the page is exactly the old one and sends idk.surface nothing. On since the surface
- * session confirmed them live (2026-11-11). Surface reports no view topic to subscribers
- * (docs/osc/state.txt has none), so the view is read by /surface/get polling.
+ * session confirmed them live (2026-11-11). The view values are reported on the `values`
+ * topic at their own addresses; a slow /surface/get refill backs that up.
  */
 export const HOME_VIEW_LIVE = true
 const FOCUS_ROW = 3
@@ -84,7 +84,8 @@ const FX_ROW = 0
 /** x → the FX track a top-row key shows. */
 const FX_AT_X = new Map<number, string>([[4, "a"], [5, "b"], [6, "c"], [7, "d"], [9, "s1"], [10, "s2"], [11, "master"]])
 const LONG_PRESS_MS = 400
-const VIEW_POLL_MS = 500
+/** A refill only: changes arrive on the `values` topic; this catches the start and a lost packet. */
+const VIEW_POLL_MS = 5000
 const SUBSCRIBE_MS = 3000 // a subscription is a lease: renew well inside its 10 s
 const LVL_FOCUS = 12
 const LVL_LINKED = 6
@@ -364,6 +365,9 @@ export class SetSurfacePage implements Page {
 		if (nowMs - this.lastSubMs >= SUBSCRIBE_MS) {
 			this.lastSubMs = nowMs
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "lanes")
+			// view/focus, view/linked, view/fx and the lane trem switches come on `values`, at their own
+			// addresses, whoever changed them (surface session, 2026-11-11); hear() filters by address.
+			link.send("/surface/subscribe", "127.0.0.1", link.port, "values")
 		}
 		if (nowMs - this.lastPollMs < VIEW_POLL_MS) return
 		this.lastPollMs = nowMs
