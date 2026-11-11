@@ -256,3 +256,59 @@ describe("iso-surface: notes played in surface light here", () => {
 		} finally { vi.useRealTimers() }
 	})
 })
+
+describe("iso-surface: the lane picker", () => {
+	const mk = () => {
+		const out: Array<[string, ...any[]]> = []
+		const notes: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		let hear: (path: string, args: any[]) => void = () => {}
+		const ctx = {
+			size: SIZE, modifiers, slot: 0, slotLabel: "a", shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [{ div: 1 }, { div: 1 }, { div: 1 }, { div: 1 }] },
+			osc: { send: (path: string, ...a: any[]) => notes.push([path, ...a]) },
+			surface: { port: 57133, send: (path: string, ...a: any[]) => out.push([path, ...a]), on: (fn: any) => ((hear = fn), () => {}) },
+			setDirty() {}, setShift() {}, focus() {}, persist() {},
+		} as unknown as PageContext
+		const page = new IsoSurfacePage()
+		page.init(ctx)
+		notes.length = 0
+		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
+		const latch = (track: number) => { modifiers.shift1 = true; key(14, track, 1); key(14, track, 0); modifiers.shift1 = false }
+		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 1 + l, 7)]) }
+		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
+		return { page, key, latch, row, out, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
+	}
+
+	it("shows the latched track's lanes on the bottom row and toggles them in surface", () => {
+		const r = mk()
+		r.latch(1)
+		expect(r.row()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]) // not heard yet
+		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys2/lanes"])
+		r.key(1, 7, 1); r.key(1, 7, 0) // unknown: no guess, no note
+		expect(r.out.filter((m) => m[0] !== "/surface/get")).toEqual([])
+		r.say("/surface/route/keys2/lanes", "31")
+		expect(r.row()).toEqual([13, 3, 13, 3, 3, 3, 3, 3])
+		r.key(2, 7, 1); r.key(2, 7, 0) // add lane 2
+		r.key(1, 7, 1); r.key(1, 7, 0) // drop lane 1
+		expect(r.out.filter((m) => m[0] !== "/surface/get")).toEqual([
+			["/surface/route/keys2/lanes", "123"],
+			["/surface/route/keys2/lanes", "23"],
+		])
+		expect(r.noteMsgs()).toEqual([])
+		r.key(9, 7, 1) // the rest of the keyboard still plays
+		expect(r.noteMsgs()).toHaveLength(1)
+	})
+
+	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once the edit closes", () => {
+		const r = mk()
+		r.latch(0)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys/lanes"])
+		r.say("/surface/route/keys/lanes", "12345678")
+		r.key(8, 7, 1); r.key(8, 7, 0)
+		expect(r.out).toContainEqual(["/surface/route/keys/lanes", "1234567"])
+		r.key(14, 0, 1); r.key(14, 0, 0) // same track closes the edit
+		r.key(1, 7, 1)
+		expect(r.noteMsgs()).toHaveLength(1)
+	})
+})

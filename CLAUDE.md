@@ -373,6 +373,10 @@ src/
                          EMPTY patch: live layout only, never merged into a saved preset.
                          Full contract: docs/cells-hot.md.
   pages/iso-surface.ts   idk.surface fork of iso-hot — same behavior, own selector + shared-store keys
+                         LANE PICKER: while a track is latched (shift 1 + its key) the bottom row x1-x8 =
+                         surface lanes 1-8, lit where that track plays; a press toggles one. Read and
+                         written over ctx.surface at /surface/route/keys<n>/lanes (row 1 is `keys`, no
+                         number), never stored here.
   pages/cells-surface.ts idk.surface fork of cells-hot — same behavior, own selector + shared-store keys
                          (DAMP_FROM_CELLS_SURFACE / DAMP_STATE_SURFACE); shares only read-only world data
   pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;

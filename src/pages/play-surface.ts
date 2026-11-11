@@ -561,7 +561,7 @@ export class PlaySurfacePage implements Page {
 
 	/** Strike a lane on the note it already has. */
 	private strikeOwn(lane: number, velocity: number, ctx: PageContext) {
-		this.send(ctx, `/surface/lane/${lane + 1}/strike/hz`, float(this.mirror.pitch(lane)), float(velocity))
+		this.send(ctx, `/surface/lane/${lane + 1}/strike/own`, float(velocity))
 	}
 
 	private bank(): Bank {

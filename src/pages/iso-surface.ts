@@ -204,6 +204,14 @@ import {
 } from "../util/scales.js"
 
 const KEYS_W = 13 // keyboard ends before column 13 (keysW is its exclusive right edge)
+/** idk.surface's KEYS rows 1-4, one per track: the first has no number (generated addresses.txt). */
+const LANES_ADDRS = ["/surface/route/keys/lanes", "/surface/route/keys2/lanes", "/surface/route/keys3/lanes", "/surface/route/keys4/lanes"]
+const PICKER_LANES = 8
+const PICKER_ASK_MS = 1000
+const LVL_PICK_ON = 13
+const LVL_PICK_OFF = 3
+/** A lanes string as surface spells it: digits 1-8, each once, in order. */
+const cleanLanes = (s: string) => [...new Set(s.replace(/[^1-8]/g, ""))].sort().join("")
 const KEYS_X0 = 1 // ... and starts at column 1: column 0 is the page selector
 
 /** Transposer: col 0 row 4 shows it on the bottom row, whose col 8 is "no transpose". */
@@ -537,6 +545,17 @@ export class IsoSurfacePage implements Page {
 	/** When the peer's last heartbeat came (0 = it does not send them). */
 	private peerBeatAt = 0
 	private unpeer: (() => void) | null = null
+	/**
+	 * THE LANE PICKER. While a track is latched for editing (shift 1 + its key), the bottom
+	 * keyboard row x1-x8 shows idk.surface's lanes 1-8, lit where that track plays, and a
+	 * press toggles one. The truth is surface's KEYS row (/surface/route/keys<n>/lanes, a
+	 * string of digits): read over ctx.surface while the edit is open, written on a press,
+	 * never stored here. A row not heard yet shows nothing and takes no press.
+	 */
+	private trackLanes: Array<string | undefined> = new Array(TRACK_ROWS).fill(undefined)
+	private lanesAskedAt = 0
+	private pickerDown = new Set<number>()
+	private unsurface: (() => void) | null = null
 	private voicedSteps = new Set<number>()
 	/** When each track last received a note-on, for the activity pulse in render(). */
 	private trackPulseAt = new Array<number>(TRACK_ROWS).fill(0)
@@ -632,6 +651,14 @@ export class IsoSurfacePage implements Page {
 				else if (kind === "heartbeat") this.peerBeatAt = Date.now()
 				ctx.setDirty()
 			}) ?? null
+		this.unsurface?.()
+		this.unsurface =
+			ctx.surface?.on((path, args) => {
+				const t = LANES_ADDRS.indexOf(path)
+				if (t < 0 || typeof args[0] !== "string" && typeof args[0] !== "number") return
+				this.trackLanes[t] = cleanLanes(String(args[0]))
+				ctx.setDirty()
+			}) ?? null
 		this.announce(ctx)
 	}
 
@@ -672,6 +699,7 @@ export class IsoSurfacePage implements Page {
 			else this.panelKey(ev, ctx)
 			return
 		}
+		if (this.pickerKey(ev, ctx)) return
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (ev.s) this.setTranspose(ev.x - TRANSPOSE_ZERO_COL, ctx, true)
@@ -707,6 +735,32 @@ export class IsoSurfacePage implements Page {
 		}
 		if (ev.s) this.pressKey(i, ctx)
 		else this.releaseKey(i, ctx)
+	}
+
+	/** The lane picker's row: true when the key was the picker's (see trackLanes). */
+	private pickerKey(ev: KeyEvent, ctx: PageContext): boolean {
+		if (ev.y !== this.size.height - 1 || ev.x < KEYS_X0 || ev.x >= KEYS_X0 + PICKER_LANES) return false
+		const i = ledIndex(this.size, ev.x, ev.y)
+		if (!ev.s) return this.pickerDown.delete(i) // a note held from before still lets go
+		const track = this.editingTrack
+		if (track === null) return false
+		this.pickerDown.add(i)
+		const now = this.trackLanes[track]
+		if (now === undefined) return true // not heard yet: never guess what a toggle means
+		const digit = String(ev.x - KEYS_X0 + 1)
+		const next = cleanLanes(now.includes(digit) ? now.replace(digit, "") : now + digit)
+		this.trackLanes[track] = next
+		ctx.surface?.send(LANES_ADDRS[track], next)
+		ctx.setDirty()
+		return true
+	}
+
+	/** Ask surface which lanes the latched track plays, now and about once a second after. */
+	private askLanes(ctx: PageContext, nowMs: number) {
+		const track = this.editingTrack
+		if (track === null || nowMs - this.lanesAskedAt < PICKER_ASK_MS) return
+		this.lanesAskedAt = nowMs
+		ctx.surface?.send("/surface/get", LANES_ADDRS[track])
 	}
 
 	/** Transposer plus octave: the offset a note takes when it starts. */
@@ -1073,6 +1127,8 @@ export class IsoSurfacePage implements Page {
 			} else {
 				this.editingTrack = this.editingTrack === idx ? null : idx
 			}
+			this.lanesAskedAt = 0 // the picker reads the new track's lanes at once
+			this.askLanes(ctx, Date.now())
 			this.emitTracks(ctx)
 			this.commit(ctx)
 			return
@@ -1081,6 +1137,8 @@ export class IsoSurfacePage implements Page {
 			// Same track closes the edit; a different one moves it. You leave edit mode
 			// before you can change the selection — one mode at a time.
 			this.editingTrack = this.editingTrack === idx ? null : idx
+			this.lanesAskedAt = 0
+			this.askLanes(ctx, Date.now())
 			this.emitTracks(ctx)
 			return
 		}
@@ -1257,6 +1315,14 @@ export class IsoSurfacePage implements Page {
 				if (this.tintKeyDown && this.panelShown && this.tintPcs.has(this.pc(sounding))) lvl = LVL_TINT_EDIT
 				f[i] = lvl
 			}
+		}
+		// The lane picker covers the bottom row's first eight keys while a track is latched.
+		if (this.editingTrack !== null) {
+			this.askLanes(ctx, Date.now())
+			const lanes = this.trackLanes[this.editingTrack]
+			for (let l = 0; l < PICKER_LANES; l++)
+				f[ledIndex(this.size, KEYS_X0 + l, this.size.height - 1)] =
+					lanes === undefined ? 0 : lanes.includes(String(l + 1)) ? LVL_PICK_ON : LVL_PICK_OFF
 		}
 		// Control keys down the right edge. Shifts are faint markers that light while held;
 		// both halves of sustain light while they are holding notes.
@@ -1469,6 +1535,8 @@ export class IsoSurfacePage implements Page {
 		// The slot is going away for good — now the loops really do stop.
 		this.unpeer?.()
 		this.unpeer = null
+		this.unsurface?.()
+		this.unsurface = null
 		this.remote.clear()
 		this.releaseLive(ctx)
 		for (const r of this.recorders) r.clear()
@@ -2130,7 +2198,7 @@ export const keymap: KeySpec[] = [
 	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
 	{ x: PANEL_X0 + PANEL_W, y: 0, w: KEYS_W - PANEL_X0 - PANEL_W, h: 8, view: "panel", name: "Keyboard", help: "Still playable beside the panel. While Tint is held, presses edit the triad instead.", lit: keyboardLit(PANEL_X0 + PANEL_W, KEYS_W - PANEL_X0 - PANEL_W, 8) },
 	{ x: KEYS_W, y: 0, h: 8, name: "Chord presets", short: "Chords", help: "Press: play the saved chord. With the sustain toggle on: save what's ringing (same slot again releases). Shift 1 + press clears.", lit: [LVL_PRESET_FULL, LVL_PRESET_FULL, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY] },
-	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Where live notes go. Shift 2 + press multi-selects; Shift 1 + press edits which loopers feed it.", lit: [LVL_TRACK_ON, 2, 3, 4] },
+	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Where live notes go. Shift 2 + press multi-selects; Shift 1 + press edits which loopers feed it and, on the bottom row x1-x8, which idk.surface lanes it plays.", lit: [LVL_TRACK_ON, 2, 3, 4] },
 	{ x: KEYS_W + 1, y: ARP_ROW_START, h: ARP_BUTTONS.length, name: "Arp: up · down · palindrome · urn", short: "Arp", help: "Arpeggiate the held chord; press the lit one to stop.", lit: [1, 2, 3, 4] },
 	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Sustain toggle", short: "Sus. tog", help: "Latching sustain; also arms the chord presets for saving.", lit: LVL_SHIFT },

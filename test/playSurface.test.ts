@@ -143,11 +143,11 @@ describe("play-surface: keys", () => {
 		r.tapKey(RIGHT, 4)
 		expect(r.led(RIGHT, 4)).toBe(3)
 		r.key(LANE_X0 + 1, 7); r.key(LANE_X0 + 1, 0)
-		r.key(LANE_X0, 0) // lane 1 has not played: 216 Hz
+		r.key(LANE_X0, 0)
 		expect(r.sent()).toEqual([
-			["/surface/lane/2/strike/hz", 330, 0.125],
-			["/surface/lane/2/strike/hz", 330, 1],
-			["/surface/lane/1/strike/hz", 216, 1],
+			["/surface/lane/2/strike/own", 0.125],
+			["/surface/lane/2/strike/own", 1],
+			["/surface/lane/1/strike/own", 1],
 		])
 	})
 
@@ -328,7 +328,7 @@ describe("play-surface: presets", () => {
 		expect(r.led(LANE_X0 + 1, 0)).toBe(15)
 		r.tapKey(RIGHT, 5) // STRIKE
 		r.tapKey(LANE_X0, 0)
-		expect(r.sent()).toContainEqual(["/surface/lane/1/strike/hz", 216, 0.8])
+		expect(r.sent()).toContainEqual(["/surface/lane/1/strike/own", 0.8])
 	})
 
 	it("the bottom row is home: the lane's dials all back to the shared ones", () => {
@@ -357,7 +357,7 @@ describe("play-surface: presets", () => {
 		for (let l = 0; l < 6; l++) expect(r.led(LANE_X0 + l, 0)).toBe(15) // a flat line
 		r.key(0, 7); r.tapKey(ALL, 1); r.key(0, 7, 0)
 		m = r.sent()
-		expect(m.filter((x) => x[0].endsWith("/strike/hz"))).toHaveLength(8)
+		expect(m.filter((x) => x[0].endsWith("/strike/own"))).toHaveLength(8)
 	})
 
 	it("with SLEW on, a recall asks surface first and then travels", () => {
