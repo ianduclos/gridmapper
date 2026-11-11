@@ -9,15 +9,15 @@ Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
 ## The page
 
 ```
-x:  0     2     4 ........ 11   12    15
-y0  iso   KEYS  lane 1 ... 8    all   loop 1
-y1  PLAY  .                     all   loop 2
-y2  twist .                     all   loop 3
-y3  .     .                     all   loop 4
-y4  REEL  .                     all   PITCH
-y5  home  .                     all   STRIKE
-y6  sh 2  .                     all   SLEW
-y7  sh 1  PRE                   all   LATCH
+x:  0     2     4 ........ 11   12    14   15
+y0  iso   KEYS  lane 1 ... 8    all        loop 1
+y1  PLAY  .                     all        loop 2
+y2  twist .                     all        loop 3
+y3  .     .                     all        loop 4
+y4  REEL  .                     all        PITCH
+y5  home  .                     all        STRIKE
+y6  sh 2  .                     all        SLEW
+y7  sh 1  PRE                   all   ARP  LATCH
 ```
 
 | Where | Key | What it does |
@@ -34,9 +34,10 @@ y7  sh 1  PRE                   all   LATCH
 | x15 y4 | PITCH | Lit: a press sets the note. Unlit: it plays the lane's own note. |
 | x15 y5 | STRIKE | Lit: recalling a preset also strikes the lane. Starts lit. |
 | x15 y6 | SLEW | Tap: glide on or off. Hold: choose the time. |
+| x14 y7 | ARP | Lit: held keys play in turn, timed by the app (below). |
 | x15 y7 | LATCH | Lit: notes stay after you let go. |
 
-x2 y1-y6 are dark and do nothing. There is no arp on this page.
+x2 y1-y6 are dark and do nothing.
 
 ## KEYS (x2 y0)
 
@@ -55,6 +56,23 @@ x2 y1-y6 are dark and do nothing. There is no arp on this page.
   long as it is kept. Press the same cell again to end it. Unlighting LATCH ends
   them all, bowed ones too. Works with PITCH lit or unlit. Latched notes outlive
   a page switch.
+
+## ARP (x14 y7)
+
+- **Lit:** a KEYS press no longer plays the note. The app holds it in one arp and
+  steps through everything held, in order low to high (a lower row, then a lower
+  lane), on its own ORDER, RATE and the rest. Keys in several lanes are one chord,
+  each step on its own lane.
+- **Let go:** the key leaves the arp. Under **LATCH** it stays until its cell is
+  pressed again; unlighting LATCH ends them.
+- **PITCH unlit:** each key is its lane's own note. **REEL lane in slices:** each
+  key is a pad.
+- **Unlighting ARP:** everything this page holds leaves the arp; keys still down
+  sound as plain notes.
+- **Loopers** still record the presses but play them back as plain notes, never
+  arpeggiated.
+- **Lights:** a held key is medium; the one whose step sounds now is the brightest.
+- ARP is not saved with a preset.
 
 ## PRESETS (x2 y7)
 

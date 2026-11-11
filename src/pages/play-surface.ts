@@ -17,7 +17,7 @@
  *   y4  .    .  .    .                 all  .  .   PITCH
  *   y5  home .  .    .                 all  .  .   STRIKE
  *   y6  sh 2 .  .    .                 all  .  .   SLEW
- *   y7  sh 1 .  PRE  .                 all  .  .   LATCH
+ *   y7  sh 1 .  PRE  .                 all  .  ARP LATCH
  *
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
@@ -29,6 +29,16 @@
  *           bright, fading with the lane's real level. PITCH unlit, every lane column is
  *           lit solid and equal: one trigger each. Any key held in a lane's column lights
  *           the whole column while it is down, and a latched note keeps it lit. No all column.
+ * ARP     : x14 y7 (the spec's "free: arp later" spot, x15 y7, became LATCH, so the key sits
+ *           beside it; Ian, 2026-11-11). While lit, a KEYS press is a CALL in idk.surface's one
+ *           arp, the app timing it (spec 2026-11-11-grid-arp-design.md): /surface/arp/call <id>
+ *           <lane> note <key> <vel> (PITCH lit), own <vel> (PITCH unlit) or slice <n> (a REEL
+ *           lane in slices), and its release sends /surface/arp/call/off <id>. id = row * 8 + lane,
+ *           row 0 at the bottom (0-63), so rising id is UP. Held keys across lanes are one chord.
+ *           LATCH keeps a call held after release (the same cell ends it; unlighting LATCH ends
+ *           them); unlighting ARP ends every call this page holds and the notes sound direct
+ *           again. LOOPERS still record the presses but play them back as plain direct notes.
+ *           The call whose step sounds (/surface/arp/call/at) is the brightest cell.
  * LATCH   : while lit, a played note stays held after the key is let go; pressing the
  *           same cell again ends it (iso's "press a parked note to subtract it");
  *           unlighting LATCH ends every latched note. A loop records a latched note as a
@@ -118,6 +128,8 @@ const PITCH_Y = 4
 const STRIKE_Y = 5
 const SLEW_Y = 6
 const LATCH_Y = 7
+const ARP_X = 14
+const ARP_Y = 7
 
 /** Chooser rows: 0 KEYS, 7 PRESETS. Rows 1-6 held the six parameter layers; now dark. */
 export const LAYER_KEYS = 0
@@ -142,6 +154,7 @@ const LVL_KEY_PLAYED = 5 // the floor the last-played cell fades to
 const LVL_KEY_COLUMN = 10 // a key is down in this column
 const LVL_KEY_HELD = 15
 const LVL_KEY_LATCHED = 12
+const LVL_KEY_ARP_HELD = 9 // ARP lit: a call held, until its step sounds (then LVL_KEY_HELD)
 const LVL_ALL = 2 // clearly dimmer than the lanes
 const LVL_PRE_EMPTY = 1
 const LVL_PRE_STORED = 5
@@ -184,6 +197,13 @@ const noteStep = (lane: number, key: number, pad: boolean) => lane * NOTE_LANE +
 const CTL_RE = /^(rec)\/([0-7]|all)$|^(strike|bow|frz)\/([0-7])$/
 /** The largest value a control event carries (a recall's row, plus 8 when it strikes). */
 const CTL_MAX = 15
+
+/** The arp's id for the cell at `row` (0 at the bottom) of `lane` (0-7): rising id = up. */
+export const arpId = (row: number, lane: number) => row * LANES + lane
+
+/** One held call in surface's arp: the lane (0-7) and what its step plays. */
+interface ArpCall { lane: number; row: number; kind: "note" | "own" | "slice"; key: number }
+const AT_ADDR = "/surface/arp/call/at"
 
 /** The dial families height can set with PITCH unlit: the slot table's first five, in order. */
 const Y_FAMILIES = ["tone", "time", "force", "move", "place"]
@@ -232,6 +252,10 @@ export class PlaySurfacePage implements Page {
 	/** LATCH: runtime only, never saved. Cell index → the note step it keeps holding. */
 	private latch = false
 	private latched = new Map<number, number>()
+	/** ARP: runtime only, never saved. Held cells are calls in the app's arp, not direct notes. */
+	private arp = false
+	/** The calls surface was last told, id → signature, so only changes go out. */
+	private callsSent = new Map<number, string>()
 	/** Cells whose press ended a latched note: their release does nothing. */
 	private ending = new Set<number>()
 	private dampHeld = new Set<number>()
@@ -335,6 +359,13 @@ export class PlaySurfacePage implements Page {
 			return
 		}
 		if (ev.x === RIGHT_X) return this.rightKey(ev.y, down, ctx)
+		if (ev.x === ARP_X && ev.y === ARP_Y) {
+			if (down) {
+				this.arp = !this.arp
+				this.commit(ctx)
+			}
+			return
+		}
 
 		const lane = ev.x - LANE_X0
 		const isAll = ev.x === ALL_X
@@ -703,7 +734,9 @@ export class PlaySurfacePage implements Page {
 		}
 		if (this.recorders.some((r) => r.state === "recording")) this.syncTimer()
 
-		const want = new Set(hand)
+		// ARP lit: the hand's keys are calls in the app's arp; only a loop sounds direct.
+		const want = new Set(this.arp ? [] : hand)
+		this.callsOut(this.arp ? this.arpCalls(ctx) : new Map(), ctx)
 		const damp = Array.from({ length: LANES }, (_, l) => this.handDamp(l))
 		for (const r of this.recorders)
 			for (const step of r.sounding) {
@@ -725,6 +758,43 @@ export class PlaySurfacePage implements Page {
 		}
 		ctx.setDirty()
 	}
+	/** What the hand holds, as the arp's calls: held and latched cells, by id. */
+	private arpCalls(ctx: PageContext): Map<number, ArpCall> {
+		const calls = new Map<number, ArpCall>()
+		for (const m of [this.held, this.latched]) {
+			for (const [i, step] of m) {
+				const lane = Math.floor(step / NOTE_LANE)
+				const row = ROWS - 1 - Math.floor(i / ctx.size.width)
+				const kind = isOwn(step) ? "own" : (step & NOTE_PAD) !== 0 ? "slice" : "note"
+				calls.set(arpId(row, lane), { lane, row, kind, key: step & 127 })
+			}
+		}
+		return calls
+	}
+
+	/** Reconcile the calls against what surface was last told: new or changed ones go, gone ones leave. */
+	private callsOut(want: Map<number, ArpCall>, ctx: PageContext) {
+		for (const id of [...this.callsSent.keys()]) {
+			if (want.has(id)) continue
+			this.callsSent.delete(id)
+			this.send(ctx, "/surface/arp/call/off", id)
+		}
+		for (const [id, c] of want) {
+			const sig = `${c.lane}/${c.kind}/${c.kind === "note" ? c.key : c.row}`
+			if (this.callsSent.get(id) === sig) continue
+			this.callsSent.set(id, sig)
+			const n = c.lane + 1
+			const vel = float(Number(this.settings.velocity))
+			if (c.kind === "own") {
+				// Height sets the chosen dial (or nothing), as for a direct own note.
+				this.setY(c.lane, c.row, ctx)
+				this.send(ctx, "/surface/arp/call", id, n, "own", vel)
+			} else if (c.kind === "slice") this.send(ctx, "/surface/arp/call", id, n, "slice", c.row + 1)
+			else this.send(ctx, "/surface/arp/call", id, n, "note", c.key, vel)
+			this.lastRow[c.lane] = c.row
+		}
+	}
+
 	private noteOut(step: number, on: boolean, ctx: PageContext) {
 		const lane = Math.floor(step / NOTE_LANE)
 		const pad = (step & NOTE_PAD) !== 0
@@ -823,6 +893,8 @@ export class PlaySurfacePage implements Page {
 			this.lastSubMs = now
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "lanes")
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "preset")
+			// Which call's step sounds, to light it (a pattern topic, only while ARP is lit).
+			if (this.arp) link.send("/surface/subscribe", "127.0.0.1", link.port, "/surface/arp/call/*")
 		}
 		if (now - this.lastSlowMs >= SLOW_POLL_MS) {
 			this.lastSlowMs = now
@@ -830,6 +902,7 @@ export class PlaySurfacePage implements Page {
 		}
 		if (now - this.lastFastMs >= FAST_POLL_MS && now - this.mirror.heardAt < LINK_LOST_MS) {
 			this.lastFastMs = now
+			if (this.arp) get(AT_ADDR)
 			if (this.bigThreeOpen(ctx)) {
 				get("/surface/lane/*/arm")
 				get("/surface/lane/*/freeze")
@@ -891,6 +964,7 @@ export class PlaySurfacePage implements Page {
 		set(RIGHT_X, PITCH_Y, this.settings.pitch ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, STRIKE_Y, this.settings.strike ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, LATCH_Y, this.latch ? LVL_SW_ON : LVL_SW_OFF)
+		set(ARP_X, ARP_Y, this.arp ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, SLEW_Y, this.slewHeld ? LVL_SW_HELD : Number(this.settings.slew) > 0 ? LVL_SW_ON : LVL_SW_OFF)
 
 		drawSelector(f, ctx)
@@ -907,14 +981,17 @@ export class PlaySurfacePage implements Page {
 		const trigger = !this.settings.pitch && !this.mirror.slices(lane)
 		let columnDown = false
 		// A key down or a latched note: the column stays lit for as long as the note is kept.
-		for (let row = 0; row < ROWS; row++) if (this.held.has(cell(row)) || this.latched.has(cell(row))) columnDown = true
+		// ARP lit: the sounding call is the brightest, the rest of what is held sits below it.
+		const at = this.arp ? this.mirror.num(AT_ADDR) : undefined
+		for (let row = 0; row < ROWS; row++) if (this.held.has(cell(row)) || this.latched.has(cell(row))) columnDown = !this.arp
 		for (let row = 0; row < ROWS; row++) {
 			let lvl = trigger ? LVL_KEY_TRIGGER : LVL_KEY_BASE
 			// The cell last played stays lit and fades with the lane's real level.
 			if (row === this.lastRow[lane]) lvl = Math.max(lvl, levelLed(this.mirror.level(lane), LVL_KEY_PLAYED))
-			if (this.latched.has(cell(row))) lvl = LVL_KEY_LATCHED
+			if (this.latched.has(cell(row))) lvl = this.arp ? LVL_KEY_ARP_HELD : LVL_KEY_LATCHED
 			if (columnDown) lvl = Math.max(lvl, LVL_KEY_COLUMN)
-			if (this.held.has(cell(row))) lvl = LVL_KEY_HELD
+			if (this.held.has(cell(row))) lvl = this.arp ? LVL_KEY_ARP_HELD : LVL_KEY_HELD
+			if (this.arp && at === arpId(row, lane) && (this.held.has(cell(row)) || this.latched.has(cell(row)))) lvl = LVL_KEY_HELD
 			set(x, ROWS - 1 - row, lvl)
 		}
 	}
@@ -1045,6 +1122,7 @@ export const keymap: KeySpec[] = [
 	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it holds the lane on its own note; the row does nothing unless the y setting names a dial.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
+	{ x: ARP_X, y: ARP_Y, name: "Arp", help: "Lit: held KEYS go to the app's arp (one chord across the lanes) and play in turn; the sounding one is brightest. Loops still play direct. Unlighting lets them go.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Tap: glide on or off at the last time. Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
 ]
 

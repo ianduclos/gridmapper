@@ -544,3 +544,98 @@ describe("play-surface: reading surface", () => {
 		expect(r.out).toEqual([]) // asks nothing while you are on another page
 	})
 })
+
+describe("play-surface: arp (x14 y7)", () => {
+	const ARP = [14, 7] as const
+	const arpOn = (r: ReturnType<typeof rig>) => { r.tapKey(...ARP); r.sent() }
+
+	it("the key lights, and a press is a call (id = row * 8 + lane, row 0 at the bottom) instead of a note", () => {
+		const r = rig(); r.world(); r.sent()
+		expect(r.led(...ARP)).toBe(5)
+		arpOn(r)
+		expect(r.led(...ARP)).toBe(12)
+		r.key(LANE_X0, 7) // lane 1, row 0
+		r.key(LANE_X0 + 2, 5) // lane 3, row 2
+		expect(r.sent()).toEqual([
+			["/surface/arp/call", 0, 1, "note", 60, 0.8],
+			["/surface/arp/call", 18, 3, "note", 64, 0.8],
+		])
+		r.key(LANE_X0, 7, 0)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 0]])
+		r.key(LANE_X0 + 2, 5, 0)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 18]])
+	})
+
+	it("PITCH unlit is own; a REEL lane in slices is slice <n>, the row as the pad", () => {
+		const r = rig(); r.world(); r.sent()
+		arpOn(r)
+		r.tapKey(RIGHT, 4); r.sent() // PITCH off
+		r.key(LANE_X0 + 1, 6)
+		expect(r.sent()).toEqual([["/surface/arp/call", 9, 2, "own", 0.8]])
+		r.tapKey(RIGHT, 4); r.sent() // PITCH on again
+		r.key(LANE_X0 + 6, 4) // the REEL lane, row 3
+		expect(r.sent()).toEqual([["/surface/arp/call", 30, 7, "slice", 4]])
+	})
+
+	it("LATCH keeps a call after release, the same cell ends it, unlighting LATCH ends them", () => {
+		const r = rig(); r.world(); r.sent()
+		arpOn(r)
+		r.tapKey(RIGHT, 7); r.sent() // LATCH on
+		r.tapKey(LANE_X0, 7)
+		expect(r.sent()).toEqual([["/surface/arp/call", 0, 1, "note", 60, 0.8]])
+		r.tapKey(LANE_X0, 7) // the same cell: ends
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 0]])
+		r.tapKey(LANE_X0, 7); r.tapKey(LANE_X0 + 1, 7); r.sent()
+		r.tapKey(RIGHT, 7)
+		expect(r.sent().sort()).toEqual([["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1]])
+	})
+
+	it("unlighting ARP lets go of what is held, which then sounds direct", () => {
+		const r = rig(); r.world(); r.sent()
+		arpOn(r)
+		r.key(LANE_X0, 7); r.key(LANE_X0 + 1, 7); r.sent()
+		r.tapKey(...ARP)
+		expect(r.sent()).toEqual([
+			["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1],
+			["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 60, 0.8],
+		])
+		r.tapKey(...ARP) // and back: the notes go, the calls return
+		expect(r.sent().map((m) => m[0]).sort()).toEqual([
+			"/surface/arp/call", "/surface/arp/call", "/surface/lane/1/note/off", "/surface/lane/2/note/off",
+		])
+	})
+
+	it("loopers play back direct notes, never calls", () => {
+		const r = rig(); r.world(); arpOn(r)
+		r.tapKey(RIGHT, 0) // arm
+		r.key(LANE_X0, 7); vi.advanceTimersByTime(300); r.key(LANE_X0, 7, 0)
+		vi.advanceTimersByTime(300)
+		r.tapKey(RIGHT, 0) // close and play
+		r.sent()
+		vi.advanceTimersByTime(700)
+		const m = r.sent()
+		expect(m.some((x) => x[0] === "/surface/lane/1/note/on")).toBe(true)
+		expect(m.some((x) => x[0] === "/surface/arp/call")).toBe(false)
+		r.page.dispose(r.ctx)
+	})
+
+	it("the call whose step sounds is the brightest cell, the others held sit below", () => {
+		const r = rig(); r.world(); arpOn(r)
+		r.key(LANE_X0, 7); r.key(LANE_X0 + 1, 7)
+		r.say("/surface/arp/call/at", 1)
+		expect(r.led(LANE_X0 + 1, 7)).toBe(15)
+		expect(r.led(LANE_X0, 7)).toBe(9)
+		r.say("/surface/arp/call/at", 0)
+		expect(r.led(LANE_X0, 7)).toBe(15)
+		expect(r.led(LANE_X0 + 1, 7)).toBe(9)
+	})
+
+	it("subscribes for the sounding call only while ARP is lit", () => {
+		const r = rig()
+		vi.advanceTimersByTime(20)
+		expect(r.out).not.toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "/surface/arp/call/*"])
+		r.tapKey(...ARP); r.out.length = 0
+		vi.advanceTimersByTime(3100)
+		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "/surface/arp/call/*"])
+	})
+})
