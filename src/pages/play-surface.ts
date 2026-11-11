@@ -14,13 +14,17 @@
  *   y4  .    .  4    .                 all  .  .   PITCH
  *   y5  home .  5    .                 all  .  .   STRIKE
  *   y6  sh 2 .  6    .                 all  .  .   SLEW
- *   y7  sh 1 .  PRE  .                 all  .  .   (free)
+ *   y7  sh 1 .  PRE  .                 all  .  .   LATCH
  *
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
  *           SLICES takes the row as its pad number, 1 at the bottom. PITCH unlit: a press
  *           strikes the lane on the note it already has, and the row is how hard. The cell
  *           last played stays lit and fades with the lane's real level. No all column.
+ * LATCH   : while lit, a played note stays held after the key is let go; pressing the
+ *           same cell again ends it (iso's "press a parked note to subtract it");
+ *           unlighting LATCH ends every latched note. A loop records a latched note as a
+ *           held one. Latched notes outlive a page switch, like iso's sustain.
  * LAYERS  : each lane's column is a bar for one dial (util/playSlots.ts). Dim = still on
  *           the shared dial (F), bright = its own (V). A press pulls the lane there; the
  *           all column pulls all eight; shift 1 + lane sends it back to the shared dial,
@@ -106,6 +110,7 @@ const LOOPERS = 4
 const PITCH_Y = 4
 const STRIKE_Y = 5
 const SLEW_Y = 6
+const LATCH_Y = 7
 
 /** Chooser rows: 0 KEYS, 1-6 the parameter layers, 7 PRESETS. */
 export const LAYER_KEYS = 0
@@ -126,6 +131,7 @@ const LVL_KEY_BASE = 1
 const LVL_KEY_ROOT = 3 // the scale's root rows, so the hand can find the octave
 const LVL_KEY_PAD = 2 // a REEL lane in SLICES: pads, not pitches
 const LVL_KEY_HELD = 15
+const LVL_KEY_LATCHED = 12
 const LVL_BAR_F = 3 // on the shared dial
 const LVL_TIP_F = 6
 const LVL_BAR_V = 10 // pulled away
@@ -203,6 +209,11 @@ export class PlaySurfacePage implements Page {
 	// Hands.
 	/** Cell index → the note step it holds. */
 	private held = new Map<number, number>()
+	/** LATCH: runtime only, never saved. Cell index → the note step it keeps holding. */
+	private latch = false
+	private latched = new Map<number, number>()
+	/** Cells whose press ended a latched note: their release does nothing. */
+	private ending = new Set<number>()
 	private dampHeld = new Set<number>()
 	private dampAllHeld = false
 	/** The hand's notes as last tapped into the loops, so they see its changes only. */
@@ -264,8 +275,9 @@ export class PlaySurfacePage implements Page {
 
 	onBlur(ctx: PageContext) {
 		this.focused = false
-		// Your hands let go; the loops keep playing.
+		// Your hands let go; the loops and the latched notes keep playing.
 		this.held.clear()
+		this.ending.clear()
 		this.dampHeld.clear()
 		this.dampAllHeld = false
 		this.slewHeld = false
@@ -277,6 +289,7 @@ export class PlaySurfacePage implements Page {
 
 	dispose(ctx: PageContext) {
 		for (const r of this.recorders) r.clear()
+		this.latched.clear()
 		this.glides.clear()
 		this.onBlur(ctx)
 		this.unlisten?.()
@@ -310,7 +323,13 @@ export class PlaySurfacePage implements Page {
 		// A release always lets go of what its press took, whatever the layer is by now.
 		if (!down) {
 			const i = ledIndex(ctx.size, ev.x, ev.y)
-			if (this.held.delete(i)) return this.commit(ctx)
+			if (this.ending.delete(i)) return
+			const step = this.held.get(i)
+			if (step !== undefined) {
+				this.held.delete(i)
+				if (this.latch) this.latched.set(i, step)
+				return this.commit(ctx)
+			}
 			if (ev.y === DAMP_Y && (isAll ? this.dampAllHeld : this.dampHeld.has(lane))) {
 				if (isAll) this.dampAllHeld = false
 				else this.dampHeld.delete(lane)
@@ -361,12 +380,23 @@ export class PlaySurfacePage implements Page {
 			this.commit(ctx) // a stopped or cleared loop lets go of what it held
 			this.emitPatterns(ctx)
 			this.syncTimer()
+		} else if (y === LATCH_Y) {
+			this.latch = !this.latch
+			// Unlighting it ends every latched note.
+			if (!this.latch) this.latched.clear()
+			this.commit(ctx)
 		} else if (y === PITCH_Y) this.setSetting("pitch", !this.settings.pitch, ctx)
 		else if (y === STRIKE_Y) this.setSetting("strike", !this.settings.strike, ctx)
 	}
 
 	/** KEYS: a held note, a pad, or (PITCH unlit) a strike on the lane's own note. */
 	private playKey(ev: KeyEvent, lane: number, row: number, ctx: PageContext) {
+		const i = ledIndex(ctx.size, ev.x, ev.y)
+		// A latched cell pressed again ends its note rather than playing another.
+		if (this.latched.delete(i)) {
+			this.ending.add(i)
+			return this.commit(ctx)
+		}
 		this.lastRow[lane] = row
 		const pad = this.mirror.slices(lane)
 		if (!pad && !this.settings.pitch) {
@@ -375,7 +405,7 @@ export class PlaySurfacePage implements Page {
 			return
 		}
 		const key = pad ? Math.min(127, this.mirror.sliceRoot(lane) + row) : rowKey(row, this.rowScale())
-		this.held.set(ledIndex(ctx.size, ev.x, ev.y), noteStep(lane, key, pad))
+		this.held.set(i, noteStep(lane, key, pad))
 		this.commit(ctx)
 	}
 
@@ -562,7 +592,7 @@ export class PlaySurfacePage implements Page {
 	 */
 	private commit(ctx: PageContext) {
 		const now = Date.now()
-		const hand = new Set(this.held.values())
+		const hand = new Set([...this.held.values(), ...this.latched.values()])
 		for (const step of hand) if (!this.handNotes.has(step)) for (const r of this.recorders) r.record(step, true, now)
 		for (const step of this.handNotes) if (!hand.has(step)) for (const r of this.recorders) r.record(step, false, now)
 		this.handNotes = hand
@@ -740,6 +770,7 @@ export class PlaySurfacePage implements Page {
 		}
 		set(RIGHT_X, PITCH_Y, this.settings.pitch ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, STRIKE_Y, this.settings.strike ? LVL_SW_ON : LVL_SW_OFF)
+		set(RIGHT_X, LATCH_Y, this.latch ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, SLEW_Y, this.slewHeld ? LVL_SW_HELD : Number(this.settings.slew) > 0 ? LVL_SW_ON : LVL_SW_OFF)
 
 		drawSelector(f, ctx)
@@ -759,6 +790,7 @@ export class PlaySurfacePage implements Page {
 			let lvl = pad ? LVL_KEY_PAD : this.settings.pitch && row % len === 0 ? LVL_KEY_ROOT : LVL_KEY_BASE
 			// The cell last played stays lit and fades with the lane's real level.
 			if (row === this.lastRow[lane]) lvl = Math.max(lvl, levelLed(this.mirror.level(lane), LVL_KEY_ROOT + 1))
+			if (this.latched.has(ledIndex(ctx.size, x, y))) lvl = LVL_KEY_LATCHED
 			if (this.held.has(ledIndex(ctx.size, x, y))) lvl = LVL_KEY_HELD
 			set(x, y, lvl)
 		}
@@ -909,6 +941,7 @@ export const keymap: KeySpec[] = [
 	{ x: RIGHT_X, y: 0, h: LOOPERS, name: "Loopers 1-4", short: "Loop", help: "Record hand gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it strikes the lane's own note, the row is how hard.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
+	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Levels and recalls travel at that time.", lit: LVL_SW_OFF },
 ]
 

@@ -165,6 +165,43 @@ describe("play-surface: keys", () => {
 	})
 })
 
+describe("play-surface: latch", () => {
+	it("a played note stays held; its cell again ends it; unlighting LATCH ends them all", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(RIGHT, 7)
+		expect(r.led(RIGHT, 7)).toBe(12)
+		r.tapKey(LANE_X0, 7)
+		r.tapKey(LANE_X0 + 1, 6)
+		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 62, 0.8]])
+		expect(r.led(LANE_X0, 7)).toBe(12)
+		r.tapKey(LANE_X0, 7) // the same cell: subtract it, no new note
+		expect(r.sent()).toEqual([["/surface/lane/1/note/off", 60]])
+		r.tapKey(LANE_X0 + 6, 7) // a pad latches too
+		r.sent()
+		r.page.onBlur(r.ctx) // a page switch does not drop them
+		expect(r.sent()).toEqual([])
+		r.page.onFocus(r.ctx)
+		r.tapKey(RIGHT, 7)
+		expect(r.sent().map((x) => x[0]).sort()).toEqual(["/surface/lane/2/note/off", "/surface/lane/7/note/off"])
+		r.tapKey(LANE_X0, 7) // unlit: momentary again
+		expect(r.sent().map((x) => x[0])).toEqual(["/surface/lane/1/note/on", "/surface/lane/1/note/off"])
+	})
+
+	it("a loop records a latched note as a held one", () => {
+		const r = rig(); r.world()
+		r.tapKey(RIGHT, 7)
+		r.tapKey(RIGHT, 0) // arm
+		r.tapKey(LANE_X0, 7); vi.advanceTimersByTime(400)
+		r.tapKey(LANE_X0, 7); vi.advanceTimersByTime(200)
+		r.tapKey(RIGHT, 0) // plays
+		r.sent()
+		vi.advanceTimersByTime(300)
+		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8]])
+		vi.advanceTimersByTime(200)
+		expect(r.sent()).toEqual([["/surface/lane/1/note/off", 60]])
+	})
+})
+
 describe("play-surface: layers", () => {
 	it("a lane on the shared dial reads dim; a press pulls it to that level as its own", () => {
 		const r = rig(); r.world(); r.layer(1); r.sent()
