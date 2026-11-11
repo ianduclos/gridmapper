@@ -79,14 +79,24 @@ shared one. Seven rows per engine (y0-y6); the bottom row is HOME.
 
 ## Shift 2 (x0 y6)
 
-While held, the bottom three rows of the lanes and of the all column become:
+While it is open, the bottom three rows of the lanes (x4-x11) and of the all
+column (x12) stop being notes or presets and become three switches per lane.
+The rows above them keep working as before.
 
-- **y5 BOW:** switches the lane's bow on or off.
-- **y6 FREEZE:** switches the lane's freeze on or off.
-- **y7 DAMP:** damps the lane while pressed.
+| Row | Switch | A lane cell | The all cell (x12) |
+|---|---|---|---|
+| y5 | BOW | Switches that lane's bow on or off. | All eight on; if all are on already, all off. |
+| y6 | FREEZE | Switches that lane's freeze on or off. | The same, for freeze. |
+| y7 | DAMP | Damps that lane while the key is down. | Damps all eight while down. |
 
-Held about a second with nothing pressed, it stays open (the key blinks); a tap
-closes it.
+- **Open it:** hold x0 y6. Let go and it closes.
+- **Keep it open:** hold it about a second without pressing anything; it stays
+  open and the key blinks. A tap closes it.
+- **Lights:** medium = off, bright = on (BOW, FREEZE show what surface says);
+  DAMP is full bright while a lane is damped. The all cell is bright when all
+  eight are on.
+- It works on KEYS and on PRESETS alike, and the loopers record all three.
+- The home page (x0 y5) has the same three rows in the same order, always open.
 
 ## Loopers (x15 y0-y3)
 

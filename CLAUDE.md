@@ -380,7 +380,9 @@ src/
   pages/cells-surface.ts idk.surface fork of cells-hot — same behavior, own selector + shared-store keys
                          (DAMP_FROM_CELLS_SURFACE / DAMP_STATE_SURFACE); shares only read-only world data
   pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;
-                         EIGHT voices (cols 4-11), not six
+                         EIGHT voices (cols 4-11), not six.
+                         ROLL is gone; rows top to bottom y5 BOW · y6 FREEZE · y7 DAMP (as PLAY's shift 2),
+                         voice activity on y4
   pages/blank-surface.ts idk.surface fork of blank-hot — same behavior, own selector
   util/pageSelectorSurface.ts  THE LEFT COLUMN OF EVERY SURFACE PAGE (the system's, not the page's):
                          y0 iso (slot a) · y1 PLAY (slot c) · y2 Twister (hold) · y3-y4 the page's own ·

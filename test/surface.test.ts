@@ -96,11 +96,14 @@ describe("set-surface voices 7-8", () => {
 		const r = rig(CellsSurfacePage, SetSurfacePage)
 		r.set.onKey({ x: 11, y: 6, s: 1 }, r.sc) // freeze, voice 8
 		r.set.onKey({ x: 10, y: 7, s: 1 }, r.sc) // damp, voice 7
-		r.set.onKey({ x: 2, y: 4, s: 1 }, r.sc) // bow ALL
+		r.set.onKey({ x: 2, y: 5, s: 1 }, r.sc) // bow ALL: top of the three, as on PLAY's shift 2
+		r.set.onKey({ x: 4, y: 4, s: 1 }, r.sc) // the row above is voice activity, not a switch
+		r.set.onOsc!("/voice/1/roll", [1], r.sc) // roll is gone: ignored
 		const voice = r.sent.filter((m) => m.path === "/grid/out/page/f/voice").map((m) => m.args)
 		expect(voice).toContainEqual([8, "freeze", 1])
 		expect(voice).toContainEqual([7, "damp", 1])
 		expect(voice.filter((a) => a[1] === "bow")).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((v) => [v, "bow", 1]))
+		expect(voice.some((a) => a[1] === "roll")).toBe(false)
 		const f = r.set.render(r.sc)
 		expect(f[ledIndex(SIZE, 11, 6)]).toBe(12)
 		expect(f[ledIndex(SIZE, 10, 7)]).toBe(15)

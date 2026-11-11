@@ -1,9 +1,10 @@
 /* Page: Set Surface  (idk.surface fork of set-hot — voice control for the modal instrument)
  * ------------------------------------------------------------------------------
- * Summary : Per-voice switches for the eight modal voices (idk.surface, same OSC contract as hotelier), in the bottom four rows.
- * Input   : col 0 = the system's column (util/pageSelectorSurface.ts). Bottom four rows,
- *           bottom → top: DAMP (row 7, momentary — damped while held), FREEZE (row 6),
- *           ROLL (row 5), BOW (row 4) — the last three latching toggles.
+ * Summary : Per-voice switches for the eight voices (idk.surface), in the bottom three rows.
+ * Input   : col 0 = the system's column (util/pageSelectorSurface.ts). Bottom three rows,
+ *           top → bottom: BOW (row 5), FREEZE (row 6), DAMP (row 7, momentary — damped
+ *           while held): the same order as the PLAY page's shift 2. ROLL was taken off
+ *           (Ian, 2026-11-11): nothing is sent or taken for it any more.
  *           Col 2 = ALL: it sets all eight voices in its row (a toggle turns them all ON
  *           unless all eight already are, then all OFF; damp-all holds all eight down).
  *           Cols 4-11 = voices 1-8. Cols 1 and 3 are gaps.
@@ -19,20 +20,19 @@
  *           VoicesHot): a press sends /twister/in/focus/page <a-e> straight to twistermapper.
  *           The lit key is the last one pressed here — the Twister's own focus changes are
  *           not reported back to us.
- * Output  : /grid/out/page/<slot>/voice <n 1-8> <damp|freeze|bow|roll> <1|0>, per voice
+ * Output  : /grid/out/page/<slot>/voice <n 1-8> <damp|freeze|bow> <1|0>, per voice
  *           and only on a CHANGE — an ALL press sends one message per voice that moved.
  * Input   : (from Max, never echoed back)
- *           /grid/in/page/<slot>/voice/<n>/<damp|freeze|bow|roll> <1|0> — sync a switch
+ *           /grid/in/page/<slot>/voice/<n>/<damp|freeze|bow> <1|0> — sync a switch
  *           to the instrument's real state (e.g. after its boot reset or a sound recall).
  *           /grid/in/page/<slot>/voice/<n>/state <0 idle|1 triggered|2 ringing> — the
- *           voice activity FEEDBACK, drawn on row 3 above each voice (provisional spot).
+ *           voice activity FEEDBACK, drawn on row 4, just above each voice's switches.
  *           Also out: /grid/out/page/<slot>/patterns <json> [{state, ms}] per looper.
  * Display : toggles dim 2 off / 12 on; damp 15 while held; ALL 12 when all eight are on,
  *           6 when some are. Feedback: triggered flashes 15 for TRIGGER_MS, ringing 5.
  * Rules   : The SWITCHES are runtime state — not saved, nothing sent at load, so recalling a
  *           preset can never unfreeze a voice. The LOOPS are content and are saved in a
- *           preset (serialize/restore); they come back stopped. Roll starts ARMED on all eight,
- *           matching the instrument's own default (`voice N roll` defaults to 1). Damp is
+ *           preset (serialize/restore); they come back stopped. Damp is
  *           released on blur, since the key-up would otherwise land on another page.
  * ------------------------------------------------------------------------------
  */
@@ -54,12 +54,13 @@ import { DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore
 export const VOICES = 8
 const COL_ALL = 2
 const VOICE_COL0 = 4 // voice 1; voices run to col 11
-const FEEDBACK_ROW = 3
+const FEEDBACK_ROW = 4
 
-export const PARAMS = ["damp", "freeze", "bow", "roll"] as const
+export const PARAMS = ["damp", "freeze", "bow"] as const
 export type Param = (typeof PARAMS)[number]
 const isParam = (v: string): v is Param => (PARAMS as readonly string[]).includes(v)
-const ROW_OF: Record<Param, number> = { damp: 7, freeze: 6, roll: 5, bow: 4 }
+/** Top to bottom BOW, FREEZE, DAMP: the order of the PLAY page's shift 2. */
+const ROW_OF: Record<Param, number> = { bow: 5, freeze: 6, damp: 7 }
 const PARAM_AT_ROW = new Map<number, Param>(PARAMS.map((p) => [ROW_OF[p], p]))
 
 const LVL_OFF = 2
@@ -87,10 +88,10 @@ const TIMER_MS = 5
 const MAX_PATTERN_EVENTS = 20_000
 
 type Toggle = Exclude<Param, "damp">
-const TOGGLES: readonly Toggle[] = ["freeze", "roll", "bow"]
+const TOGGLES: readonly Toggle[] = ["freeze", "bow"]
 const ctlId = (param: Toggle, voice: number) => `${param}/${voice + 1}`
 const parseCtl = (id: string): { param: Toggle; voice: number } | null => {
-	const m = /^(freeze|roll|bow)\/([1-8])$/.exec(id)
+	const m = /^(freeze|bow)\/([1-8])$/.exec(id)
 	return m ? { param: m[1] as Toggle, voice: Number(m[2]) - 1 } : null
 }
 
@@ -101,7 +102,6 @@ export class SetSurfacePage implements Page {
 	private toggles: Record<Toggle, boolean[]> = {
 		freeze: new Array(VOICES).fill(false),
 		bow: new Array(VOICES).fill(false),
-		roll: new Array(VOICES).fill(true),
 	}
 	/** Damp is momentary: a voice is damped while its own key OR the ALL key is down. */
 	private dampHeld = new Set<number>()
@@ -386,10 +386,9 @@ export class SetSurfacePage implements Page {
 
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
-	{ x: COL_ALL, y: ROW_OF.bow, h: 4, name: "All voices", short: "All", help: "Set the whole row for all eight voices (damp: hold).", lit: [LVL_SOME, LVL_OFF, LVL_SOME, LVL_OFF] },
+	{ x: COL_ALL, y: ROW_OF.bow, h: 3, name: "All voices", short: "All", help: "Set the whole row for all eight voices (damp: hold).", lit: [LVL_SOME, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: ROW_OF.damp, w: VOICES, name: "Damp", help: "Hold to damp that voice.", lit: LVL_OFF },
 	{ x: VOICE_COL0, y: ROW_OF.freeze, w: VOICES, name: "Freeze", help: "Toggle freeze per voice.", lit: [LVL_ON, LVL_OFF, LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
-	{ x: VOICE_COL0, y: ROW_OF.roll, w: VOICES, name: "Roll", help: "Toggle roll per voice.", lit: LVL_OFF },
 	{ x: VOICE_COL0, y: ROW_OF.bow, w: VOICES, name: "Bow", help: "Toggle bow per voice.", lit: [LVL_OFF, LVL_ON, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] },
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
