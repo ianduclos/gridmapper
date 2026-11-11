@@ -79,7 +79,8 @@ twister's `/twister/...` vocabulary:
 > `5713x` block). twistermapper runs constantly and holds `57120/57121`, and its web
 > UI owns `57190`, so gridmapper's sim UI uses **57191**. Don't collide.
 > The Live link holds UDP **11001** while a clips page is loaded (and sends to 11000, the
-> idk.clips fork).
+> idk.clips fork). The surface link holds UDP **57133** while a play-surface page is loaded
+> (and sends to idk.surface on 57150; 57151 is surface's own OSCQuery, don't use it).
 
 - `/grid/out/hello` on transport ready.
 - `/grid/out/focus/page <a..h>`; `/grid/out/page/<slot>/type <name>`.
@@ -377,7 +378,21 @@ src/
   pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;
                          EIGHT voices (cols 4-11), not six
   pages/blank-surface.ts idk.surface fork of blank-hot — same behavior, own selector
-  util/pageSelectorSurface.ts  idk.surface fork of pageSelector.ts — own twisterHeld, nothing imported from the original
+  util/pageSelectorSurface.ts  THE LEFT COLUMN OF EVERY SURFACE PAGE (the system's, not the page's):
+                         y0 iso (slot a) · y1 PLAY (slot c) · y2 Twister (hold) · y3-y4 the page's own ·
+                         y5 home (slot f, set-surface for now) · y6 shift 2 · y7 shift 1. Cells (slot b)
+                         has no key. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
+                         pageSelector.ts: own twisterHeld, nothing imported from the original.
+                         iso-surface's panel/transposer keys sit on y3/y4, cells-surface's damp on y4.
+  pages/play-surface.ts  idk.surface's PLAY page (slot c): lanes 1-8 on x4-x11, chooser on x2 (KEYS, six
+                         parameter layers, PRESETS), all column x12, x15 loopers + PITCH/STRIKE/SLEW.
+                         Plays idk.surface DIRECTLY over ctx.surface (io/liveLink.ts createSurfaceLink:
+                         send 57150, listen 57133, lazy, loopback), never through Max's link. Reads by
+                         /surface/get polling while focused + `lanes`/`preset` subscriptions. Spec:
+                         idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
+  util/playSlots.ts      the six slots per engine as DATA; test/playSlots.test.ts checks every address
+                         against idk.surface's generated docs/osc/addresses.txt (never guess one).
+  util/playModel.ts      SurfaceMirror (last value heard per address) + the pure row/bar/level rules.
   util/pageSelector.ts   col 0 rows 0-5 → ctx.focus(slot a-f). Rows 6-7 of col 0 are
                          PER-PAGE assignable: the selector neither consumes nor draws them.
                          Pages move focus via ctx.focus and save stored content via

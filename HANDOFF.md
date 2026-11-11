@@ -1,8 +1,14 @@
 ---
 project: gridmapper
-updated: 2026-10-27
-entries: 1
+updated: 2026-11-11
+entries: 2
 ---
+
+### PLAY page for idk.surface — opened 2026-11-11, owner: claude-gridmapper
+- done: branch `feat/play-surface` (not pushed, not merged): the left column is the system's on every surface page (util/pageSelectorSurface.ts), a third OSC peer `ctx.surface` (57150 out / 57133 in), pages/play-surface.ts + util/playSlots.ts + util/playModel.ts, 657 tests. The launchd agent runs this branch; slot c of `idk.surface` is play-surface.
+- next: Ian's playing check (spec section 7); tune shift 2's latch on hardware; merge to main once played. No CHANGES.md entry written yet (the surface pages' left column and the new port are a boundary change).
+- blockers: none. Unplayed: nothing was ever written to the running idk.surface.
+- context: idk.surface docs/specs/2026-11-11-grid-play-page-design.md; report at idk.surface/.superpowers/reports/play-page.md (defaults chosen, gaps on surface's side).
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
 - done: design settled with Ian; open items resolved 2026-09-27 (step-or-Hz entries, edits land at the cutoff, variant lengths divide the world cycle, pitch loops per world + row); phased build plan written.
