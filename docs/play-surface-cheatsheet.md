@@ -44,7 +44,11 @@ x2 y1-y6 are dark and do nothing. There is no arp on this page.
   The row is the pitch, lowest at the bottom, in the scale iso is set to.
 - **REEL lane in slices:** the row is the pad number, 1 at the bottom.
 - **PITCH unlit:** every lane column is lit solid. A press plays the lane on the
-  note it already has, held while the key is down; higher is harder.
+  note it already has, held while the key is down, always equally hard. Height
+  means nothing, unless the page setting **y** (web panel: "PITCH off: height
+  sets") names a family: tone, time, force, move or place. Then the row sets
+  that dial for the lane's engine, as the lane's own, before it plays (bottom =
+  lowest). HOME or a preset recall hands the dial back. One choice for all lanes.
 - **Lights:** the field is even and dim. The cell you last played stays bright and
   fades as the lane dies away. While a key is down, its whole column lights.
 - **LATCH lit:** a note stays after you let go, and its column stays lit for as

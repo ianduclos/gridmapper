@@ -22,7 +22,9 @@
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
  *           SLICES takes the row as its pad number, 1 at the bottom. PITCH unlit: a press
- *           holds the lane on the note it already has (own/on, own/off), the row is how hard. The
+ *           holds the lane on the note it already has (own/on, own/off) at the one fixed
+ *           velocity; the row means nothing unless the `y` setting names a dial family
+ *           (tone, time, force, move, place), which the row then sets as the lane's own. The
  *           field is EVEN (no root rows; Ian, 2026-11-11): only the cell last played is
  *           bright, fading with the lane's real level. PITCH unlit, every lane column is
  *           lit solid and equal: one trigger each. Any key held in a lane's column lights
@@ -88,6 +90,7 @@ import {
 	ownerAddr,
 	sharedAddr,
 	partSuffix,
+	partsFor,
 	suffixesFor,
 	type Engine,
 	type Part,
@@ -172,7 +175,7 @@ const MAX_PATCHES = 64
 // shows.
 const NOTE_LANE = 512 // note step = lane * 512 + (pad ? 256 : 0) + key
 const NOTE_PAD = 256
-/** PITCH unlit: the lane held on its OWN note. Step = lane * 512 + 128 + row (how hard). */
+/** PITCH unlit: the lane held on its OWN note. Step = lane * 512 + 128 + row (what `y` sets). */
 const NOTE_OWN = 128
 const ownStep = (lane: number, row: number) => lane * NOTE_LANE + NOTE_OWN + row
 const isOwn = (step: number) => step < DAMP_STEP && (step & NOTE_PAD) === 0 && (step & NOTE_OWN) !== 0
@@ -181,6 +184,9 @@ const noteStep = (lane: number, key: number, pad: boolean) => lane * NOTE_LANE +
 const CTL_RE = /^(rec)\/([0-7]|all)$|^(strike|bow|frz)\/([0-7])$/
 /** The largest value a control event carries (a recall's row, plus 8 when it strikes). */
 const CTL_MAX = 15
+
+/** The dial families height can set with PITCH unlit: the slot table's first five, in order. */
+const Y_FAMILIES = ["tone", "time", "force", "move", "place"]
 
 const SPECS: SettingSpec[] = [
 	{ key: "velocity", label: "note velocity", type: "number", min: 0.05, max: 1, step: 0.05, default: 0.8, help: "How hard a KEYS note and a preset's strike play." },
@@ -193,6 +199,7 @@ const SPECS: SettingSpec[] = [
 	{ key: "slewTime", label: "slew time a tap switches on (s)", type: "enum", options: SLEW_TIMES.slice(1).map(String), default: "1" },
 	{ key: "latchMs", label: "shift 2 stays open after (ms)", type: "number", min: 200, max: 3000, step: 50, default: 1000 },
 	{ key: "pitch", label: "PITCH: presses set the note", type: "toggle", default: true },
+	{ key: "y", label: "PITCH off: height sets", type: "enum", options: ["off", ...Y_FAMILIES], default: "off", help: "With PITCH unlit, what the row of a press sets on the lane before it plays: nothing, or that family's dial for the lane's engine (as the lane's own). One choice for all eight lanes." },
 	{ key: "strike", label: "STRIKE: a recall also strikes", type: "toggle", default: true },
 ]
 const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
@@ -533,6 +540,30 @@ export class PlaySurfacePage implements Page {
 		if (known !== "follow") follow()
 	}
 
+	/**
+	 * PITCH unlit with `y` chosen: the row sets that family's dial on the lane, as the lane's
+	 * own (V), at once and before the note. An engine with no dial there just plays. HOME or
+	 * a recall hands the dial back like any other.
+	 */
+	private setY(lane: number, row: number, ctx: PageContext) {
+		const slot = Y_FAMILIES.indexOf(String(this.settings.y))
+		if (slot < 0) return
+		for (const p of partsFor(this.mirror.engine(lane), slot)) {
+			const addr = laneAddr(lane + 1, p)
+			const owner = ownerAddr(lane + 1, p)
+			const v = (row / (ROWS - 1)) * p.scale
+			this.glides.delete(addr)
+			// The value first, so taking the dial over never sounds the lane's stale one.
+			this.send(ctx, addr, float(v))
+			this.mirror.set(addr, v)
+			if (this.mirror.str(owner) !== "voice") {
+				this.send(ctx, owner, "voice")
+				this.mirror.set(owner, "voice")
+			}
+			this.currentPreset[lane] = -1
+		}
+	}
+
 	private setFlag(lane: number, key: "arm" | "freeze" | "trem", on: boolean, ctx: PageContext) {
 		const addr = `/surface/lane/${lane + 1}/${key}`
 		if (this.mirror.num(addr) === (on ? 1 : 0)) return
@@ -700,9 +731,11 @@ export class PlaySurfacePage implements Page {
 		const key = step & 127
 		const n = lane + 1
 		if (isOwn(step)) {
-			if (on) this.send(ctx, `/surface/lane/${n}/own/on`, float(rowVelocity(step & 7)))
-			else this.send(ctx, `/surface/lane/${n}/own/off`)
-			if (on) this.lastRow[lane] = step & 7
+			if (!on) return this.send(ctx, `/surface/lane/${n}/own/off`)
+			// Height is not how hard (Ian, 2026-11-11): it sets the chosen dial, or nothing.
+			this.setY(lane, step & 7, ctx)
+			this.send(ctx, `/surface/lane/${n}/own/on`, float(Number(this.settings.velocity)))
+			this.lastRow[lane] = step & 7
 			return
 		}
 		if (!on) return this.send(ctx, `/surface/lane/${n}/note/off`, key)
@@ -1009,7 +1042,7 @@ export const keymap: KeySpec[] = [
 	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
 	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "On PRESETS: every lane to its own engine's row. Shift 1 + all also strikes them. Nothing on KEYS.", lit: LVL_ALL },
 	{ x: RIGHT_X, y: 0, h: LOOPERS, name: "Loopers 1-4", short: "Loop", help: "Record hand gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
-	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it holds the lane on its own note, the row is how hard.", lit: LVL_SW_ON },
+	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it holds the lane on its own note; the row does nothing unless the y setting names a dial.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Tap: glide on or off at the last time. Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
