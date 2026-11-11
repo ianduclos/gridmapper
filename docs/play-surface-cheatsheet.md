@@ -31,7 +31,7 @@ y7  sh 1  PRE                   all   LATCH
 | x4-x11 | lanes 1-8 | One column per lane. |
 | x12 | all | The same press on all eight lanes (PRESETS only). |
 | x15 y0-y3 | loopers 1-4 | Record and loop what your hands do. |
-| x15 y4 | PITCH | Lit: a press sets the note. Unlit: a press only strikes. |
+| x15 y4 | PITCH | Lit: a press sets the note. Unlit: it plays the lane's own note. |
 | x15 y5 | STRIKE | Lit: recalling a preset also strikes the lane. Starts lit. |
 | x15 y6 | SLEW | Tap: glide on or off. Hold: choose the time. |
 | x15 y7 | LATCH | Lit: notes stay after you let go. |
@@ -43,12 +43,14 @@ x2 y1-y6 are dark and do nothing. There is no arp on this page.
 - **Press a lane cell:** plays that lane and holds the note while the key is down.
   The row is the pitch, lowest at the bottom, in the scale iso is set to.
 - **REEL lane in slices:** the row is the pad number, 1 at the bottom.
-- **PITCH unlit:** every lane column is lit solid. A press strikes the lane on the
-  note it already has; higher is harder.
+- **PITCH unlit:** every lane column is lit solid. A press plays the lane on the
+  note it already has, held while the key is down; higher is harder.
 - **Lights:** the field is even and dim. The cell you last played stays bright and
   fades as the lane dies away. While a key is down, its whole column lights.
-- **LATCH lit:** a note stays after you let go. Press the same cell again to end
-  it. Unlighting LATCH ends them all. Latched notes outlive a page switch.
+- **LATCH lit:** a note stays after you let go, and its column stays lit for as
+  long as it is kept. Press the same cell again to end it. Unlighting LATCH ends
+  them all, bowed ones too. Works with PITCH lit or unlit. Latched notes outlive
+  a page switch.
 
 ## PRESETS (x2 y7)
 

@@ -22,11 +22,11 @@
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
  *           SLICES takes the row as its pad number, 1 at the bottom. PITCH unlit: a press
- *           strikes the lane on the note it already has, and the row is how hard. The
+ *           holds the lane on the note it already has (own/on, own/off), the row is how hard. The
  *           field is EVEN (no root rows; Ian, 2026-11-11): only the cell last played is
  *           bright, fading with the lane's real level. PITCH unlit, every lane column is
  *           lit solid and equal: one trigger each. Any key held in a lane's column lights
- *           the whole column while it is down. No all column.
+ *           the whole column while it is down, and a latched note keeps it lit. No all column.
  * LATCH   : while lit, a played note stays held after the key is let go; pressing the
  *           same cell again ends it (iso's "press a parked note to subtract it");
  *           unlighting LATCH ends every latched note. A loop records a latched note as a
@@ -172,6 +172,10 @@ const MAX_PATCHES = 64
 // shows.
 const NOTE_LANE = 512 // note step = lane * 512 + (pad ? 256 : 0) + key
 const NOTE_PAD = 256
+/** PITCH unlit: the lane held on its OWN note. Step = lane * 512 + 128 + row (how hard). */
+const NOTE_OWN = 128
+const ownStep = (lane: number, row: number) => lane * NOTE_LANE + NOTE_OWN + row
+const isOwn = (step: number) => step < DAMP_STEP && (step & NOTE_PAD) === 0 && (step & NOTE_OWN) !== 0
 const DAMP_STEP = 8192 // damp step = DAMP_STEP + lane
 const noteStep = (lane: number, key: number, pad: boolean) => lane * NOTE_LANE + (pad ? NOTE_PAD : 0) + key
 const CTL_RE = /^(rec)\/([0-7]|all)$|^(strike|bow|frz)\/([0-7])$/
@@ -231,8 +235,6 @@ export class PlaySurfacePage implements Page {
 	private slewHeld = false
 	private slewDownAt = 0
 	private slewPicked = false
-	/** PITCH unlit: cells whose press struck, lit as held until they are let go. */
-	private strikeDown = new Set<number>()
 	/** Shift 2: when it went down, whether anything was pressed under it, and the latch. */
 	private shift2DownAt = 0
 	private shift2Used = false
@@ -296,7 +298,6 @@ export class PlaySurfacePage implements Page {
 		this.dampHeld.clear()
 		this.dampAllHeld = false
 		this.slewHeld = false
-		this.strikeDown.clear()
 		this.shift2Latched = false
 		this.commit(ctx)
 		releaseShifts(ctx)
@@ -344,7 +345,6 @@ export class PlaySurfacePage implements Page {
 		if (!down) {
 			const i = ledIndex(ctx.size, ev.x, ev.y)
 			if (this.ending.delete(i)) return
-			if (this.strikeDown.delete(i)) return
 			const step = this.held.get(i)
 			if (step !== undefined) {
 				this.held.delete(i)
@@ -434,10 +434,9 @@ export class PlaySurfacePage implements Page {
 		this.lastRow[lane] = row
 		const pad = this.mirror.slices(lane)
 		if (!pad && !this.settings.pitch) {
-			this.tap(`strike/${lane}`, row)
-			this.strikeOwn(lane, rowVelocity(row), ctx)
-			this.strikeDown.add(i)
-			return
+			// Held like any note, so LATCH keeps it and letting go ends it (a bowed lane too).
+			this.held.set(i, ownStep(lane, row))
+			return this.commit(ctx)
 		}
 		const key = pad ? Math.min(127, this.mirror.sliceRoot(lane) + row) : rowKey(row, this.rowScale())
 		this.held.set(i, noteStep(lane, key, pad))
@@ -680,7 +679,12 @@ export class PlaySurfacePage implements Page {
 				if (step >= DAMP_STEP) damp[step - DAMP_STEP] = true
 				else want.add(step)
 			}
-		for (const step of this.notesSent) if (!want.has(step)) this.noteOut(step, false, ctx)
+		for (const step of this.notesSent) {
+			if (want.has(step)) continue
+			// A lane has one own note: it is let go only when nothing holds the lane on it.
+			if (isOwn(step) && [...want].some((w) => isOwn(w) && Math.floor(w / NOTE_LANE) === Math.floor(step / NOTE_LANE))) continue
+			this.noteOut(step, false, ctx)
+		}
 		for (const step of want) if (!this.notesSent.has(step)) this.noteOut(step, true, ctx)
 		this.notesSent = want
 		for (let l = 0; l < LANES; l++) {
@@ -695,6 +699,12 @@ export class PlaySurfacePage implements Page {
 		const pad = (step & NOTE_PAD) !== 0
 		const key = step & 127
 		const n = lane + 1
+		if (isOwn(step)) {
+			if (on) this.send(ctx, `/surface/lane/${n}/own/on`, float(rowVelocity(step & 7)))
+			else this.send(ctx, `/surface/lane/${n}/own/off`)
+			if (on) this.lastRow[lane] = step & 7
+			return
+		}
 		if (!on) return this.send(ctx, `/surface/lane/${n}/note/off`, key)
 		// A lane that keeps its own note (V) ignores the pitch of a note sent to it, so the
 		// row would not set it: move its own note first. Pads never touch it.
@@ -863,14 +873,15 @@ export class PlaySurfacePage implements Page {
 		// PITCH unlit, the column is one trigger (a pad lane keeps its pads).
 		const trigger = !this.settings.pitch && !this.mirror.slices(lane)
 		let columnDown = false
-		for (let row = 0; row < ROWS; row++) if (this.held.has(cell(row)) || this.strikeDown.has(cell(row))) columnDown = true
+		// A key down or a latched note: the column stays lit for as long as the note is kept.
+		for (let row = 0; row < ROWS; row++) if (this.held.has(cell(row)) || this.latched.has(cell(row))) columnDown = true
 		for (let row = 0; row < ROWS; row++) {
 			let lvl = trigger ? LVL_KEY_TRIGGER : LVL_KEY_BASE
 			// The cell last played stays lit and fades with the lane's real level.
 			if (row === this.lastRow[lane]) lvl = Math.max(lvl, levelLed(this.mirror.level(lane), LVL_KEY_PLAYED))
 			if (this.latched.has(cell(row))) lvl = LVL_KEY_LATCHED
 			if (columnDown) lvl = Math.max(lvl, LVL_KEY_COLUMN)
-			if (this.held.has(cell(row)) || this.strikeDown.has(cell(row))) lvl = LVL_KEY_HELD
+			if (this.held.has(cell(row))) lvl = LVL_KEY_HELD
 			set(x, ROWS - 1 - row, lvl)
 		}
 	}
@@ -998,7 +1009,7 @@ export const keymap: KeySpec[] = [
 	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
 	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "On PRESETS: every lane to its own engine's row. Shift 1 + all also strikes them. Nothing on KEYS.", lit: LVL_ALL },
 	{ x: RIGHT_X, y: 0, h: LOOPERS, name: "Loopers 1-4", short: "Loop", help: "Record hand gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
-	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it strikes the lane's own note, the row is how hard.", lit: LVL_SW_ON },
+	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it holds the lane on its own note, the row is how hard.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Tap: glide on or off at the last time. Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },

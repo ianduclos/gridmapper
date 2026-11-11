@@ -131,7 +131,7 @@ describe("play-surface: keys", () => {
 		r.key(LANE_X0 + 6, 4); expect(r.sent()).toContainEqual(["/surface/lane/7/note/on", 63, 0.8])
 	})
 
-	it("PITCH unlit: a press strikes the lane's own note, soft at the bottom", () => {
+	it("PITCH unlit: a press holds the lane on its own note, soft at the bottom", () => {
 		const r = rig(); r.world()
 		r.say("/surface/state/lane/2/pitch", 330); r.sent()
 		expect(r.led(RIGHT, 4)).toBe(12)
@@ -146,11 +146,24 @@ describe("play-surface: keys", () => {
 		expect(r.led(LANE_X0 + 2, 5)).toBe(6)
 		r.key(LANE_X0, 0, 0)
 		expect(r.led(LANE_X0, 5)).toBe(6)
+		r.key(LANE_X0 + 1, 7, 0) // one of lane 2's two keys up: it is still held
+		r.key(LANE_X0 + 1, 0, 0)
 		expect(r.sent()).toEqual([
-			["/surface/lane/2/strike/own", 0.125],
-			["/surface/lane/2/strike/own", 1],
-			["/surface/lane/1/strike/own", 1],
+			["/surface/lane/2/own/on", 0.125],
+			["/surface/lane/2/own/on", 1],
+			["/surface/lane/1/own/on", 1],
+			["/surface/lane/1/own/off"],
+			["/surface/lane/2/own/off"],
 		])
+		// LATCH keeps it, its column stays lit, and unlighting LATCH lets it go.
+		r.tapKey(RIGHT, 7)
+		r.tapKey(LANE_X0 + 2, 3)
+		expect(r.sent()).toEqual([["/surface/lane/3/own/on", 0.625]])
+		expect(r.led(LANE_X0 + 2, 3)).toBe(12)
+		expect(r.led(LANE_X0 + 2, 6)).toBe(10)
+		r.tapKey(RIGHT, 7)
+		expect(r.sent()).toEqual([["/surface/lane/3/own/off"]])
+		expect(r.led(LANE_X0 + 2, 6)).toBe(6)
 	})
 
 	it("the field is even: no root rows, and a held key lights its whole column", () => {
