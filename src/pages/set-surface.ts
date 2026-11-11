@@ -44,7 +44,8 @@
  *             lane home (all its dials back to the shared ones). x2 y3 = select all
  *             eight; shift 2 + x2 y3 = everyone home.
  *           y4 x4-x11 MOTION on/off (/surface/lane/N/trem); x2 y4 = all.
- *           y0 x4-x7 FX tracks A B C D, x9 x10 S1 S2, x11 MASTER: shows that chain.
+ *           y0 x4-x7 FX tracks A B C D, x9 x10 S1 S2, x11 MASTER: shows that chain and brings the
+ *             FX page to the front in the window (surface does both inside /surface/view/fx).
  *           The loopers record MOTION with the rest; never focus or selection changes,
  *           FX track changes or the ways home.
  * ------------------------------------------------------------------------------
@@ -607,8 +608,8 @@ export const keymap: KeySpec[] = [
 				{ x: VOICE_COL0, y: FOCUS_ROW, w: VOICES, name: "Focus", help: "Focus that lane alone. Shift 1 + press adds or drops it; hold one and long-press another for the range. Shift 2 + press: that lane home. Flashes on sound.", lit: [LVL_FOCUS, LVL_LINKED, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF, LVL_OFF] },
 				{ x: VOICE_COL0, y: MOTION_ROW, w: VOICES, name: "Motion", help: "Toggle the lane's motion (tremolo).", lit: LVL_OFF },
 				{ x: COL_ALL, y: FOCUS_ROW, h: 2, name: "All: select / motion", short: "All", help: "y3 selects all eight (shift 2: everyone home); y4 switches motion for all.", lit: LVL_OFF },
-				{ x: 4, y: FX_ROW, w: 4, name: "FX tracks A-D", short: "FX", help: "Show that track's chain in the window.", lit: LVL_FX_OFF },
-				{ x: 9, y: FX_ROW, w: 3, name: "S1, S2, Master", short: "FX", help: "Show that chain in the window.", lit: LVL_FX_OFF },
+				{ x: 4, y: FX_ROW, w: 4, name: "FX tracks A-D", short: "FX", help: "Bring the FX page to the front in the window, on that track's chain.", lit: LVL_FX_OFF },
+				{ x: 9, y: FX_ROW, w: 3, name: "S1, S2, Master", short: "FX", help: "Bring the FX page to the front in the window, on that chain.", lit: LVL_FX_OFF },
 			] as KeySpec[])
 		: []),
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
