@@ -7,7 +7,7 @@ import { SetHotPage } from "../src/pages/set-hot.js"
 import { SharedStore, DAMP_FROM_CELLS, DAMP_FROM_CELLS_SURFACE, DAMP_STATE, DAMP_STATE_SURFACE } from "../src/core/sharedStore.js"
 import { createPresetStore } from "../src/core/presetStore.js"
 import { fileURLToPath } from "node:url"
-import { selectorKey as surfaceKey, drawSelector as surfaceDraw } from "../src/util/pageSelectorSurface.js"
+import { selectorKey as surfaceKey, shiftKey as surfaceShift, drawSelector as surfaceDraw, TWISTER_ROW as SURFACE_TWISTER_ROW } from "../src/util/pageSelectorSurface.js"
 import { selectorKey as hotKey, drawSelector as hotDraw, SELECTOR_COL, TWISTER_ROW } from "../src/util/pageSelector.js"
 import { ledIndex, type PageContext } from "../src/core/types.js"
 
@@ -62,7 +62,7 @@ const rig = (Cells: any, SetPage: any) => {
 describe("surface damp keys", () => {
 	it("cells-surface damps through set-surface via the surface keys", () => {
 		const r = rig(CellsSurfacePage, SetSurfacePage)
-		r.cells.onKey({ x: 0, y: 6, s: 1 }, r.cc)
+		r.cells.onKey({ x: 0, y: 4, s: 1 }, r.cc) // damp sits on col 0's free row: 6-7 are the shifts
 		expect(r.damp()).toEqual([1, 2, 3, 4, 5, 6].map((v) => [v, "damp", 1]))
 		expect(r.shared.get(DAMP_FROM_CELLS_SURFACE)).toBeDefined()
 		expect(r.shared.get(DAMP_STATE_SURFACE)).toBeDefined()
@@ -104,23 +104,55 @@ describe("set-surface voices 7-8", () => {
 	})
 })
 
-describe("surface selector", () => {
+describe("surface left column", () => {
+	const mk = (slot = 0) => {
+		const sent: any[] = [], focused: number[] = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		const ctx = {
+			size: SIZE, slot, modifiers,
+			focus: (s: number) => focused.push(s),
+			setDirty() {},
+			setShift: (w: number, d: boolean) => { if (w === 1) modifiers.shift1 = d; else modifiers.shift2 = d },
+			osc: { send: (...a: any[]) => sent.push(a) },
+		} as unknown as PageContext
+		const draw = (fn: typeof hotDraw) => { const f = new Uint8Array(SIZE.width * SIZE.height); fn(f, ctx); return f }
+		return { ctx, sent, focused, modifiers, draw }
+	}
+
 	it("keeps its own twister-held state, independent of the hot selector", () => {
-		const sent: any[] = []
-		const ctx = { size: SIZE, slot: 0, focus() {}, setDirty() {}, osc: { send: (...a: any[]) => sent.push(a) } } as unknown as PageContext
-		const lvl = (draw: typeof hotDraw) => {
-			const f = new Uint8Array(SIZE.width * SIZE.height)
-			draw(f, ctx)
-			return f[ledIndex(SIZE, SELECTOR_COL, TWISTER_ROW)]
-		}
-		const idle = lvl(hotDraw)
-		surfaceKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 1 }, ctx)
-		expect(lvl(surfaceDraw)).toBeGreaterThan(idle)
-		expect(lvl(hotDraw)).toBe(idle)
-		surfaceKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 0 }, ctx)
-		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 1 }, ctx)
-		expect(lvl(surfaceDraw)).toBe(idle)
-		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 0 }, ctx)
+		const r = mk()
+		const s = () => r.draw(surfaceDraw)[ledIndex(SIZE, 0, SURFACE_TWISTER_ROW)]
+		const h = () => r.draw(hotDraw)[ledIndex(SIZE, SELECTOR_COL, TWISTER_ROW)]
+		const sIdle = s(), hIdle = h()
+		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 1 }, r.ctx)
+		expect(s()).toBeGreaterThan(sIdle)
+		expect(h()).toBe(hIdle)
+		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 0 }, r.ctx)
+		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 1 }, r.ctx)
+		expect(s()).toBe(sIdle)
+		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 0 }, r.ctx)
+	})
+
+	it("iso at the top, PLAY under it, home third from the bottom; cells has no key", () => {
+		const r = mk(5)
+		for (let y = 0; y < 8; y++) surfaceKey({ x: 0, y, s: 1 }, r.ctx)
+		expect(r.focused).toEqual([0, 2]) // y0 iso (a), y1 PLAY (c); y5 is where we already are
+		const f = r.draw(surfaceDraw)
+		expect(f[ledIndex(SIZE, 0, 5)]).toBe(12)
+		expect(f[ledIndex(SIZE, 0, 0)]).toBe(2)
+	})
+
+	it("leaves rows 3-4 to the page and gives rows 6-7 to the shifts", () => {
+		const r = mk()
+		for (const y of [3, 4, 6, 7]) expect(surfaceKey({ x: 0, y, s: 1 }, r.ctx)).toBe(false)
+		expect(surfaceShift({ x: 0, y: 3, s: 1 }, r.ctx)).toBe(false)
+		expect(surfaceShift({ x: 0, y: 6, s: 1 }, r.ctx)).toBe(true)
+		expect(r.modifiers).toMatchObject({ shift1: false, shift2: true })
+		expect(surfaceShift({ x: 0, y: 7, s: 1 }, r.ctx)).toBe(true)
+		expect(r.modifiers.shift1).toBe(true)
+		const f = r.draw(surfaceDraw)
+		expect(f[ledIndex(SIZE, 0, 6)]).toBe(15)
+		expect(f[ledIndex(SIZE, 0, 3)]).toBe(0)
 	})
 })
 

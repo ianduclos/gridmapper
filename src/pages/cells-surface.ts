@@ -17,7 +17,7 @@ import {
 } from "../core/types.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
-import { SELECTOR_KEYS, drawSelector, selectorKey } from "../util/pageSelectorSurface.js"
+import { SELECTOR_KEYS, drawSelector, selectorKey, shiftAt } from "../util/pageSelectorSurface.js"
 import { DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
 import { CycleLooper, MAX_LOOP_CYCLES, type LoopEvent } from "../util/cycleLooper.js"
 
@@ -42,7 +42,7 @@ const CELLS_VIEW_X = 1,
 /** Damp at x0 y6 (hold = all six). Hold it with shift (x0 y7) to toggle damp mode, where
  *  the mute column damps single voices; press either key to leave. set-surface sends it. */
 const DAMP_X = 0,
-	DAMP_Y = 6
+	DAMP_Y = 4 // col 0's second free row: rows 6-7 are the system's shifts
 /** Bottom row: shift held at x0, play toggle at x1, four gesture loopers at x12-15. */
 const SHIFT_X = 0,
 	PLAY_X = 1,
@@ -330,6 +330,7 @@ export class CellsSurfacePage implements Page {
 	}
 	onBlur(c: PageContext) {
 		c.setShift(1, false)
+		c.setShift(2, false)
 		// Hands let go: a held damp must not outlive leaving the page.
 		this.dampAllHeld = false
 		this.dampRows.fill(false)
@@ -424,6 +425,10 @@ export class CellsSurfacePage implements Page {
 			const partnerHeld = e.y === DAMP_Y ? c.modifiers.shift1 : this.dampAllHeld
 			if (e.y === 7) c.setShift(1, e.s === 1)
 			this.dampChordKey(e.y === DAMP_Y, e.s === 1, partnerHeld, c)
+			return
+		}
+		if (shiftAt(e) === 2) {
+			c.setShift(2, e.s === 1)
 			return
 		}
 		// A held per-voice damp is released wherever its release lands, even after a view
@@ -1458,7 +1463,7 @@ const PHASE_LIT = Array.from({ length: VOICES }, (_, y) =>
 ).flat()
 /** The web cheat-sheet: views are the row-6 modes, plus damp mode. */
 export const keymap: KeySpec[] = [
-	...SELECTOR_KEYS,
+	...SELECTOR_KEYS.filter((k) => k.y !== 7), // this page words its own shift 1
 	{ x: MUTE_X, y: 0, h: VOICES, view: "cells", name: "Mute", help: "Mute or rejoin the voice. In lock editing, locks the row against auto-evolve.", lit: [8, 8, 8, 8, 3, 8] },
 	{ x: MUTE_X, y: 0, h: VOICES, view: "damp", name: "Damp voice", short: "Damp", help: "Hold to damp that voice (sent through set-surface). Press Damp or Shift to leave damp mode.", lit: [6, 15, 6, 6, 6, 6] },
 	...(["cells", "damp"] as const).flatMap((view): KeySpec[] => [

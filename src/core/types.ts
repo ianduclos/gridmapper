@@ -64,6 +64,9 @@ export interface LiveLink {
 	on: (fn: (path: string, args: any[]) => void) => () => void
 }
 
+/** The idk.surface link (UDP 57150 out). `port` is where we listen, for /surface/subscribe. */
+export type SurfaceLink = LiveLink & { port: number }
+
 export interface PageContext {
 	size: GridSize
 	modifiers: Modifiers
@@ -108,6 +111,8 @@ export interface PageContext {
 	shared?: import("./sharedStore.js").SharedStore
 	/** The Ableton Live link. Absent in bare test rigs; only pages/clips.ts uses it. */
 	live?: LiveLink
+	/** The idk.surface link. Absent in bare test rigs; only pages/play-surface.ts uses it. */
+	surface?: SurfaceLink
 }
 
 export interface Page {

@@ -11,7 +11,7 @@
 import { SharedStore } from "../core/sharedStore.js"
 import { GridConnection } from "../io/gridConnection.js"
 import { createOsc, createOscSender } from "../io/osc.js"
-import { createLiveLink } from "../io/liveLink.js"
+import { createLiveLink, createSurfaceLink } from "../io/liveLink.js"
 import { loadSettings } from "../core/settings.js"
 import { LedReconciler } from "../render/ledReconciler.js"
 import { createRenderLoop } from "../render/renderLoop.js"
@@ -89,6 +89,8 @@ const twisterOsc = createOscSender(settings.osc.twisterPort)
 // Ableton Live (the idk.clips fork): its own socket, never mixed with Max's. Only the
 // clips page uses it; if 11001 is taken the page just shows "no link".
 const live = createLiveLink({ inPort: settings.osc.liveInPort, outPort: settings.osc.liveOutPort })
+// idk.surface, played directly by the PLAY page: a third peer, lazy like the Live link.
+const surface = createSurfaceLink({ inPort: settings.osc.surfaceInPort, outPort: settings.osc.surfaceOutPort })
 let suppressOscEcho = false
 const emitOut = (path: string, ...args: Array<number | string | boolean>) => {
 	// Web-panel-only output; the daemon has no web panel.
@@ -141,6 +143,7 @@ const baseCtx: Omit<PageContext, "setDirty" | "slot" | "slotLabel" | "focus" | "
 	setShift: (which, down) => shift.set(which, down),
 	shared: new SharedStore(),
 	live,
+	surface,
 }
 
 const pm = new PageManager(
@@ -225,6 +228,7 @@ const shutdown = () => {
 		try { conn.close() } catch {}
 		osc.close()
 		try { live.close() } catch {}
+		try { surface.close() } catch {}
 		process.exit(0)
 	}, 60)
 }

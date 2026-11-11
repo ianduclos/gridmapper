@@ -31,6 +31,7 @@ export function createLiveLink(
 	opts: { inPort: number; outPort: number },
 	makeOsc: MakeOsc = (o) => createOsc(o),
 	retryMs = RETRY_MS,
+	tag = "live",
 ): LiveLinkHandle {
 	const listeners = new Set<(path: string, args: any[]) => void>()
 	let osc: Osc | null = null
@@ -41,7 +42,7 @@ export function createLiveLink(
 			try {
 				fn(path, args)
 			} catch (err) {
-				console.error("[live] listener threw:", err)
+				console.error(`[${tag}] listener threw:`, err)
 			}
 		}
 	}
@@ -52,7 +53,7 @@ export function createLiveLink(
 		sock.onMessage(dispatch)
 		sock.onError((err) => {
 			if (!isBindFailure(err) || osc !== sock) return
-			console.error(`[live] UDP ${opts.inPort} unavailable (${(err as { code: string }).code}); retrying in ${retryMs / 1000}s`)
+			console.error(`[${tag}] UDP ${opts.inPort} unavailable (${(err as { code: string }).code}); retrying in ${retryMs / 1000}s`)
 			sock.close()
 			osc = null
 			if (listeners.size && !retry)
@@ -84,4 +85,17 @@ export function createLiveLink(
 		},
 		close: shut,
 	}
+}
+
+/**
+ * The idk.surface link: a THIRD peer, same lazy socket as the Live link. Surface listens on
+ * 57150 and answers /surface/get on the socket that asked; a subscribe names our port, so
+ * the page needs to know it (`port`). Only pages/play-surface.ts uses it.
+ */
+export function createSurfaceLink(
+	opts: { inPort: number; outPort: number },
+	makeOsc?: MakeOsc,
+	retryMs = RETRY_MS,
+): LiveLinkHandle & { port: number } {
+	return { ...createLiveLink(opts, makeOsc, retryMs, "surface"), port: opts.inPort }
 }

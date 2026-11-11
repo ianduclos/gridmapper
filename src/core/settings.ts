@@ -35,6 +35,10 @@ export type Settings = {
 		liveOutPort: number
 		/** …and replies here. Boot-only, like every osc.* port. */
 		liveInPort: number
+		/** idk.surface's OSC in-port (the PLAY page plays it directly)… */
+		surfaceOutPort: number
+		/** …and where its replies and reports come back. Boot-only. */
+		surfaceInPort: number
 	}
 	clock: {
 		/** Master internal rate in Hz. */
@@ -55,7 +59,7 @@ export type Settings = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-	osc: { inPort: 57131, outPort: 57130, twisterPort: 57121, liveOutPort: 11000, liveInPort: 11001 },
+	osc: { inPort: 57131, outPort: 57130, twisterPort: 57121, liveOutPort: 11000, liveInPort: 11001, surfaceOutPort: 57150, surfaceInPort: 57133 },
 	clock: { rate: 20, lanes: DEFAULT_LANES.map((l) => ({ ...l })), echo: false },
 	idle: { connectedMin: 240, disconnectedMin: 15, caffeinate: false },
 }
@@ -122,6 +126,8 @@ export function loadSettings(path = SETTINGS_PATH): Settings {
 			twisterPort: cleanPort(oscNode.twisterPort, DEFAULT_SETTINGS.osc.twisterPort),
 			liveOutPort: cleanPort(oscNode.liveOutPort, DEFAULT_SETTINGS.osc.liveOutPort),
 			liveInPort: cleanPort(oscNode.liveInPort, DEFAULT_SETTINGS.osc.liveInPort),
+			surfaceOutPort: cleanPort(oscNode.surfaceOutPort, DEFAULT_SETTINGS.osc.surfaceOutPort),
+			surfaceInPort: cleanPort(oscNode.surfaceInPort, DEFAULT_SETTINGS.osc.surfaceInPort),
 		},
 		clock: {
 			rate: clampRate(clockNode.rate ?? DEFAULT_SETTINGS.clock.rate),

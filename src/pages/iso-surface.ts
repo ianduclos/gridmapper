@@ -4,7 +4,7 @@
  *          The one difference so far: COLUMN 0 is the page selector (util/pageSelectorSurface.ts)
  *          and the keyboard moved one column right to 1-12, with the step field's
  *          origin (step 0, home) at column 1.
- *          TRANSPOSER: col 0 row 7 toggles the bottom row (cols 1-12) into a transposer —
+ *          TRANSPOSER: col 0 row 4 toggles the bottom row (cols 1-12) into a transposer —
  *          col 8 = 0, left = down, right = up (−7..+4 steps). Turning it off keeps the
  *          transposition. A note takes the transposition in force WHEN IT STARTS, so
  *          nothing already sounding moves. Keys always transpose; chord presets and looper
@@ -18,7 +18,7 @@
  *          press of yours holds until a loop's next move. Same rules for the arp mode.
  *          Loop playback is never recorded.
  *          Transposition is performance state: not saved, 0 on load.
- *          PERFORMANCE PANEL: col 0 row 6 opens a 4-column panel over keyboard cols 1-4
+ *          PERFORMANCE PANEL: col 0 row 3 opens a 4-column panel over keyboard cols 1-4
  *          (cols 5-12 stay playable; the panel and the transposer hide each other):
  *            col 1  row 0 TINT (tap = on/off, HOLD + press keys = edit the T-triad's
  *                   pitch classes) · rows 1-3 tint mode above/below/alternate ·
@@ -187,7 +187,7 @@ import {
 } from "../core/types.js"
 import type { ClockState } from "../core/clock.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
-import { selectorKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
+import { selectorKey, shiftKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
 import { clamp } from "../util/scale.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
 import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
@@ -205,8 +205,8 @@ import {
 const KEYS_W = 13 // keyboard ends before column 13 (keysW is its exclusive right edge)
 const KEYS_X0 = 1 // ... and starts at column 1: column 0 is the page selector
 
-/** Transposer: col 0 row 7 shows it on the bottom row, whose col 8 is "no transpose". */
-const TRANSPOSE_TOGGLE_ROW = 7
+/** Transposer: col 0 row 4 shows it on the bottom row, whose col 8 is "no transpose". */
+const TRANSPOSE_TOGGLE_ROW = 4 // col 0's second free row (the left column is the system's)
 const TRANSPOSE_ZERO_COL = 8
 const TRANSPOSE_MIN = KEYS_X0 - TRANSPOSE_ZERO_COL // −7
 const TRANSPOSE_MAX = KEYS_W - 1 - TRANSPOSE_ZERO_COL // +4
@@ -238,8 +238,8 @@ const CTL_BOUNDS: Record<string, [number, number]> = {
 	[CTL_TINT_OCTAVE]: [-1, 1],
 }
 
-/** Performance panel: col 0 row 6 shows it over keyboard cols 1-4. */
-const PANEL_TOGGLE_ROW = 6
+/** Performance panel: col 0 row 3 shows it over keyboard cols 1-4. */
+const PANEL_TOGGLE_ROW = 3 // col 0's first free row
 const PANEL_X0 = KEYS_X0
 const PANEL_W = 4
 const PANEL_TINT_COL = PANEL_X0 // row 0 tint, rows 1-3 tint mode, rows 4-7 octave
@@ -627,6 +627,7 @@ export class IsoSurfacePage implements Page {
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		if (selectorKey(ev, ctx)) return
+		if (shiftKey(ev, ctx)) return // the left column's shifts; col 15's still work
 		if (ev.x === 0) {
 			if (ev.y === TRANSPOSE_TOGGLE_ROW && ev.s) {
 				this.transposerShown = !this.transposerShown

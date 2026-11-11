@@ -1,14 +1,14 @@
 /* Page: Set Surface  (idk.surface fork of set-hot — voice control for the modal instrument)
  * ------------------------------------------------------------------------------
  * Summary : Per-voice switches for the eight modal voices (idk.surface, same OSC contract as hotelier), in the bottom four rows.
- * Input   : col 0 rows 0-5 = page selector (util/pageSelectorSurface.ts). Bottom four rows,
+ * Input   : col 0 = the system's column (util/pageSelectorSurface.ts). Bottom four rows,
  *           bottom → top: DAMP (row 7, momentary — damped while held), FREEZE (row 6),
  *           ROLL (row 5), BOW (row 4) — the last three latching toggles.
  *           Col 2 = ALL: it sets all eight voices in its row (a toggle turns them all ON
  *           unless all eight already are, then all OFF; damp-all holds all eight down).
  *           Cols 4-11 = voices 1-8. Cols 1 and 3 are gaps.
  *           Col 15 rows 0-2 = 3 LOOPERS (util/patternRecorder.ts, as in isometric): one key
- *           cycles empty → rec → play → stop, SHIFT 1 (col 0 row 7) + press clears. A take
+ *           cycles empty → rec → play → stop, SHIFT 1 (col 0 row 7, the system's) + press clears. A take
  *           starts at the first gesture. Damp records as momentary notes (step = voice),
  *           the toggles as control events (`<param>/<voice>` → 1|0). Playback drives the
  *           same switches and sends the same OSC; the latest move wins, a hand press holds
@@ -46,7 +46,7 @@ import {
 	ledIndex,
 } from "../core/types.js"
 import type { KeySpec, PageModule } from "../core/pageModule.js"
-import { SELECTOR_KEYS, selectorKey, drawSelector, TWISTER_FOCUS_PATH } from "../util/pageSelectorSurface.js"
+import { SELECTOR_KEYS, selectorKey, shiftKey, releaseShifts, drawSelector, TWISTER_FOCUS_PATH } from "../util/pageSelectorSurface.js"
 import { PatternRecorder, MAX_RECORD_MS, type PatternEvent } from "../util/patternRecorder.js"
 import { isRecord, num, bool, records } from "../util/restoreGuards.js"
 import { DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
@@ -71,10 +71,8 @@ const LVL_RINGING = 5
 /** How long a trigger reads as a flash before falling back to "ringing". */
 const TRIGGER_MS = 150
 
-/** Loopers at the top of the last column; shift 1 on the left, in the selector's free row. */
+/** Loopers at the top of the last column; shift 1 is the left column's (the system's). */
 const RECORDERS = 3
-const SHIFT1_COL = 0
-const SHIFT1_ROW = 7
 /** Twister page keys under the loopers: row TWISTER_ROW0 + i focuses Twister slot a+i. */
 const TWISTER_ROW0 = 3
 const TWISTER_PAGES = ["ModelHot", "TremHot", "PanHot", "FxHot", "VoicesHot"] as const
@@ -84,7 +82,6 @@ const LVL_REC_EMPTY = 1
 const LVL_REC_ARMED = 12 // bright half of the recording blink
 const LVL_REC_STOPPED = 5
 const LVL_REC_PLAYING = 15
-const LVL_SHIFT = 1
 const BLINK_MS = 220
 const TIMER_MS = 5
 const MAX_PATTERN_EVENTS = 20_000
@@ -149,16 +146,13 @@ export class SetSurfacePage implements Page {
 		this.dampHeld.clear()
 		this.dampAllHeld = false
 		this.syncDamp(ctx)
-		ctx.setShift(1, false)
+		releaseShifts(ctx)
 	}
 
 	onKey(ev: KeyEvent, ctx: PageContext) {
 		if (selectorKey(ev, ctx)) return
 		const lastCol = ctx.size.width - 1
-		if (ev.x === SHIFT1_COL && ev.y === SHIFT1_ROW) {
-			ctx.setShift(1, ev.s === 1)
-			return
-		}
+		if (shiftKey(ev, ctx)) return
 		const tw = ev.y - TWISTER_ROW0
 		if (ev.x === lastCol && tw >= 0 && tw < TWISTER_PAGES.length) {
 			if (ev.s) {
@@ -248,7 +242,6 @@ export class SetSurfacePage implements Page {
 				: st === "stopped" ? LVL_REC_STOPPED
 				: LVL_REC_EMPTY)
 		}
-		set(SHIFT1_COL, SHIFT1_ROW, ctx.modifiers.shift1 ? LVL_HELD : LVL_SHIFT)
 		for (let i = 0; i < TWISTER_PAGES.length; i++) {
 			set(lastCol, TWISTER_ROW0 + i, i === this.twisterPage ? LVL_TWISTER_ON : LVL_TWISTER_OFF)
 		}
@@ -401,7 +394,6 @@ export const keymap: KeySpec[] = [
 	{ x: VOICE_COL0, y: FEEDBACK_ROW, w: VOICES, name: "Voice activity", help: "From Max: flashes on a trigger, stays dim while ringing.", lit: [LVL_TRIGGERED, LVL_RINGING, 0, LVL_RINGING, 0, 0, 0, 0] },
 	{ x: 15, y: 0, h: RECORDERS, name: "Loopers 1–3", help: "Record damp and switch gestures: arm, play, pause. Shift 1 + press clears.", lit: [LVL_REC_PLAYING, LVL_REC_STOPPED, LVL_REC_EMPTY] },
 	{ x: 15, y: TWISTER_ROW0, h: TWISTER_PAGES.length, name: "Twister pages", short: "Twister", help: `Switch the Twister's page: ${TWISTER_PAGES.join(", ")}.`, lit: [LVL_TWISTER_ON, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF, LVL_TWISTER_OFF] },
-	{ x: SHIFT1_COL, y: SHIFT1_ROW, name: "Shift 1", short: "Shift", help: "Hold, then press a looper to clear it.", lit: LVL_SHIFT },
 ]
 
 export const page: PageModule = {
