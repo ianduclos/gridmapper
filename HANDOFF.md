@@ -1,13 +1,13 @@
 ---
 project: gridmapper
-updated: 2026-11-11
+updated: 2026-11-12
 entries: 2
 ---
 
 ### idk.surface pages (PLAY, home, iso lanes, REEL pads) — opened 2026-11-11, owner: claude-gridmapper
-- done: branch `feat/play-surface`, pushed, not merged. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page ON since 12:30 (slot d, key x0 y4), one cheat sheet per surface page. 690 tests pass. Nothing has been played by Ian; the grid was off USB at session end.
+- done: branch `feat/play-surface`, not merged; pushed up to 279defc, five later commits are local only. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page ON since 12:30 (slot d, key x0 y4), one cheat sheet per surface page. 705 tests pass (2026-11-12). Nothing has been played by Ian; the grid was off USB at session end.
 - next: Ian's playing check of all four pages. Merge to main after it. Any agent restart: only while surface is silent (two silent reads of the `lanes` topic), then one line to `hc send surface-inbox`.
-- blockers: the ARP key on PLAY waits on surface letting lane notes feed its arp. Open with Ian: PLAY's shift 2 latch time; my six calls on the REEL page (pad order, clearing a step, key latching, hand speed, lane clearing, playing-step look) are in docs/reel-surface-cheatsheet.md as built.
+- blockers: none. A second session (2026-11-11 evening, commits 2611ffe, 36c6640, dc21170) added an ARP key on PLAY (x14 y7) and on REEL pads (x14 y4) and a REEL step fix, and restarted the agent at 18:48; its cheat sheets were updated in those commits. Open with Ian: PLAY's shift 2 latch time; my six calls on the REEL page (pad order, clearing a step, key latching, hand speed, lane clearing, playing-step look) are in docs/reel-surface-cheatsheet.md as built.
 - context: CLAUDE.md (file map entries for play-surface, set-surface, reel-surface, pageSelectorSurface); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-11-grid-play-page-design.md and 2026-11-11-reel-step-line-design.md; idk.surface docs/osc/reference.txt (never guess an address); reports in idk.surface/.superpowers/reports/ (play-page*.md, play-y-axis.md, home-page-now.md).
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
