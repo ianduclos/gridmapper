@@ -5,7 +5,7 @@ entries: 2
 ---
 
 ### idk.surface pages (PLAY, home, iso lanes, REEL pads) — opened 2026-11-11, owner: claude-gridmapper
-- done: branch `feat/play-surface`, not merged; pushed up to 279defc, five later commits are local only. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page ON since 12:30 (slot d, key x0 y4), one cheat sheet per surface page. 705 tests pass (2026-11-12). Nothing has been played by Ian; the grid was off USB at session end.
+- done: branch `feat/play-surface`, not merged; pushed up to 279defc, later commits are local only. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page ON since 12:30 (slot d, key x0 y4), one cheat sheet per surface page. 708 tests pass (2026-11-12). PLAY has a XEN CHORDS toggle at x2 y1 (e4c6e32): lit, lane column 1-8 sends `/xen/go <1-8>` to xen-harmony on UDP 57170 (send-only socket opened at the first chord; never sent for real yet). Nothing has been played by Ian; the grid was off USB at session end.
 - next: Ian's playing check of all four pages. Merge to main after it. Any agent restart: only while surface is silent (two silent reads of the `lanes` topic), then one line to `hc send surface-inbox`.
 - blockers: none. A second session (2026-11-11 evening, commits 2611ffe, 36c6640, dc21170) added an ARP key on PLAY (x14 y7) and on REEL pads (x14 y4) and a REEL step fix, and restarted the agent at 18:48; its cheat sheets were updated in those commits. Open with Ian: PLAY's shift 2 latch time; my six calls on the REEL page (pad order, clearing a step, key latching, hand speed, lane clearing, playing-step look) are in docs/reel-surface-cheatsheet.md as built.
 - context: CLAUDE.md (file map entries for play-surface, set-surface, reel-surface, pageSelectorSurface); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-11-grid-play-page-design.md and 2026-11-11-reel-step-line-design.md; idk.surface docs/osc/reference.txt (never guess an address); reports in idk.surface/.superpowers/reports/ (play-page*.md, play-y-axis.md, home-page-now.md).
@@ -127,6 +127,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-11-12 — Claude — PLAY: XEN CHORDS toggle
+- **What:** pages/play-surface.ts: a quiet toggle at x2 y1 (dim off, medium on, not saved). Lit and on KEYS, a press in lane column 1-8 plays no note and sends `/xen/go <1-8>` to 127.0.0.1:57170 (xen-harmony; address from `uv run xen osc` there), once per press; the column last called is lit. Cheat sheet updated in the same commit. Agent restarted while surface was silent.
+- **Verified:** tsc clean, 708 tests (the send is a spy in tests). NOT verified: no real `/xen/go` was sent, nothing seen on the grid.
+- **Next:** Ian tries it with xen-harmony running.
 
 ### 2026-11-11 — Claude — idk.surface pages: PLAY, new home, iso lanes, REEL pads (off), cheat sheets
 - **What:** on `feat/play-surface`. PLAY (pages/play-surface.ts): layers removed, even field, held own notes with PITCH off, `y` setting, SLEW tap, STRIKE on by default, LATCH lights its column. Home (pages/set-surface.ts): ROLL gone, `HOME_VIEW_LIVE` now true (FX row y0, FOCUS y3, MOTION y4), view heard on surface's `values` topic. Iso: lane picker on the bottom row while a track is latched; x0 y6/y7 are PANEL and TRANSPOSER again. New pages/reel-surface.ts behind `REEL_PAGE_LIVE` (off); slot d of the idk.surface preset and live layout is `reel-surface`. Five cheat sheets in docs/.

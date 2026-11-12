@@ -411,6 +411,8 @@ src/
                          send 57150, listen 57133, lazy, loopback), never through Max's link. Reads by
                          /surface/get polling while focused + `lanes`/`preset` subscriptions. Spec:
                          idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
+                         XEN CHORDS (x2 y1, not saved): lit, a KEYS press in lane column 1-8 sends `/xen/go <1-8>` to
+                         xen-harmony on UDP 57170 (a send-only socket of the page's own, opened at the first chord).
                          CHEATSHEET: docs/play-surface-cheatsheet.md is Ian's player-facing sheet. Any change
                          to a key, gesture, light or default of this page updates it IN THE SAME COMMIT.
                          EVERY SURFACE PAGE HAS ONE (Ian, 2026-11-11: "make sure all the surface cheat sheets
