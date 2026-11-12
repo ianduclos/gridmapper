@@ -1,7 +1,7 @@
 # PLAY page cheatsheet
 
 The grid's PLAY page for idk.surface (`src/pages/play-surface.ts`, slot c).
-Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
+Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-12.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `play-surface.ts` changes this file in the same commit.
@@ -11,7 +11,7 @@ Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
 ```
 x:  0     2     4 ........ 11   12    14   15
 y0  iso   KEYS  lane 1 ... 8    all        loop 1
-y1  PLAY  .                     all        loop 2
+y1  PLAY  XEN                   all        loop 2
 y2  twist .                     all        loop 3
 y3  .     .                     all        loop 4
 y4  REEL  .                     all        PITCH
@@ -27,6 +27,7 @@ y7  sh 1  PRE                   all   ARP  LATCH
 | x0 y6 | shift 2 | Hold: BOW, FREEZE, DAMP on the lanes (below). |
 | x0 y7 | shift 1 | Hold, then press a thing: store, clear, or strike all. |
 | x2 y0 | KEYS | The lanes play notes. |
+| x2 y1 | XEN CHORDS | Lit: on KEYS, a lane column calls a xen-harmony chord (below). Dim when off. |
 | x2 y7 | PRESETS | The lanes hold stored sounds. |
 | x4-x11 | lanes 1-8 | One column per lane. |
 | x12 | all | The same press on all eight lanes (PRESETS only). |
@@ -37,7 +38,7 @@ y7  sh 1  PRE                   all   ARP  LATCH
 | x14 y7 | ARP | Lit: held keys play in turn, timed by the app (below). |
 | x15 y7 | LATCH | Lit: notes stay after you let go. |
 
-x2 y1-y6 are dark and do nothing.
+x2 y2-y6 are dark and do nothing.
 
 ## KEYS (x2 y0)
 
@@ -73,6 +74,20 @@ x2 y1-y6 are dark and do nothing.
   arpeggiated.
 - **Lights:** a held key is medium; the one whose step sounds now is the brightest.
 - ARP is not saved with a preset.
+
+## XEN CHORDS (x2 y1)
+
+A quiet toggle under KEYS: dim when off, medium when on. It starts off and is not
+saved.
+
+- **Lit, on KEYS:** a press anywhere in lane column 1 to 8 plays no note. It
+  calls chord 1 to 8 of xen-harmony's progression instead, once per press;
+  letting go does nothing.
+- **Lights:** the column of the chord last called is lit, the rest stay dim.
+- PRESETS, shift 2's switches, the right column and the loopers work as before.
+  The loopers do not record chord calls. Notes latched before you lit it keep
+  sounding; unlight it to see and end them.
+- xen-harmony must be running to hear anything (it listens on UDP 57170).
 
 ## PRESETS (x2 y7)
 

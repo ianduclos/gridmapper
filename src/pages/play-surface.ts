@@ -92,6 +92,7 @@ import {
 import { PatternRecorder, MAX_RECORD_MS, type PatternEvent } from "../util/patternRecorder.js"
 import { isRecord, num, int, bool, records } from "../util/restoreGuards.js"
 import { SCALE_SURFACE } from "../core/sharedStore.js"
+import { createOscSender } from "../io/osc.js"
 import { SCALE_NAMES, DEFAULT_SCALE, isScaleName } from "../util/scales.js"
 import {
 	ENGINES,
@@ -130,6 +131,16 @@ const SLEW_Y = 6
 const LATCH_Y = 7
 const ARP_X = 14
 const ARP_Y = 7
+/** XEN CHORDS: a quiet toggle under KEYS. Lit, a lane column calls a chord of xen-harmony. */
+const XEN_Y = 1
+const LVL_XEN_OFF = 2
+const LVL_XEN_ON = 10
+/** xen-harmony's control port and its "jump to that chord" address (`uv run xen osc` there). */
+const XEN_PORT = 57170
+const XEN_GO = "/xen/go"
+let xenOsc: { send: (path: string, ...args: any[]) => void } | null = null
+/** One send-only socket for the daemon's life, opened at the first chord. */
+const sendXenChord = (chord: number) => (xenOsc ??= createOscSender(XEN_PORT)).send(XEN_GO, chord)
 
 /** Chooser rows: 0 KEYS, 7 PRESETS. Rows 1-6 held the six parameter layers; now dark. */
 export const LAYER_KEYS = 0
@@ -254,6 +265,11 @@ export class PlaySurfacePage implements Page {
 	private latched = new Map<number, number>()
 	/** ARP: runtime only, never saved. Held cells are calls in the app's arp, not direct notes. */
 	private arp = false
+	/** XEN CHORDS toggle (not saved) and the chord last sent, 1-8 (0 = none yet). */
+	private xenChords = false
+	private xenLast = 0
+
+	constructor(private xenGo: (chord: number) => void = sendXenChord) {}
 	/** The calls surface was last told, id → signature, so only changes go out. */
 	private callsSent = new Map<number, string>()
 	/** Cells whose press ended a latched note: their release does nothing. */
@@ -356,6 +372,7 @@ export class PlaySurfacePage implements Page {
 		const down = ev.s === 1
 		if (ev.x === CHOOSER_X) {
 			if (down && (ev.y === LAYER_KEYS || ev.y === LAYER_PRESETS)) this.layer = ev.y
+			else if (down && ev.y === XEN_Y) this.xenChords = !this.xenChords
 			return
 		}
 		if (ev.x === RIGHT_X) return this.rightKey(ev.y, down, ctx)
@@ -402,7 +419,13 @@ export class PlaySurfacePage implements Page {
 		}
 		const row = ROWS - 1 - ev.y // 0 at the bottom
 		if (this.layer === LAYER_KEYS) {
-			if (!isAll) this.playKey(ev, lane, row, ctx)
+			if (isAll) return
+			// XEN CHORDS lit: the column calls chord 1-8 of xen-harmony, once per press; no note.
+			if (this.xenChords) {
+				this.xenLast = lane + 1
+				return this.xenGo(this.xenLast)
+			}
+			this.playKey(ev, lane, row, ctx)
 			return
 		}
 		this.presetKey(isAll ? -1 : lane, ev.y, ctx)
@@ -921,10 +944,13 @@ export class PlaySurfacePage implements Page {
 		const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
 
 		for (const y of [LAYER_KEYS, LAYER_PRESETS]) set(CHOOSER_X, y, y === this.layer ? LVL_CHOOSER_ON : LVL_CHOOSER)
+		set(CHOOSER_X, XEN_Y, this.xenChords ? LVL_XEN_ON : LVL_XEN_OFF)
 
 		for (let lane = 0; lane < LANES; lane++) {
 			const x = LANE_X0 + lane
-			if (this.layer === LAYER_KEYS) this.drawKeys(lane, x, set, ctx)
+			if (this.layer === LAYER_KEYS && this.xenChords)
+				for (let y = 0; y < ROWS; y++) set(x, y, this.xenLast === lane + 1 ? LVL_KEY_COLUMN : LVL_KEY_BASE)
+			else if (this.layer === LAYER_KEYS) this.drawKeys(lane, x, set, ctx)
 			else {
 				const e = this.mirror.engine(lane)
 				if (!isEngine(e)) continue
@@ -1115,6 +1141,7 @@ function readEvent(e: Record<string, unknown>): PatternEvent | undefined {
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS,
 	{ x: CHOOSER_X, y: 0, name: "Keys", help: "The lanes play: the row is the pitch (or a REEL lane's pad).", lit: LVL_CHOOSER_ON },
+	{ x: CHOOSER_X, y: XEN_Y, name: "Xen chords", short: "Xen", help: "Lit: on KEYS, a press in lane column 1-8 plays no note and calls chord 1-8 of xen-harmony's progression (/xen/go, UDP 57170). The column of the chord last called is lit. Not saved.", lit: LVL_XEN_OFF },
 	{ x: CHOOSER_X, y: 7, name: "Presets", short: "Pre", help: "A lane's whole sound: every dial it has pulled away. Shift 1 + cell stores; the bottom row is home (all back to the shared dials).", lit: LVL_CHOOSER },
 	{ x: LANE_X0, y: 0, w: LANES, h: ROWS, name: "Lanes 1-8", short: "Lane", help: "What the chooser says: notes or presets. Shift 2: the bottom rows are BOW, FREEZE, DAMP.", lit: LVL_KEY_BASE },
 	{ x: ALL_X, y: 0, h: ROWS, name: "All lanes", short: "All", help: "On PRESETS: every lane to its own engine's row. Shift 1 + all also strikes them. Nothing on KEYS.", lit: LVL_ALL },

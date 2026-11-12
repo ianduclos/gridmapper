@@ -30,7 +30,8 @@ const rig = () => {
 			on: (fn: any) => { hear = fn; return () => { hear = () => {} } },
 		},
 	} as unknown as PageContext
-	const page = new PlaySurfacePage()
+	const xen: number[] = []
+	const page = new PlaySurfacePage((chord) => xen.push(chord))
 	page.init(ctx)
 	page.onFocus(ctx)
 	const say = (path: string, ...args: any[]) => hear(path, args)
@@ -52,7 +53,7 @@ const rig = () => {
 	/** Messages to surface since the last call, without the polling. */
 	const sent = () => out.splice(0).filter((m) => m[0] !== "/surface/get" && m[0] !== "/surface/subscribe")
 	const led = (x: number, y: number) => page.render(ctx)![ledIndex(SIZE, x, y)]
-	return { page, ctx, out, max, persisted, modifiers, shared, say, world, key, tapKey, layer, sent, led }
+	return { page, ctx, out, max, persisted, modifiers, shared, say, world, key, tapKey, layer, sent, led, xen }
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_000_000) })
@@ -258,9 +259,9 @@ describe("play-surface: latch", () => {
 })
 
 describe("play-surface: the chooser and SLEW", () => {
-	it("the six layer keys are gone: dark, and a press changes nothing", () => {
+	it("the layer keys are gone: x2 y2-y6 are dark, and a press changes nothing (y1 is XEN CHORDS)", () => {
 		const r = rig(); r.world(); r.sent()
-		for (let y = 1; y <= 6; y++) {
+		for (let y = 2; y <= 6; y++) {
 			expect(r.led(CHOOSER, y)).toBe(0)
 			r.tapKey(CHOOSER, y)
 		}
@@ -637,5 +638,49 @@ describe("play-surface: arp (x14 y7)", () => {
 		r.tapKey(...ARP); r.out.length = 0
 		vi.advanceTimersByTime(3100)
 		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "/surface/arp/call/*"])
+	})
+})
+
+describe("play-surface: xen chords (x2 y1)", () => {
+	it("off, the key is dim and a press plays its note as before", () => {
+		const r = rig(); r.world(); r.sent()
+		expect(r.led(2, 1)).toBe(2)
+		r.key(6, 7)
+		expect(r.sent().some((m) => m[0] === "/surface/lane/3/note/on")).toBe(true)
+		expect(r.xen).toEqual([])
+	})
+
+	it("lit, a lane column calls chord 1-8 once per press, plays no note, and lights that column", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(2, 1)
+		expect(r.led(2, 1)).toBe(10)
+		r.key(4, 7); r.key(4, 7, 0)
+		r.key(11, 0); r.key(11, 0, 0)
+		r.key(6, 3)
+		expect(r.xen).toEqual([1, 8, 3])
+		expect(r.sent()).toEqual([])
+		expect(r.led(6, 0)).toBe(10)
+		expect(r.led(6, 7)).toBe(10)
+		expect(r.led(11, 0)).toBe(2)
+		r.key(6, 3, 0)
+		expect(r.xen).toEqual([1, 8, 3]) // nothing on release
+		r.key(12, 3) // the all column is not a chord
+		expect(r.xen).toEqual([1, 8, 3])
+	})
+
+	it("PRESETS and shift 2's switches keep working while it is lit; unlit, notes are back; it is not saved", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(2, 1)
+		r.key(0, 6); r.key(5, 5); r.key(5, 5, 0); r.key(0, 6, 0) // shift 2 + BOW on lane 2
+		expect(r.sent().some((m) => m[0] === "/surface/lane/2/arm")).toBe(true)
+		expect(r.xen).toEqual([])
+		r.layer(7); r.tapKey(5, 7) // PRESETS: home for lane 2, no chord
+		expect(r.xen).toEqual([])
+		r.layer(0); r.sent()
+		expect(JSON.stringify(r.page.serialize())).not.toMatch(/xen/i)
+		r.tapKey(2, 1)
+		r.key(6, 7)
+		expect(r.sent().some((m) => m[0] === "/surface/lane/3/note/on")).toBe(true)
+		expect(r.xen).toEqual([])
 	})
 })
