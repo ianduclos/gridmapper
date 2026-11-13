@@ -132,6 +132,9 @@ twister's `/twister/...` vocabulary:
   dropped on the floor: a stray message from a patch must not silently replace the preset
   you were about to recall. Hand-writing a file works too — the shape is `SystemConfig`
   and every field is optional.
+  ONE EXCEPTION (Ian, 2026-11-13): when idk.surface goes away (the surface link hears nothing
+  for 3 s), `core/surfaceAutosave.ts` writes the live machine into the `idk.surface` preset, but
+  only while that preset is the active one, once per absence, never on the agent's own shutdown.
   `configs/slots.json` is the LIVE layout + an `activePreset` marker, written on preset
   load and on slot change, and booted into next start (no file → every slot
   `DEFAULT_PAGE`, as before). A slot change clears the marker and emits

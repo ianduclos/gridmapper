@@ -200,3 +200,29 @@ describe("surface link: it watches the app", () => {
 		vi.useRealTimers()
 	})
 })
+
+describe("surface link: the app going away", () => {
+	it("calls the away hook once per absence, not at the start, not while the app answers, not on close", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink({ inPort: 57133, outPort: 57150 }, o.make)
+		const away = vi.fn()
+		link.onAway(away)
+		link.on(() => {})
+		vi.advanceTimersByTime(10_000) // never there: nothing went away
+		expect(away).not.toHaveBeenCalled()
+		o.incoming("/surface/arp", 0)
+		vi.advanceTimersByTime(2000); o.incoming("/surface/arp", 0)
+		expect(away).not.toHaveBeenCalled()
+		vi.advanceTimersByTime(10_000) // silence
+		expect(away).toHaveBeenCalledTimes(1)
+		o.incoming("/surface/arp", 0) // back
+		vi.advanceTimersByTime(10_000) // and gone again
+		expect(away).toHaveBeenCalledTimes(2)
+		o.incoming("/surface/arp", 0)
+		link.close()
+		vi.advanceTimersByTime(10_000)
+		expect(away).toHaveBeenCalledTimes(2)
+		vi.useRealTimers()
+	})
+})

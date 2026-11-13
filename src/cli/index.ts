@@ -19,6 +19,7 @@ import { PageManager } from "../core/pageManager.js"
 import { ShiftInput } from "../core/shiftInput.js"
 import { createOscRouter } from "../core/oscRouter.js"
 import { createPresetStore } from "../core/presetStore.js"
+import { surfacePresetAutosave } from "../core/surfaceAutosave.js"
 import { applySystemConfig, captureSystemConfig } from "../core/systemConfig.js"
 import { createAppRuntime, type AppRuntime } from "../core/appRuntime.js"
 import type { ClockState, LaneState } from "../core/clock.js"
@@ -160,6 +161,8 @@ const pm = new PageManager(
 			presets.persistSlot(captureSystemConfig({ pm, slotPages }), slotLabel(slot), patch),
 	},
 )
+// The app going away keeps the idk.surface preset as it stands (core/surfaceAutosave.ts).
+surface.onAway(surfacePresetAutosave(presets, () => captureSystemConfig({ pm, slotPages })))
 
 function renderTick() {
 	const frame = pm.renderFocused()

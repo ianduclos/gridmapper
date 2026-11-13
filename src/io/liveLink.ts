@@ -117,8 +117,9 @@ export function createSurfaceLink(
 	opts: { inPort: number; outPort: number },
 	makeOsc?: MakeOsc,
 	retryMs = RETRY_MS,
-): LiveLinkHandle & { port: number } {
+): LiveLinkHandle & { port: number; onAway: (fn: () => void) => void } {
 	const base = createLiveLink(opts, makeOsc, retryMs, "surface")
+	let away: (() => void) | null = null
 	const pages = new Set<(path: string, args: any[]) => void>()
 	let unwatch: (() => void) | null = null
 	let timer: ReturnType<typeof setInterval> | null = null
@@ -140,7 +141,15 @@ export function createSurfaceLink(
 		}
 	}
 	const probe = () => {
-		if (up && Date.now() - heardAt > SURFACE_AWAY_MS) up = false
+		if (up && Date.now() - heardAt > SURFACE_AWAY_MS) {
+			up = false
+			// Once per absence: the host's hook (core/surfaceAutosave.ts saves the preset).
+			try {
+				away?.()
+			} catch (err) {
+				console.error("[surface] the away hook threw:", err)
+			}
+		}
 		base.send("/surface/get", SURFACE_PROBE_ADDR)
 	}
 	const stop = () => {
@@ -153,6 +162,8 @@ export function createSurfaceLink(
 
 	return {
 		port: opts.inPort,
+		/** Called once each time the app, having been there, stops answering. Not on close. */
+		onAway: (fn) => { away = fn },
 		send: base.send,
 		on: (fn) => {
 			// The watcher listens first, so a page hears SURFACE_LINK_UP before the answer that caused it.
