@@ -532,7 +532,7 @@ export class IsoSurfacePage implements Page {
 	 * rest of the top row (x5-x12): idk.surface's lanes 1-8 for the track in front. They are
 	 * one overlay with one state (`panelShown`); there is no picker without the panel. The key
 	 * opens it at once on the press; let go within MENU_TAP_MS it stays (or, if it was open
-	 * already, shuts); held longer, or used while held from shut, it shuts on release.
+	 * already, shuts); held longer, it shuts on release. Only the time counts.
 	 * The lanes are surface's KEYS rows (/surface/route/keys<n>/lanes, a string of digits):
 	 * read over ctx.surface while the menu is open, written on a press, never stored here. A
 	 * track not heard yet is left out; with none heard the eight are dark and take no press.
@@ -542,7 +542,6 @@ export class IsoSurfacePage implements Page {
 	private menuHeld = false
 	private menuHeldAt = 0
 	private menuWasOpen = false
-	private menuUsed = false
 	private pickerDown = new Set<number>()
 	private unsurface: (() => void) | null = null
 	/** When each track last received a note-on, for the activity pulse in render(). */
@@ -769,7 +768,6 @@ export class IsoSurfacePage implements Page {
 					this.menuHeld = true
 					this.menuHeldAt = Date.now()
 					this.menuWasOpen = this.panelShown
-					this.menuUsed = false
 					this.panelShown = true
 					this.transposerShown = false
 					this.lanesAskedAt = 0
@@ -777,9 +775,11 @@ export class IsoSurfacePage implements Page {
 				} else if (this.menuHeld) {
 					this.menuHeld = false
 					const tap = Date.now() - this.menuHeldAt < MENU_TAP_MS
-					// A tap from shut leaves it open. Anything else shuts it: a tap when it was
-					// open, a hold, or a quick press that was used as a shift.
-					if (!(tap && !this.menuWasOpen && !this.menuUsed)) {
+					// Time alone decides (Ian: "long press temporary, short press toggles"). A tap
+					// from shut leaves it open; a tap when it was open, or a hold, shuts it. What
+					// was pressed meanwhile does not count: a quick press overlapping a panel key
+					// once shut the menu unseen, and the next panel presses were NOTES (2026-11-13).
+					if (!(tap && !this.menuWasOpen)) {
 						this.panelShown = false
 						this.tintKeyDown = false
 					}
@@ -792,10 +792,7 @@ export class IsoSurfacePage implements Page {
 		if (this.panelShown && ev.x >= PANEL_X0 && ev.x < PANEL_X0 + PANEL_W) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (!ev.s && this.held.has(i)) this.releaseKey(i, ctx) // held from before the panel
-			else {
-				if (ev.s) this.menuUsed = true
-				this.panelKey(ev, ctx)
-			}
+			else this.panelKey(ev, ctx)
 			return
 		}
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
@@ -842,7 +839,6 @@ export class IsoSurfacePage implements Page {
 		if (!ev.s) return this.pickerDown.delete(i) // a note held from before still lets go
 		if (!this.panelShown || !this.hasPanel()) return false
 		this.pickerDown.add(i) // the menu's: no note
-		this.menuUsed = true
 		const heard = [this.front].filter((t) => this.trackLanes[t] !== undefined)
 		if (heard.length === 0) return true // not heard yet: never guess what a toggle means
 		const digit = String(ev.x - PICKER_X0 + 1)
@@ -1349,8 +1345,9 @@ export class IsoSurfacePage implements Page {
 		drawSelector(f, ctx)
 		// Iso's own two toggles sit where the other surface pages have the left shifts.
 		f[ledIndex(this.size, 0, PANEL_TOGGLE_ROW)] = !this.hasPanel() ? 0
-			: this.panelShown ? LVL_TR_TOGGLE_SHOWN
-			: this.isPanelDefault() ? LVL_TR_TOGGLE_IDLE : LVL_TR_TOGGLE_OFFSET
+			// Two levels, the transposer key's own (Ian, 2026-11-13): no in-between glow for a
+			// panel value away from rest, which made the two keys differ while both were off.
+			: this.panelShown ? LVL_TR_TOGGLE_SHOWN : LVL_TR_TOGGLE_IDLE
 		f[ledIndex(this.size, 0, TRANSPOSE_TOGGLE_ROW)] = this.transposerShown
 			? LVL_TR_TOGGLE_SHOWN
 			: this.transpose !== 0 ? LVL_TR_TOGGLE_OFFSET : LVL_TR_TOGGLE_IDLE
@@ -2030,7 +2027,7 @@ const pick = (n: number, cur: number, home: number) =>
 /** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS.filter((k) => k.y !== PANEL_TOGGLE_ROW && k.y !== TRANSPOSE_TOGGLE_ROW), // no left shifts on iso
-	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Menu: panel + lanes", short: "Menu", help: "One menu: the panel on cols 1-4 and, on the top row x5-x12, lanes 1-8 for the track in front. Tap: open, tap again: shut. Hold: open only while held. Dim-bright when a panel value is away from rest while shut. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Menu: panel + lanes", short: "Menu", help: "One menu: the panel on cols 1-4 and, on the top row x5-x12, lanes 1-8 for the track in front. Tap: open, tap again: shut. Hold: open only while held. Bright when open, dim when shut, as the transposer key. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },

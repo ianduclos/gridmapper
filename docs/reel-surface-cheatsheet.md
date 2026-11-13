@@ -25,7 +25,7 @@ y7  sh 1              BLEND         BLEND        play
 | Where | Key | What it does |
 |---|---|---|
 | x0 y0 / y1 / y4 | iso / PLAY / home | Go to that page. |
-| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y5 | Twister | Tap: the Twister overlay (scenes, A to B fader, Twister pages) stays open; tap again to shut. Hold: open while held. See the end of this sheet. |
 | x0 y2 | REEL | Go to this page. Held while on it: pick the two lanes. |
 | x0 y7 | shift 1 | Hold, then press a step: the length. Or a looper: clear. |
 | x2-x13 y0-y2 | steps 1-36 | The step line, twelve a row, step 1 top left. |
@@ -121,3 +121,21 @@ ring. The line is saved with the surface patch.
 - **Recorded:** pad presses only. The steps are the app's and stay separate.
 - **Lights:** very dim = empty, blinking = recording, bright = playing,
   medium = paused.
+
+## Twister overlay (x0 y5, on every page)
+
+The Twister key opens an overlay over the page. **Tap** it: the overlay stays
+until you tap again. **Hold** it: open only while held (and the Twister shows
+its own page chooser meanwhile, as before). While it is open the page under it
+takes no keys; the left column still works.
+
+| Where | Key | What it does |
+|---|---|---|
+| x4-x8 y0 | Twister pages a-e | Put that Twister page in front. Lit = the one last chosen here. |
+| x4-x11 y2 | scene 1-8 to A | Put that stored scene on the fader's A side. Lit = the scene on A. |
+| x4-x11 y3 | scene 1-8 to B | The same for the B side. An empty scene is refused by the app. |
+| x4-x11 y2 or y3, held | store | Held about 0.7 s: store Twister page 2 SET's dials into that scene. The key flashes. |
+| x4-x11 y5 | A to B fader | Eight positions, A at the left, B at the right. Lit up to where the fader is; it follows the Twister's knob and the app. |
+
+The grid cannot tell which scenes hold something: all eight look alike until
+one is on A or B.
