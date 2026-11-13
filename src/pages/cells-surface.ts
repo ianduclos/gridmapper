@@ -18,7 +18,7 @@ import {
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
 import { SELECTOR_KEYS, drawSelector, selectorKey, shiftAt } from "../util/pageSelectorSurface.js"
-import { DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
+import { CELLS_PLAYING_SURFACE, DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
 import { CycleLooper, MAX_LOOP_CYCLES, type LoopEvent } from "../util/cycleLooper.js"
 
 export const PULSE_RATE = 12 / 1.66
@@ -320,7 +320,12 @@ export class CellsSurfacePage implements Page {
 			PERFORMANCE_PULSES_PER_BEAT / (meta(this.rhythmWorld).pulsesPerBeat ?? 3)
 		)
 	}
+	/** The left column on the other pages pulses its cells key while this is true. */
+	private publishPlaying(c: PageContext) {
+		c.shared?.set(CELLS_PLAYING_SURFACE, this.running)
+	}
 	init(c: PageContext) {
+		this.publishPlaying(c)
 		this.observedRun = c.clock.running
 		this.observedRate = c.clock.rate
 		this.announce(c, true)
@@ -341,6 +346,7 @@ export class CellsSurfacePage implements Page {
 		this.dampRows.fill(false)
 		this.publishDamp(c)
 		if (this.running) this.stop(c)
+		this.publishPlaying(c)
 		for (const l of this.loopers) l.clear()
 		if (this.persistTimer) clearTimeout(this.persistTimer)
 		this.persistTimer = null
@@ -885,6 +891,7 @@ export class CellsSurfacePage implements Page {
 	private start(c: PageContext, joinOnBeat: boolean) {
 		if (this.running) return
 		this.running = true
+		this.publishPlaying(c)
 		this.joinOnBeat = joinOnBeat
 		this.originTick = undefined
 		this.preparedEnd = 0
@@ -909,6 +916,7 @@ export class CellsSurfacePage implements Page {
 			if (l.state === "recording" && l.events.length) l.close(undefined)
 		this.emitPatterns(c)
 		this.running = false
+		this.publishPlaying(c)
 		this.originTick = undefined
 		this.preparedEnd = 0
 		this.pendingWorldId = undefined

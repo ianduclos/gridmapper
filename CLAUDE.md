@@ -412,9 +412,11 @@ src/
                          idk.surface preset. Spec: idk.surface docs/specs/2026-11-11-reel-step-line-design.md.
   pages/blank-surface.ts idk.surface fork of blank-hot — same behavior, own selector
   util/pageSelectorSurface.ts  THE LEFT COLUMN OF EVERY SURFACE PAGE (the system's, not the page's):
-                         y0 iso (slot a) · y1 PLAY (slot c) · y2 Twister (hold) · y3-y4 the page's own ·
-                         y5 home (slot f, set-surface for now) · y6 shift 2 · y7 shift 1. Cells (slot b)
-                         has no key. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
+                         y0 iso (slot a) · y1 PLAY (slot c) · y2 REEL (slot d) · y3 CELLS (slot b) · y4 home ·
+                         y5 Twister overlay · y6 shift 2 · y7 shift 1. The cells key is on every page EXCEPT
+                         cells, where y3 stays its own DAMP; it idles at LVL_OTHER and pulses 2<->5 (1 s a
+                         half cycle, from Date.now()) while cells-surface publishes CELLS_PLAYING_SURFACE
+                         (core/sharedStore.ts) true. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
                          pageSelector.ts: own twisterHeld, nothing imported from the original.
                          THE TWISTER OVERLAY (Ian, 2026-11-13) lives here too, so every surface page has it:
                          x0 y5 opens it over the page (tap = stays, hold = for now; module state shared by all

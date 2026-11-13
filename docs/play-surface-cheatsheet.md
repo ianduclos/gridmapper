@@ -13,7 +13,7 @@ x:  0     2     4 ........ 11   12    14   15
 y0  iso   KEYS  lane 1 ... 8    all        loop 1
 y1  PLAY  XEN                   all        loop 2
 y2  REEL  .                     all        loop 3
-y3  .     .                     all   up   loop 4
+y3  cells .                     all   up   loop 4
 y4  home  .                     all   down PITCH
 y5  twist .                     all   u-d  STRIKE
 y6  sh 2  .                     all   urn  SLEW
@@ -22,7 +22,7 @@ y7  sh 1  PRE                   all   ARP  LATCH
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y0 / y1 / y2 / y3 / y4 | iso / PLAY / REEL pads / cells / home | Go to that page. Cells pulses softly while it is playing. |
 | x0 y5 | Twister | Tap: the Twister overlay (scenes, A to B fader, Twister pages) stays open; tap again to shut. Hold: open while held. See the end of this sheet. |
 | x0 y6 | shift 2 | Hold: BOW, FREEZE, DAMP on the lanes (below). |
 | x0 y7 | shift 1 | Hold, then press a thing: store, clear, or strike all. |

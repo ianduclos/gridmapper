@@ -13,6 +13,9 @@ export const DAMP_STATE = "damp/set-hot"
 /** idk.surface fork of the two damp keys above: the surface pages use ONLY these, so they never cross-talk with -hot pages. */
 export const DAMP_FROM_CELLS_SURFACE = "damp/cells-surface"
 export const DAMP_STATE_SURFACE = "damp/set-surface"
+/** Whether the cells page is playing (boolean). Written only by pages/cells-surface.ts; the
+ *  left column's cells key (util/pageSelectorSurface.ts) pulses softly on every other surface page while true. */
+export const CELLS_PLAYING_SURFACE = "playing/cells-surface"
 /** Clips: the ABSOLUTE 0-based index (number) of the track whose clip was launched last.
  *  Written only by pages/clips.ts; any page may read or subscribe. */
 export const FOCUS_CLIPS = "focus/clips"

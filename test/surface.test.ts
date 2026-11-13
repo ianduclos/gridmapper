@@ -6,7 +6,7 @@ import { CellsHotPage } from "../src/pages/cells-hot.js"
 import { SetHotPage } from "../src/pages/set-hot.js"
 import { IsoSurfacePage } from "../src/pages/iso-surface.js"
 import { createOscRouter } from "../src/core/oscRouter.js"
-import { PEER_OSC } from "../src/core/sharedStore.js"
+import { PEER_OSC, CELLS_PLAYING_SURFACE } from "../src/core/sharedStore.js"
 import { SharedStore, DAMP_FROM_CELLS, DAMP_FROM_CELLS_SURFACE, DAMP_STATE, DAMP_STATE_SURFACE } from "../src/core/sharedStore.js"
 import { createPresetStore } from "../src/core/presetStore.js"
 import { fileURLToPath } from "node:url"
@@ -149,7 +149,7 @@ describe("surface left column", () => {
 	it("iso at the top, PLAY under it, REEL pads on y2, home on y4, the Twister under it", () => {
 		const r = mk(5)
 		for (let y = 0; y < 8; y++) surfaceKey({ x: 0, y, s: 1 }, r.ctx)
-		expect(r.focused).toEqual([0, 2, 3]) // y0 iso (a), y1 PLAY (c), y2 REEL pads (d); y4 is where we already are
+		expect(r.focused).toEqual([0, 2, 3, 1]) // y0 iso (a), y1 PLAY (c), y2 REEL pads (d), y3 cells (b); y4 is where we already are
 		const f = r.draw(surfaceDraw)
 		expect(f[ledIndex(SIZE, 0, 4)]).toBe(12)
 		expect(f[ledIndex(SIZE, 0, 0)]).toBe(2)
@@ -161,9 +161,9 @@ describe("surface left column", () => {
 		expect(c.draw(surfaceDraw)[ledIndex(SIZE, 0, 3)]).toBe(0)
 	})
 
-	it("leaves row 3 to the page and gives rows 6-7 to the shifts", () => {
+	it("gives rows 6-7 to the shifts (row 3 is the cells key, not a shift)", () => {
 		const r = mk()
-		for (const y of [3, 6, 7]) expect(surfaceKey({ x: 0, y, s: 1 }, r.ctx)).toBe(false)
+		for (const y of [6, 7]) expect(surfaceKey({ x: 0, y, s: 1 }, r.ctx)).toBe(false)
 		expect(surfaceShift({ x: 0, y: 3, s: 1 }, r.ctx)).toBe(false)
 		expect(surfaceShift({ x: 0, y: 6, s: 1 }, r.ctx)).toBe(true)
 		expect(r.modifiers).toMatchObject({ shift1: false, shift2: true })
@@ -171,7 +171,81 @@ describe("surface left column", () => {
 		expect(r.modifiers.shift1).toBe(true)
 		const f = r.draw(surfaceDraw)
 		expect(f[ledIndex(SIZE, 0, 6)]).toBe(15)
-		expect(f[ledIndex(SIZE, 0, 3)]).toBe(0)
+	})
+})
+
+describe("surface left column: the cells key (x0 y3)", () => {
+	afterEach(() => vi.useRealTimers())
+	const mk = (slot: number, shared?: SharedStore) => {
+		const focused: number[] = []
+		const ctx = {
+			size: SIZE, slot, shared, focus: (s: number) => focused.push(s), setDirty() {},
+			modifiers: { held: new Set<number>(), shift1: false, shift2: false },
+			osc: { send() {} },
+		} as unknown as PageContext
+		const led = () => { const f = new Uint8Array(SIZE.width * SIZE.height); surfaceDraw(f, ctx); return f[ledIndex(SIZE, 0, 3)] }
+		return { ctx, focused, led }
+	}
+
+	it("focuses cells (slot b) from another page, and not when already there", () => {
+		const r = mk(0)
+		expect(surfaceKey({ x: 0, y: 3, s: 1 }, r.ctx)).toBe(true)
+		expect(r.focused).toEqual([1])
+		surfaceKey({ x: 0, y: 3, s: 0 }, r.ctx)
+		expect(r.focused).toEqual([1])
+	})
+
+	it("on the cells page x0 y3 is left to its damp: not consumed, not drawn, focuses nothing", () => {
+		const r = mk(1, new SharedStore())
+		r.ctx.shared!.set(CELLS_PLAYING_SURFACE, true)
+		expect(surfaceKey({ x: 0, y: 3, s: 1 }, r.ctx)).toBe(false)
+		expect(r.focused).toEqual([])
+		expect(r.led()).toBe(0)
+	})
+
+	it("rests at the idle level when cells is not playing", () => {
+		vi.useFakeTimers()
+		const r = mk(0, new SharedStore())
+		for (const t of [0, 1000, 2000, 3500]) { vi.setSystemTime(t); expect(r.led()).toBe(2) }
+		r.ctx.shared!.set(CELLS_PLAYING_SURFACE, false)
+		vi.setSystemTime(1000)
+		expect(r.led()).toBe(2)
+	})
+
+	it("pulses between two levels while cells plays, always under the current-page level", () => {
+		vi.useFakeTimers()
+		const r = mk(0, new SharedStore())
+		r.ctx.shared!.set(CELLS_PLAYING_SURFACE, true)
+		const seen = new Set<number>()
+		for (let t = 0; t < 4000; t += 250) { vi.setSystemTime(t); seen.add(r.led()) }
+		expect([...seen].sort()).toEqual([2, 5])
+		const selfLevel = (() => { const s = mk(2); const f = new Uint8Array(SIZE.width * SIZE.height); surfaceDraw(f, s.ctx); return f[ledIndex(SIZE, 0, 1)] })()
+		expect(Math.max(...seen)).toBeLessThan(selfLevel)
+	})
+
+	it("a context without a shared store does not throw and shows the idle level", () => {
+		const r = mk(0)
+		expect(r.led()).toBe(2)
+	})
+
+	it("cells-surface publishes its running state", () => {
+		const shared = new SharedStore()
+		const seen: unknown[] = []
+		shared.subscribe(CELLS_PLAYING_SURFACE, (v) => seen.push(v))
+		const ctx = {
+			size: SIZE, slot: 1, shared, setDirty() {}, focus() {}, persist() {},
+			modifiers: { held: new Set<number>(), shift1: false, shift2: false }, setShift() {},
+			clock: { running: false, rate: 20, tick: 0, lanes: [{ div: 1 }, { div: 1 }, { div: 1 }, { div: 1 }] },
+			osc: { send() {} },
+		} as unknown as PageContext
+		const page = new CellsSurfacePage()
+		page.init(ctx)
+		expect(shared.get(CELLS_PLAYING_SURFACE)).toBe(false)
+		page.onKey({ x: 1, y: 7, s: 1 }, ctx) // the Play key
+		page.onKey({ x: 1, y: 7, s: 0 }, ctx)
+		expect(shared.get(CELLS_PLAYING_SURFACE)).toBe(true)
+		page.dispose(ctx)
+		expect(shared.get(CELLS_PLAYING_SURFACE)).toBe(false)
 	})
 })
 
@@ -437,7 +511,7 @@ describe("iso-surface: the left column's bottom two keys are iso's own", () => {
 		expect(shifts).toEqual([])
 		expect(led(0, 6)).toBeGreaterThan(idle6) // panel shown, transposer hidden
 		expect(led(0, 7)).toBe(idle7)
-		expect(led(0, 3)).toBe(0)
+		expect(led(0, 3)).toBe(2) // the cells key, the system's
 		expect(led(0, 2)).toBe(2) // the REEL pads key, the system's
 		page.onKey({ x: 15, y: 7, s: 1 }, ctx)
 		page.onKey({ x: 15, y: 6, s: 1 }, ctx)

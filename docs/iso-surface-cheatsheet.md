@@ -13,7 +13,7 @@ x:  0      1 ............ 12   13      14       15
 y0  iso    keyboard            chord 1 track 1  loop 1
 y1  PLAY                       chord 2 track 2  loop 2
 y2  REEL                       chord 3 track 3  loop 3
-y3  .                          chord 4 track 4  loop 4
+y3  cells                      chord 4 track 4  loop 4
 y4  home                       chord 5 arp up   LATCH
 y5  twist                      chord 6 arp down PEDAL
 y6  MENU                       chord 7 arp u-d  shift 2
@@ -22,7 +22,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y0 / y1 / y2 / y3 / y4 | iso / PLAY / REEL pads / cells / home | Go to that page. Cells pulses softly while it is playing. |
 | x0 y5 | Twister | Tap: the Twister overlay (scenes, A to B fader, Twister pages) stays open; tap again to shut. Hold: open while held. See the end of this sheet. |
 | x0 y6 | MENU | One menu: the panel on x1-x4 and the lanes of the track in front on the top row x5-x12. Tap: open, tap again: shut. Hold: open only while held. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
@@ -37,7 +37,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 | x15 y7 | shift 1 | Hold + looper or chord: clear. |
 
 On this page the shifts are on the right (x15). The left x0 y6 and y7 are the
-panel and the transposer; x0 y3 is dark.
+panel and the transposer; x0 y3 goes to the cells page.
 
 ## The four tracks are layers (x14 y0-y3)
 

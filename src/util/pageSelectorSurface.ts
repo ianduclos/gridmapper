@@ -5,14 +5,15 @@
  *   y0  iso            (slot a)
  *   y1  PLAY           (slot c)
  *   y2  REEL pads      (slot d)
- *   y3  free           the page's own
+ *   y3  CELLS          (slot b)   on cells itself this is its own DAMP key
  *   y4  home           (slot f)
  *   y5  Twister        the TWISTER OVERLAY on the grid (tap = stays, hold = for now)
  *   y6  shift 2
  *   y7  shift 1
  *
- * Slots keep their letters, because idk.surface names iso, cells and set by slot. The cells
- * page (slot b) has no key for now: it stays loaded and reachable over OSC.
+ * Slots keep their letters, because idk.surface names iso, cells and set by slot. Every page
+ * but cells reaches cells with y3, which pulses softly while cells plays (cells-surface says so
+ * over the shared store). On cells itself y3 stays its DAMP key: the page's own key wins there.
  *
  * The rest of the grammar is the pages' to keep: lanes 1-8 are columns x4-x11, the far
  * right is the page's own, a hold means "for now" and a tap "stay", and shift 1 plus a
@@ -44,6 +45,7 @@
 
 import { type KeyEvent, type LedFrame, type PageContext, type Slot, type SurfaceLink, float, ledIndex } from "../core/types.js"
 import type { KeySpec } from "../core/pageModule.js"
+import { CELLS_PLAYING_SURFACE } from "../core/sharedStore.js"
 
 export const SELECTOR_COL = 0
 /** Row → the slot it focuses. */
@@ -62,6 +64,9 @@ export const REEL_PAGE_LIVE = true
 export const REEL_SLOT: Slot = 3
 export const REEL_ROW = 2
 const reelKeyOn = (_ctx: PageContext) => REEL_PAGE_LIVE
+/** The cells page (pages/cells-surface.ts, slot b) and its key on y3, shown everywhere but on cells. */
+export const CELLS_SLOT: Slot = 1
+export const CELLS_ROW = 3
 export const HOME_ROW = 4
 export const TWISTER_ROW = 5
 /** The row a page may use for itself. Order since 2026-11-13 (Ian): pads under PLAY, home above the Twister at the foot. */
@@ -73,6 +78,9 @@ export const TWISTER_FOCUS_PATH = "/twister/in/focus/page"
 
 const LVL_SELF = 12
 const LVL_OTHER = 2
+// Cells playing: the key breathes between idle and a little above it, well under LVL_SELF.
+const LVL_CELLS_PLAYING = LVL_OTHER + 3
+const CELLS_PULSE_HALF_MS = 1000
 const LVL_TWISTER = 5 // apart from the page keys at a glance
 const LVL_TWISTER_HELD = 15
 export const LVL_SHIFT_IDLE = 6 // findable by eye, apart from the page keys
@@ -217,6 +225,7 @@ export const SELECTOR_KEYS: KeySpec[] = [
 	{ x: 0, y: 1, name: "Play", help: "Jump to the PLAY page. Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: TWISTER_ROW, name: "Twister overlay", short: "Twister", help: "Tap: open the Twister overlay over the page (tap again shuts it). Hold: open only while held. On x4-x11: y0 the Twister's pages a-e; y2 a scene onto the fader's A side, y3 onto its B side (hold a scene key to store into it); y5 the A to B fader.", lit: LVL_TWISTER },
 	...(REEL_PAGE_LIVE ? [{ x: 0, y: REEL_ROW, name: "Reel pads", short: "Reel", help: "Jump to the REEL pads page. Lit when you're on it. Held while on it: the top row picks the two lanes.", lit: 2 }] : []),
+	{ x: 0, y: CELLS_ROW, name: "Cells", help: "Jump to the cells page. Pulses softly while cells is playing. (On the cells page itself this key is its damp.)", lit: LVL_OTHER },
 	{ x: 0, y: HOME_ROW, name: "Home", help: "Jump to home (the set page for now). Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: SHIFT2_ROW, name: "Shift 2", short: "Shift 2", help: "The second shift.", lit: LVL_SHIFT_IDLE },
 	{ x: 0, y: SHIFT1_ROW, name: "Shift 1", short: "Shift 1", help: "Hold, then press a thing: its way back, or its store.", lit: LVL_SHIFT_IDLE },
@@ -244,7 +253,10 @@ export function selectorKey(ev: KeyEvent, ctx: PageContext): boolean {
 		}
 		return true
 	}
-	const slot = ev.y === REEL_ROW && reelKeyOn(ctx) ? REEL_SLOT : SELECTOR_SLOT_AT_ROW.get(ev.y)
+	// On cells y3 is its own damp key, so the column leaves it alone there.
+	const slot = ev.y === REEL_ROW && reelKeyOn(ctx) ? REEL_SLOT
+		: ev.y === CELLS_ROW ? (ctx.slot === CELLS_SLOT ? undefined : CELLS_SLOT)
+		: SELECTOR_SLOT_AT_ROW.get(ev.y)
 	if (slot === undefined) return false
 	if (ev.s === 1 && slot !== ctx.slot) ctx.focus(slot)
 	return true
@@ -275,6 +287,11 @@ export function drawSelector(f: LedFrame, ctx: PageContext): void {
 		if (y < h) f[ledIndex(ctx.size, SELECTOR_COL, y)] = slot === ctx.slot ? LVL_SELF : LVL_OTHER
 	}
 	if (reelKeyOn(ctx) && REEL_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, REEL_ROW)] = ctx.slot === REEL_SLOT ? LVL_SELF : LVL_OTHER
+	if (ctx.slot !== CELLS_SLOT && CELLS_ROW < h) {
+		const playing = ctx.shared?.get<boolean>(CELLS_PLAYING_SURFACE) === true
+		const high = Math.floor(Date.now() / CELLS_PULSE_HALF_MS) % 2 === 1
+		f[ledIndex(ctx.size, SELECTOR_COL, CELLS_ROW)] = playing && high ? LVL_CELLS_PLAYING : LVL_OTHER
+	}
 	if (tw.open) twDraw(f, ctx)
 	if (TWISTER_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, TWISTER_ROW)] = twisterHeld || tw.open ? LVL_TWISTER_HELD : LVL_TWISTER
 	if (SHIFT2_ROW < h) f[ledIndex(ctx.size, SELECTOR_COL, SHIFT2_ROW)] = ctx.modifiers?.shift2 ? LVL_SHIFT_HELD : LVL_SHIFT_IDLE

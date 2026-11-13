@@ -7,9 +7,8 @@ Last updated 2026-11-13.
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `cells-surface.ts` changes this file in the same commit.
 
-The left column has no key for this page: it is loaded and reachable from the web
-panel or over OSC only. Its DAMP sits where the other pages have the REEL pads key,
-so REEL pads cannot be reached from here.
+The other pages reach this one with x0 y3, which pulses softly on them while cells
+is playing. On this page x0 y3 is DAMP instead, so the cells key is not shown here.
 
 ## The page (main view)
 

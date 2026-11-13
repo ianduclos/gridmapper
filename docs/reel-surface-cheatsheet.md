@@ -14,7 +14,7 @@ x:  0     2 ........................ 13   14    15
 y0  iso   steps  1-12                           loop 1
 y1  PLAY  steps 13-24                           loop 2
 y2  REEL  steps 25-36                           loop 3
-y3  .
+y3  cells
 y4  home  LEFT pads   SPEED  value  SPEED  RIGHT pads  ARP
 y5  twist (x2-x5)     ROLL   x7-x8  ROLL   (x10-x13)
 y6  sh 2              CHANCE        CHANCE
@@ -24,7 +24,7 @@ y7  sh 1              BLEND         BLEND        play
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y4 | iso / PLAY / home | Go to that page. |
+| x0 y0 / y1 / y3 / y4 | iso / PLAY / cells / home | Go to that page. Cells pulses softly while it is playing. |
 | x0 y5 | Twister | Tap: the Twister overlay (scenes, A to B fader, Twister pages) stays open; tap again to shut. Hold: open while held. See the end of this sheet. |
 | x0 y2 | REEL | Go to this page. Held while on it: pick the two lanes. |
 | x0 y7 | shift 1 | Hold, then press a step: the length. Or a looper: clear. |
