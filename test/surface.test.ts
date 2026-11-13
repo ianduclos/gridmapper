@@ -297,7 +297,7 @@ describe("iso-surface: the lane picker", () => {
 		const top = () => { const f = page.render(ctx)!; return Array.from({ length: 12 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
 		const sets = () => out.filter((m) => m[0] !== "/surface/get")
-		return { page, key, shift2, pick, add, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
+		return { page, ctx, key, shift2, pick, add, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
 	it("x0 y6 opens ONE menu: the panel on x1-x4 and the lanes of the track on x5-x12 of the top row, together", () => {
@@ -390,6 +390,19 @@ describe("iso-surface: the lane picker", () => {
 		expect((r.page as any).panelShown).toBe(true)
 		r.shift2(true); r.shift2(false)
 		expect((r.page as any).panelShown).toBe(false)
+	})
+
+	it("x0 y6 and x0 y7 share their two levels: dim when off, bright when on, whatever the panel holds", () => {
+		const r = mk()
+		const led = (y: number) => r.page.render(r.ctx)![ledIndex(SIZE, 0, y)]
+		expect(led(6)).toBe(led(7)) // both off
+		r.shift2(true); r.shift2(false) // menu open
+		r.key(3, 2, 1); r.key(3, 2, 0) // arp chance 75 %: a panel value away from rest
+		const on = led(6)
+		r.shift2(true); r.shift2(false) // shut
+		expect(led(6)).toBe(led(7)) // no in-between glow
+		r.key(0, 7, 1); r.key(0, 7, 0) // transposer on
+		expect(led(7)).toBe(on)
 	})
 
 	it("opening the menu hides the transposer", () => {

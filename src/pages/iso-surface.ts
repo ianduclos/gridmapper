@@ -1441,8 +1441,9 @@ export class IsoSurfacePage implements Page {
 		drawSelector(f, ctx)
 		// Iso's own two toggles sit where the other surface pages have the left shifts.
 		f[ledIndex(this.size, 0, PANEL_TOGGLE_ROW)] = !this.hasPanel() ? 0
-			: this.panelShown ? LVL_TR_TOGGLE_SHOWN
-			: this.isPanelDefault() ? LVL_TR_TOGGLE_IDLE : LVL_TR_TOGGLE_OFFSET
+			// Two levels, the transposer key's own (Ian, 2026-11-13): no in-between glow for a
+			// panel value away from rest, which made the two keys differ while both were off.
+			: this.panelShown ? LVL_TR_TOGGLE_SHOWN : LVL_TR_TOGGLE_IDLE
 		f[ledIndex(this.size, 0, TRANSPOSE_TOGGLE_ROW)] = this.transposerShown
 			? LVL_TR_TOGGLE_SHOWN
 			: this.transpose !== 0 ? LVL_TR_TOGGLE_OFFSET : LVL_TR_TOGGLE_IDLE
@@ -2220,7 +2221,7 @@ const pick = (n: number, cur: number, home: number) =>
 /** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS.filter((k) => k.y !== PANEL_TOGGLE_ROW && k.y !== TRANSPOSE_TOGGLE_ROW), // no left shifts on iso
-	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Menu: panel + lanes", short: "Menu", help: "One menu: the panel on cols 1-4 and, on the top row x5-x12, lanes 1-8 for the selected tracks. Tap: open, tap again: shut. Hold: open only while held. Dim-bright when a panel value is away from rest while shut. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Menu: panel + lanes", short: "Menu", help: "One menu: the panel on cols 1-4 and, on the top row x5-x12, lanes 1-8 for the selected tracks. Tap: open, tap again: shut. Hold: open only while held. Bright when open, dim when shut, as the transposer key. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },

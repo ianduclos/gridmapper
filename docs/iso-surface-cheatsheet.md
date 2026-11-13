@@ -117,7 +117,8 @@ counts, not what you pressed meanwhile. The key is bright while the menu is open
 
 The panel is on x1-x4; the lanes are on the top row x5-x12 (see Tracks). The
 keyboard stays playable on x5-x12 below the top row. It and the transposer hide each other.
-The key glows when a value is away from its default while hidden.
+The key is bright while the menu is open and dim when it is shut, the same two
+levels as the transposer key below it.
 
 | Where | Key | What it does |
 |---|---|---|
