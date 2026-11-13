@@ -59,6 +59,21 @@ Starts or stops cells. Cells owns the tempo: if the transport is stopped, play
 starts it at this page's tempo. Stopping cells leaves the transport running for
 the other pages. Cells joins a running transport on its next beat.
 
+## Tempo, shared with the app
+
+Cells and the app's TEMPO are one tempo. When the two first meet (the agent
+starting, or the app coming back), the app's tempo wins and cells takes it.
+After that, a change on either side goes to the other: turn TEMPO in the app and
+cells follows, even when cells is not the page in front. Change the tempo from
+cells (a setting, the transport, or choosing a world with its suggested tempo)
+and the app follows. A world's suggested tempo always goes to the app when the
+world arrives.
+
+The app only takes 30 to 300. If cells is set slower or faster than that, the
+app is given 30 or 300 and cells keeps its own tempo until the app says
+something else. Nothing here lines up the first beat of the app's arpeggio with
+cells' first beat: only the speed is shared.
+
 ## Damp (x0 y3)
 
 - **Hold:** damps all six voices, through the home page, so both agree.

@@ -397,6 +397,13 @@ src/
                          PLAY has the arp's four ORDER keys at x14 y3-y6.
   pages/cells-surface.ts idk.surface fork of cells-hot — same behavior, own selector + shared-store keys
                          (DAMP_FROM_CELLS_SURFACE / DAMP_STATE_SURFACE); shares only read-only world data
+                         ONE TEMPO WITH THE APP (2026-11-13): cells' BPM and /surface/tempo (30..300) are one number.
+                         The APP wins when they first meet (init, /link/up); then an edit either side goes to the
+                         other, and a world landing writes its recommendedBpm. Cells outside 30..300 writes the
+                         app its clamp and keeps its own until the app says otherwise. Loop guard: `appBpm` (the last
+                         value known to both) + a 400 ms quiet after a write; equal-within-0.005 is not news. No
+                         `ctx.surface` = no change. Only the TEMPO is shared: no downbeat/phase address exists in
+                         the app (its arp runs from the first key press), so nothing aligns the beats.
   pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;
                          EIGHT voices (cols 4-11), not six.
                          ROLL is gone; rows top to bottom y5 BOW · y6 FREEZE · y7 DAMP (as PLAY's shift 2),
@@ -480,6 +487,10 @@ src/
   io/liveLink.ts         the Ableton Live link: a SECOND OSC peer (send 11000, listen 11001,
                          loopback), never mixed with Max's. Pages get it as ctx.live; only
                          pages/clips.ts uses it.
+                         createSurfaceLink is the ONE subscriber to the app: the app keeps one subscription per
+                         port and a new subscribe REPLACES its topics, so the link folds every page's
+                         /surface/subscribe into one (always `values`, plus each topic asked within 9 s) and
+                         renews it every 3 s while any page listens, in front or not.
   pages/clips.ts         CLIPS — Live Session-view launcher over the idk.clips AbletonOSC fork.
                          15×6 window (Live's red box follows), x15 scenes, y6 stop/toggles,
                          y7 pages key · C M S A V layers · ←→↑↓ · ⇧. Absolute indices; publishes

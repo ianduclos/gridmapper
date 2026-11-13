@@ -142,7 +142,8 @@ describe("liveLink", () => {
 })
 
 describe("surface link: it watches the app", () => {
-	const names = (o: ReturnType<typeof fakeOsc>) => o.sent.map((m) => [m.path, ...m.args])
+	// The subscription renewals have their own tests below.
+	const names = (o: ReturnType<typeof fakeOsc>) => o.sent.filter((m) => m.path !== "/surface/subscribe").map((m) => [m.path, ...m.args])
 	const RELEASE = [["/surface/osc/4/release"], ["/surface/arp/call/clear"]]
 
 	it("asks the app every second while a page listens, and stops when the last one leaves", () => {
@@ -196,6 +197,56 @@ describe("surface link: it watches the app", () => {
 		o.incoming("/surface/arp", 1)
 		expect(names(o)).toEqual(RELEASE)
 		expect(a.filter((p) => p === "/link/up").length).toBe(2)
+		link.close()
+		vi.useRealTimers()
+	})
+})
+
+describe("surface link: the subscription is the link's", () => {
+	const subs = (o: ReturnType<typeof fakeOsc>) => o.sent.filter((m) => m.path === "/surface/subscribe").map((m) => m.args)
+	const L = { inPort: 57133, outPort: 57150 }
+
+	it("keeps `values` subscribed every 3 s while a page listens, with no page asking", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink(L, o.make)
+		const off = link.on(() => {})
+		expect(subs(o)).toEqual([["127.0.0.1", 57133, "values"]]) // at once
+		vi.advanceTimersByTime(9000)
+		expect(subs(o).length).toBe(4) // 0, 3, 6, 9 s
+		off()
+		const n = subs(o).length
+		vi.advanceTimersByTime(9000)
+		expect(subs(o).length).toBe(n)
+		vi.useRealTimers()
+	})
+
+	it("folds a page's own subscribe into one message, so pages cannot replace each other's topics", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink(L, o.make)
+		link.on(() => {})
+		o.sent.length = 0
+		link.send("/surface/subscribe", "127.0.0.1", 57133, "lanes")
+		link.send("/surface/subscribe", "127.0.0.1", 57133, "preset")
+		expect(subs(o)).toEqual([["127.0.0.1", 57133, "values", "lanes"], ["127.0.0.1", 57133, "values", "lanes", "preset"]])
+		o.sent.length = 0
+		vi.advanceTimersByTime(3000)
+		expect(subs(o).at(-1)).toEqual(["127.0.0.1", 57133, "values", "lanes", "preset"])
+		vi.advanceTimersByTime(12_000) // nobody renewed lanes or preset: they lapse, values stays
+		expect(subs(o).at(-1)).toEqual(["127.0.0.1", 57133, "values"])
+		link.close()
+		vi.useRealTimers()
+	})
+
+	it("subscribes again when the app is found again", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink(L, o.make)
+		link.on(() => {})
+		o.sent.length = 0
+		o.incoming("/surface/arp", 0)
+		expect(subs(o).length).toBe(1)
 		link.close()
 		vi.useRealTimers()
 	})

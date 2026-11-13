@@ -95,6 +95,12 @@ export const SURFACE_AWAY_MS = 3000
 export const SURFACE_PROBE_ADDR = "/surface/arp"
 /** Sent to the app each time it is found (again): let go of everything the grid held. */
 export const SURFACE_RELEASE = ["/surface/osc/4/release", "/surface/arp/call/clear"] as const
+/** How often the link renews the app's subscription (the app drops one after 10 s; its docs ask for 3). */
+export const SURFACE_RENEW_MS = 3000
+/** A topic a page asked for is kept in the renewal this long after its last ask. */
+export const SURFACE_TOPIC_LEASE_MS = 9000
+/** What the link itself keeps subscribed for every page, in front or not. */
+export const SURFACE_OWN_TOPIC = "values"
 /**
  * A message the LINK makes up, never the app: the app has just been found, at the agent's
  * start or after it was away. The link has already sent SURFACE_RELEASE; a page hearing
@@ -125,12 +131,29 @@ export function createSurfaceLink(
 	let timer: ReturnType<typeof setInterval> | null = null
 	let up = false
 	let heardAt = 0
+	let ticks = 0
+	// The app keeps ONE subscription per host and port and a new subscribe REPLACES its topics,
+	// so pages each asking for their own would undo one another. The link is the one voice that
+	// subscribes: it asks for SURFACE_OWN_TOPIC always and for every topic a page has asked for
+	// lately, and renews the lot on its probe timer, so a page that is not in front still hears
+	// the app's values (cells' tempo).
+	const asked = new Map<string, number>()
+	const renew = () => {
+		const now = Date.now()
+		const topics = [SURFACE_OWN_TOPIC]
+		for (const [t, at] of [...asked]) {
+			if (now - at > SURFACE_TOPIC_LEASE_MS) asked.delete(t)
+			else if (t !== SURFACE_OWN_TOPIC) topics.push(t)
+		}
+		base.send("/surface/subscribe", "127.0.0.1", opts.inPort, ...topics)
+	}
 
 	const watch = (path: string) => {
 		if (!path.startsWith("/surface/")) return
 		heardAt = Date.now()
 		if (up) return
 		up = true
+		renew() // the app may have lost us with its restart
 		for (const a of SURFACE_RELEASE) base.send(a)
 		for (const fn of [...pages]) {
 			try {
@@ -151,6 +174,7 @@ export function createSurfaceLink(
 			}
 		}
 		base.send("/surface/get", SURFACE_PROBE_ADDR)
+		if (++ticks % Math.round(SURFACE_RENEW_MS / SURFACE_PROBE_MS) === 1) renew()
 	}
 	const stop = () => {
 		if (timer) clearInterval(timer)
@@ -158,13 +182,24 @@ export function createSurfaceLink(
 		unwatch?.()
 		unwatch = null
 		up = false
+		ticks = 0
+		asked.clear()
 	}
 
 	return {
 		port: opts.inPort,
 		/** Called once each time the app, having been there, stops answering. Not on close. */
 		onAway: (fn) => { away = fn },
-		send: base.send,
+		send: (path, ...args) => {
+			// A page's own subscribe is folded into the link's, never sent alone (see `asked`).
+			if (path === "/surface/subscribe" && args[1] === opts.inPort) {
+				const now = Date.now()
+				for (const t of args.slice(2)) if (typeof t === "string") asked.set(t, now)
+				renew()
+				return
+			}
+			base.send(path, ...args)
+		},
 		on: (fn) => {
 			// The watcher listens first, so a page hears SURFACE_LINK_UP before the answer that caused it.
 			if (!unwatch) {

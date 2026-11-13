@@ -14,9 +14,11 @@ import {
 	makeFrame,
 	ledIndex,
 	UI_ONLY_PREFIX,
+	float,
 } from "../core/types.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
+import { SURFACE_LINK_UP } from "../io/liveLink.js"
 import { LVL_SELF, SELECTOR_KEYS, drawSelector, selectorKey, shiftAt } from "../util/pageSelectorSurface.js"
 import { CELLS_PLAYING_SURFACE, DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
 import { CycleLooper, MAX_LOOP_CYCLES, type LoopEvent } from "../util/cycleLooper.js"
@@ -32,6 +34,21 @@ export const bpmToPulseRate = (bpm: number) =>
 	(bpm * PERFORMANCE_PULSES_PER_BEAT) / 60
 const BPM_MIN = 20,
 	BPM_MAX = 400
+/**
+ * ONE TEMPO WITH THE APP (Ian, 2026-11-13). idk.surface's /surface/tempo (BPM, 30..300) and
+ * cells' BPM are the same number. Who wins: the APP'S tempo, whenever the two first meet (the
+ * agent starting, a link coming up, this page loading); after that an edit on either side
+ * goes to the other, and a world landing writes its recommended tempo to the app. Cells
+ * can hold a tempo the app cannot (20..400): the app is then written its nearest (30 or
+ * 300) and cells keeps its own until the app is next heard to say something else.
+ */
+const APP_TEMPO_ADDR = "/surface/tempo",
+	APP_TEMPO_MIN = 30,
+	APP_TEMPO_MAX = 300,
+	/** After writing the app, ignore what it says of the tempo this long: a late answer to an earlier read. */
+	APP_TEMPO_QUIET_MS = 400,
+	/** Closer than this is the same tempo (floats, the app's own rounding). */
+	APP_TEMPO_EPS = 0.005
 /** Voice rows: mute (or lock) key at x1, three cell choices at x2-4, phase bar x5-15. */
 const MUTE_X = 1,
 	CELL_X0 = 2
@@ -280,6 +297,10 @@ export class CellsSurfacePage implements Page {
 	private tuning: Tuning = "tritave"
 	private rootMultiplier = 1
 	private pulseRate = PULSE_RATE
+	/** The app's tempo as last known to BOTH sides (heard, or written by us); undefined until the app is met. */
+	private appBpm: number | undefined
+	private appWroteAt = 0
+	private unsurface: (() => void) | null = null
 	private lane = 0
 	private humanizeMs = 4
 	private decayScale = 1
@@ -324,7 +345,45 @@ export class CellsSurfacePage implements Page {
 	private publishPlaying(c: PageContext) {
 		c.shared?.set(CELLS_PLAYING_SURFACE, this.running)
 	}
+	/** What the app says: its tempo (on a read, or on `values`), or that it has just (re)appeared. */
+	private hearApp(path: string, args: any[], c: PageContext) {
+		if (path === SURFACE_LINK_UP) {
+			// A found app wins again, so the next tempo heard is taken even if it matches
+			// what we last knew; the link has not yet subscribed us, so ask.
+			this.appBpm = undefined
+			c.surface?.send("/surface/get", APP_TEMPO_ADDR)
+			return
+		}
+		if (path !== APP_TEMPO_ADDR) return
+		const v = Number(args[0])
+		if (!Number.isFinite(v)) return
+		if (Date.now() - this.appWroteAt < APP_TEMPO_QUIET_MS) return
+		if (this.appBpm !== undefined && Math.abs(v - this.appBpm) < APP_TEMPO_EPS) return
+		this.appBpm = v
+		const bpm = Math.min(BPM_MAX, Math.max(BPM_MIN, v))
+		if (Math.abs(pulseRateToBpm(this.pulseRate) - bpm) < APP_TEMPO_EPS) return
+		// Exactly as a /setting/bpm change does, but without telling the app back.
+		this.pulseRate = bpmToPulseRate(bpm)
+		if (this.running)
+			c.clockControl?.setRate(this.pulseRate * (c.clock.lanes[this.lane]?.div ?? 1))
+		this.replaceAll(c)
+		this.persist(c)
+		this.announce(c)
+	}
+	/** Our tempo changed here: say it to the app, clamped to what the app takes. Nothing without a link. */
+	private tellApp(c: PageContext) {
+		if (!c.surface) return
+		const bpm = Math.round(Math.min(APP_TEMPO_MAX, Math.max(APP_TEMPO_MIN, pulseRateToBpm(this.pulseRate))) * 1000) / 1000
+		if (this.appBpm !== undefined && Math.abs(bpm - this.appBpm) < APP_TEMPO_EPS) return
+		this.appBpm = bpm
+		this.appWroteAt = Date.now()
+		c.surface.send(APP_TEMPO_ADDR, float(bpm))
+	}
 	init(c: PageContext) {
+		// Heard while loaded, in front or not: the link keeps `values` subscribed for every page.
+		this.unsurface?.()
+		this.unsurface = c.surface?.on((path, args) => this.hearApp(path, args, c)) ?? null
+		c.surface?.send("/surface/get", APP_TEMPO_ADDR)
 		this.publishPlaying(c)
 		this.observedRun = c.clock.running
 		this.observedRate = c.clock.rate
@@ -342,6 +401,8 @@ export class CellsSurfacePage implements Page {
 		this.publishDamp(c)
 	}
 	dispose(c: PageContext) {
+		this.unsurface?.()
+		this.unsurface = null
 		this.dampAllHeld = false
 		this.dampRows.fill(false)
 		this.publishDamp(c)
@@ -370,6 +431,7 @@ export class CellsSurfacePage implements Page {
 		const next = s.rate / (lane?.div ?? 1)
 		if (!Number.isFinite(next) || Math.abs(next - this.pulseRate) < 1e-9) return
 		this.pulseRate = num(next, this.pulseRate, 0.1, 200)
+		this.tellApp(c)
 		this.persist(c)
 		this.announce(c)
 	}
@@ -655,6 +717,7 @@ export class CellsSurfacePage implements Page {
 				c.clockControl?.setRate(
 					this.pulseRate * (c.clock.lanes[this.lane]?.div ?? 1),
 				)
+			this.tellApp(c)
 		} else if (key === "lane") {
 			const n = int(v, this.lane, 0, 3)
 			if (n !== this.lane) {
@@ -856,6 +919,9 @@ export class CellsSurfacePage implements Page {
 			this.pulseRate = bpmToPulseRate(
 				num(raw.bpm, pulseRateToBpm(this.pulseRate), BPM_MIN, BPM_MAX),
 			)
+		// A preset loaded mid-session carries its tempo to the app; at boot the app has not been
+		// met yet (appBpm unknown) and wins, so nothing is written.
+		if (this.appBpm !== undefined) this.tellApp(c)
 		if (raw.patterns !== undefined) this.restorePatterns(raw.patterns)
 		this.announce(c, true)
 	}
@@ -969,6 +1035,8 @@ export class CellsSurfacePage implements Page {
 			this.pulseRate = bpmToPulseRate(Math.min(BPM_MAX, Math.max(BPM_MIN, bpm)))
 			if (this.running && c)
 				c.clockControl?.setRate(this.pulseRate * (c.clock.lanes[this.lane]?.div ?? 1))
+			// A world landing is the one tempo that beats the app's.
+			if (c) this.tellApp(c)
 		}
 		this.pendingRecommendationWorldId = undefined
 		this.resetEvolution()
