@@ -401,6 +401,12 @@ src/
                          y5 home (slot f, set-surface for now) · y6 shift 2 · y7 shift 1. Cells (slot b)
                          has no key. selectorKey + shiftKey + drawSelector + releaseShifts. A fork of
                          pageSelector.ts: own twisterHeld, nothing imported from the original.
+                         THE TWISTER OVERLAY (Ian, 2026-11-13) lives here too, so every surface page has it:
+                         x0 y5 opens it over the page (tap = stays, hold = for now; module state shared by all
+                         pages, `resetTwisterOverlay()` for tests). x4-x11: y0 Twister pages a-e
+                         (/twister/in/focus/page), y2/y3 scene 1-8 onto the fader's A/B side
+                         (/surface/scene/a|b; held 0.7 s = /surface/scene/store), y5 the fader
+                         (/surface/scene/fader). selectorKey consumes every key while it is open.
                          EXCEPT iso-surface: its x0 y6/y7 are its own PANEL and TRANSPOSER toggles, as
                          before the column existed (Ian, 2026-11-11); iso's shifts are x15 y6/y7 only
                          and its y3-y4 are dark. cells-surface's damp sits on y4.

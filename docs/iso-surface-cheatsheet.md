@@ -23,7 +23,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 | Where | Key | What it does |
 |---|---|---|
 | x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
-| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y5 | Twister | Tap: the Twister overlay (scenes, A to B fader, Twister pages) stays open; tap again to shut. Hold: open while held. See the end of this sheet. |
 | x0 y6 | MENU | One menu: the panel on x1-x4 and the lanes of the selected tracks on the top row x5-x12. Tap: open, tap again: shut. Hold: open only while held. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
 | x1-x12 | keyboard | Right = one step up, up a row = a fourth up (5 steps). Home is bottom left. |
@@ -142,3 +142,21 @@ The panel's values are saved with the preset.
   leave the page and are saved with the preset.
 - **Lights:** very dim = empty, blinking = recording, full = playing,
   medium = paused.
+
+## Twister overlay (x0 y5, on every page)
+
+The Twister key opens an overlay over the page. **Tap** it: the overlay stays
+until you tap again. **Hold** it: open only while held (and the Twister shows
+its own page chooser meanwhile, as before). While it is open the page under it
+takes no keys; the left column still works.
+
+| Where | Key | What it does |
+|---|---|---|
+| x4-x8 y0 | Twister pages a-e | Put that Twister page in front. Lit = the one last chosen here. |
+| x4-x11 y2 | scene 1-8 to A | Put that stored scene on the fader's A side. Lit = the scene on A. |
+| x4-x11 y3 | scene 1-8 to B | The same for the B side. An empty scene is refused by the app. |
+| x4-x11 y2 or y3, held | store | Held about 0.7 s: store Twister page 2 SET's dials into that scene. The key flashes. |
+| x4-x11 y5 | A to B fader | Eight positions, A at the left, B at the right. Lit up to where the fader is; it follows the Twister's knob and the app. |
+
+The grid cannot tell which scenes hold something: all eight look alike until
+one is on A or B.

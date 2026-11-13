@@ -10,9 +10,11 @@ import { PEER_OSC } from "../src/core/sharedStore.js"
 import { SharedStore, DAMP_FROM_CELLS, DAMP_FROM_CELLS_SURFACE, DAMP_STATE, DAMP_STATE_SURFACE } from "../src/core/sharedStore.js"
 import { createPresetStore } from "../src/core/presetStore.js"
 import { fileURLToPath } from "node:url"
-import { selectorKey as surfaceKey, shiftKey as surfaceShift, drawSelector as surfaceDraw, TWISTER_ROW as SURFACE_TWISTER_ROW } from "../src/util/pageSelectorSurface.js"
+import { selectorKey as surfaceKey, shiftKey as surfaceShift, drawSelector as surfaceDraw, TWISTER_ROW as SURFACE_TWISTER_ROW, resetTwisterOverlay, twisterOverlayOpen } from "../src/util/pageSelectorSurface.js"
 import { selectorKey as hotKey, drawSelector as hotDraw, SELECTOR_COL, TWISTER_ROW } from "../src/util/pageSelector.js"
-import { ledIndex, type PageContext } from "../src/core/types.js"
+import { OscFloat, ledIndex, type PageContext } from "../src/core/types.js"
+import { BlankSurfacePage } from "../src/pages/blank-surface.js"
+import { PlaySurfacePage } from "../src/pages/play-surface.js"
 
 const SIZE = { width: 16, height: 8 }
 
@@ -110,6 +112,9 @@ describe("set-surface voices 7-8", () => {
 	})
 })
 
+// The Twister overlay's state belongs to the left column's module, shared by every page.
+beforeEach(() => resetTwisterOverlay())
+
 describe("surface left column", () => {
 	const mk = (slot = 0) => {
 		const sent: any[] = [], focused: number[] = []
@@ -133,6 +138,8 @@ describe("surface left column", () => {
 		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 1 }, r.ctx)
 		expect(s()).toBeGreaterThan(sIdle)
 		expect(h()).toBe(hIdle)
+		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 0 }, r.ctx)
+		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 1 }, r.ctx) // a second tap shuts the overlay
 		surfaceKey({ x: 0, y: SURFACE_TWISTER_ROW, s: 0 }, r.ctx)
 		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 1 }, r.ctx)
 		expect(s()).toBe(sIdle)
@@ -586,5 +593,132 @@ describe("surface pages: the link coming up reads the app again", () => {
 		expect(r.out).toContainEqual(["/surface/get", "/surface/view/focus"])
 		r.page.dispose(r.ctx)
 		vi.useRealTimers()
+	})
+})
+
+describe("surface left column: the Twister overlay", () => {
+	const TW = 5 // x0 y5
+	const mk = () => {
+		const app: Array<[string, ...any[]]> = []
+		const max: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		let hear: (path: string, args: any[]) => void = () => {}
+		const ctx = {
+			size: SIZE, modifiers, slot: 2, slotLabel: "c", shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [] },
+			osc: { send: (path: string, ...a: any[]) => max.push([path, ...a]) },
+			surface: {
+				port: 57133,
+				send: (path: string, ...a: any[]) => app.push([path, ...a.map((v) => (v instanceof OscFloat ? Math.round(v.value * 1000) / 1000 : v))]),
+				on: (fn: any) => ((hear = fn), () => {}),
+			},
+			setDirty() {}, focus() {}, persist() {},
+			setShift: (w: number, d: boolean) => { if (w === 1) modifiers.shift1 = d; else modifiers.shift2 = d },
+		} as unknown as PageContext
+		const page = new BlankSurfacePage()
+		page.init(ctx)
+		const key = (x: number, y: number, s: 0 | 1 = 1) => page.onKey({ x, y, s }, ctx)
+		const tap = (x: number, y: number) => { key(x, y, 1); key(x, y, 0) }
+		const frame = () => page.render(ctx)!
+		const led = (x: number, y: number) => frame()[ledIndex(SIZE, x, y)]
+		const row = (y: number) => { const f = frame(); return Array.from({ length: 8 }, (_, i) => f[ledIndex(SIZE, 4 + i, y)]) }
+		const sent = () => app.splice(0).filter((m) => m[0] !== "/surface/get" && m[0] !== "/surface/subscribe")
+		return { page, ctx, app, max, key, tap, led, row, sent, say: (p: string, v: any) => hear(p, [v]) }
+	}
+	beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(7_000_000) })
+	afterEach(() => { vi.useRealTimers() })
+
+	it("a tap opens it and it stays, a tap again shuts it; a hold shows it only while held", () => {
+		const r = mk()
+		r.key(0, TW); vi.advanceTimersByTime(100); r.key(0, TW, 0)
+		expect(twisterOverlayOpen()).toBe(true)
+		expect(r.led(0, TW)).toBe(15)
+		r.key(0, TW); vi.advanceTimersByTime(100); r.key(0, TW, 0)
+		expect(twisterOverlayOpen()).toBe(false)
+		r.key(0, TW); vi.advanceTimersByTime(600)
+		expect(twisterOverlayOpen()).toBe(true)
+		r.key(0, TW, 0)
+		expect(twisterOverlayOpen()).toBe(false)
+		// The hold still tells the Twister to show its own chooser, as before.
+		expect(r.max.filter((m) => m[0] === "/twister/in/overlay").map((m) => m[1])).toEqual([1, 0, 1, 0, 1, 0])
+	})
+
+	it("open, it reads the scenes and the fader, covers the page, and shows them from the app", () => {
+		const r = mk()
+		r.tap(0, TW)
+		r.led(0, 0)
+		for (const a of ["/surface/scene/a", "/surface/scene/b", "/surface/scene/fader"]) expect(r.app).toContainEqual(["/surface/get", a])
+		expect(r.app).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "values"])
+		expect(r.row(2)).toEqual([3, 3, 3, 3, 3, 3, 3, 3]) // nothing on A yet
+		expect(r.row(5)).toEqual([3, 3, 3, 3, 3, 3, 3, 3]) // the fader not heard yet
+		r.say("/surface/scene/a", 2); r.say("/surface/scene/b", 7); r.say("/surface/scene/fader", 0.43)
+		expect(r.row(2)).toEqual([3, 13, 3, 3, 3, 3, 3, 3])
+		expect(r.row(3)).toEqual([3, 3, 3, 3, 3, 3, 13, 3])
+		expect(r.row(5)).toEqual([7, 7, 7, 15, 3, 3, 3, 3]) // 0.43 is nearest the fourth of eight
+		expect(r.row(0)).toEqual([3, 3, 3, 3, 3, 0, 0, 0]) // five Twister pages
+		expect(r.led(15, 7)).toBe(0) // the page under it is covered
+		expect(r.led(0, 0)).toBeGreaterThan(0) // the left column stays
+	})
+
+	it("a scene key puts that scene on its row's side; held, it stores into the scene instead", () => {
+		const r = mk()
+		r.tap(0, TW); r.sent()
+		r.tap(4 + 2, 2) // scene 3 onto A
+		r.tap(4 + 5, 3) // scene 6 onto B
+		expect(r.sent()).toEqual([["/surface/scene/a", 3], ["/surface/scene/b", 6]])
+		r.key(4 + 4, 2) // scene 5, held
+		vi.advanceTimersByTime(800)
+		r.led(0, 0) // the page is drawn each frame: the store fires while the key is down
+		expect(r.sent()).toEqual([["/surface/scene/store", 5]])
+		expect(r.row(2)[4]).toBe(15) // it flashes
+		r.key(4 + 4, 2, 0)
+		expect(r.sent()).toEqual([]) // and the release does not also put it on A
+	})
+
+	it("the fader row sets the fader; the page keys focus a Twister page", () => {
+		const r = mk()
+		r.tap(0, TW); r.sent(); r.max.length = 0
+		r.tap(4, 5); r.tap(11, 5); r.tap(7, 5)
+		expect(r.sent()).toEqual([["/surface/scene/fader", 0], ["/surface/scene/fader", 1], ["/surface/scene/fader", 0.429]])
+		expect(r.row(5)).toEqual([7, 7, 7, 15, 3, 3, 3, 3])
+		r.tap(4 + 1, 0)
+		expect(r.max).toContainEqual(["/twister/in/focus/page", "b"])
+		expect(r.row(0)).toEqual([3, 13, 3, 3, 3, 0, 0, 0])
+		r.tap(4 + 6, 0) // no sixth page
+		expect(r.max.filter((m) => m[0] === "/twister/in/focus/page")).toHaveLength(1)
+	})
+
+	it("used while held from shut, it shuts on release even if quick; shut, the keys are the page's again", () => {
+		const r = mk()
+		r.key(0, TW)
+		r.tap(4, 5)
+		r.key(0, TW, 0)
+		expect(twisterOverlayOpen()).toBe(false)
+		r.sent()
+		r.tap(4, 5)
+		expect(r.sent()).toEqual([])
+	})
+
+	it("a key the page held before the overlay opened still lets go on the page", () => {
+		const r = mk()
+		const play = new PlaySurfacePage(() => {})
+		play.init(r.ctx); play.onFocus(r.ctx)
+		for (let n = 1; n <= 8; n++) (r as any).say(`/surface/lane/${n}/engine`, "modal")
+		r.app.length = 0
+		play.onKey({ x: 4, y: 7, s: 1 }, r.ctx)
+		play.onKey({ x: 0, y: 5, s: 1 }, r.ctx) // the overlay opens over the held note
+		play.onKey({ x: 4, y: 7, s: 0 }, r.ctx)
+		expect(r.sent().map((m) => m[0])).toEqual(["/surface/osc/4/lane/1/note/on", "/surface/osc/4/lane/1/note/off"])
+		play.dispose(r.ctx)
+	})
+
+	it("is one overlay for every page: opened on one, it is there on the next", () => {
+		const r = mk()
+		r.tap(0, TW)
+		const other = new SetSurfacePage(true)
+		other.init(r.ctx)
+		other.onKey({ x: 4, y: 5, s: 1 }, r.ctx) // home's own key there does nothing now
+		expect(r.sent()).toEqual([["/surface/scene/fader", 0]])
+		other.dispose(r.ctx)
 	})
 })
