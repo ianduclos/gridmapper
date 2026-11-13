@@ -49,6 +49,7 @@ export const ENGINE_DIALS: Record<Engine, readonly string[]> = {
 		"corpusMapYWidth", "corpusGlide", "corpusGrain", "corpusSpotSize", "corpusSpotSpread",
 		"corpusReverseChance", "corpusStepMutate", "corpusPitchComp", "corpusLoudComp",
 		"corpusListenChance", "corpusListenSense", "corpusListenLiteral",
+		"corpusPartBlend",
 	],
 }
 

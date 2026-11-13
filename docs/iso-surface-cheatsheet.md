@@ -16,7 +16,7 @@ y2  REEL                       chord 3 track 3  loop 3
 y3  .                          chord 4 track 4  loop 4
 y4  home                       chord 5 arp up   SUSTAIN
 y5  twist                      chord 6 arp down PEDAL
-y6  PANEL                      chord 7 arp pal. shift 2
+y6  MENU                       chord 7 arp pal. shift 2
 y7  TRANSP                     chord 8 arp urn  shift 1
 ```
 
@@ -24,7 +24,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 |---|---|---|
 | x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y5 | Twister | Hold: the Twister shows its page chooser. |
-| x0 y6 | PANEL / lanes | Tap: show or hide the performance panel on x1-x4. Hold: the lanes of the selected tracks on the top row. |
+| x0 y6 | MENU | One menu: the panel on x1-x4 and the lanes of the selected tracks on the top row x5-x12. Tap: open, tap again: shut. Hold: open only while held. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
 | x1-x12 | keyboard | Right = one step up, up a row = a fourth up (5 steps). Home is bottom left. |
 | x13 y0-y7 | chords 1-8 | Play, save or clear a chord. |
@@ -55,14 +55,12 @@ panel and the transposer; x0 y3 is dark.
 
 - **Press:** your notes go to that track alone.
 - **Shift 2 + press:** add or drop a track; one always stays.
-- **x0 y6 held (the left shift 2 key), top row:** the playing area's top row
-  goes dark and x4-x11 show surface's lanes 1-8 for the selected tracks.
-  Bright = every selected track plays that lane, medium = only some do, dim =
-  none. A press switches the lane on for all of them, or off when all already
-  play it. Let go and the row is the keyboard again. It works with the panel
-  open. All eight dark means surface has not answered (is the app open?).
-  A quick tap of x0 y6 (under a third of a second, no lane pressed) is still
-  the panel.
+- **Lanes (in the menu, x0 y6):** whenever the menu is open, x5-x12 of the top
+  row show surface's lanes 1-8 for the selected tracks. Bright = every selected
+  track plays that lane, medium = only some do, dim = none. A press switches the
+  lane on for all of them, or off when all already play it. All eight dark means
+  surface has not answered (is the app open?). Shut the menu and the row is the
+  keyboard again.
 - **Shift 1 + press:** latch that track for editing (let shift go). Then the
   **looper keys** mean "this looper feeds this track" (bright = yes) and do not
   record. Press the latched track to leave, or another track to edit that one.
@@ -111,9 +109,14 @@ panel and the transposer; x0 y3 is dark.
   (two page settings switch that off). Not saved: 0 after a load.
 - Hidden while the panel is open.
 
-## Performance panel (x0 y6)
+## The menu (x0 y6): panel and lanes
 
-Opens over x1-x4; x5-x12 stay playable. It and the transposer hide each other.
+One overlay. **Tap** x0 y6 (under a third of a second): it opens and stays; tap
+again to shut it. **Hold** it: it is open only while held. A quick press during
+which you pressed something in it also shuts on release.
+
+The panel is on x1-x4; the lanes are on the top row x5-x12 (see Tracks). The
+keyboard stays playable on x5-x12 below the top row. It and the transposer hide each other.
 The key glows when a value is away from its default while hidden.
 
 | Where | Key | What it does |

@@ -208,8 +208,8 @@ const KEYS_W = 13 // keyboard ends before column 13 (keysW is its exclusive righ
 /** idk.surface's KEYS rows 1-4, one per track: the first has no number (generated addresses.txt). */
 const LANES_ADDRS = ["/surface/route/keys/lanes", "/surface/route/keys2/lanes", "/surface/route/keys3/lanes", "/surface/route/keys4/lanes"]
 const PICKER_LANES = 8
-const PICKER_X0 = 4 // lanes 1-8 on x4-x11, centred, as on the other surface pages
-const PICKER_TAP_MS = 300 // x0 y6 let go sooner than this, with no lane pressed: a tap, the panel
+const PICKER_X0 = 5 // lanes 1-8 on x5-x12: the rest of the top row, right of the panel's four columns
+const MENU_TAP_MS = 300 // x0 y6 let go sooner than this: a tap, which toggles the menu; longer: it was a hold
 const PICKER_ASK_MS = 1000
 const LVL_PICK_ON = 13
 const LVL_PICK_SOME = 8 // only some of the selected tracks play the lane
@@ -551,21 +551,22 @@ export class IsoSurfacePage implements Page {
 	private peerBeatAt = 0
 	private unpeer: (() => void) | null = null
 	/**
-	 * THE LANE PICKER (2026-11-13, Ian: the left shift 2 key's menu, on the top row). While
-	 * x0 y6 is held (a quick tap of it is still the panel), the playing area's top row goes
-	 * dark and x4-x11 show idk.surface's lanes 1-8 for the
-	 * SELECTED tracks: bright where every selected track plays the lane, medium where only
-	 * some do, dim where none. A press switches the lane on for all of them, or off when
-	 * all already play it. The truth is surface's KEYS rows (/surface/route/keys<n>/lanes,
-	 * a string of digits): read over ctx.surface while the key is held, written on a press,
-	 * never stored here. A track not heard yet is left out; with none heard the row is dark
-	 * and takes no press. It sits above the panel, so it works with the panel open.
+	 * ONE MENU (Ian, 2026-11-13: "it should be part of the same thing. long press temporary,
+	 * short press toggles"). x0 y6 opens the PANEL on x1-x4 and, with it, THE LANE PICKER on the
+	 * rest of the top row (x5-x12): idk.surface's lanes 1-8 for the SELECTED tracks. They are
+	 * one overlay with one state (`panelShown`); there is no picker without the panel. The key
+	 * opens it at once on the press; let go within MENU_TAP_MS it stays (or, if it was open
+	 * already, shuts); held longer, or used while held from shut, it shuts on release.
+	 * The lanes are surface's KEYS rows (/surface/route/keys<n>/lanes, a string of digits):
+	 * read over ctx.surface while the menu is open, written on a press, never stored here. A
+	 * track not heard yet is left out; with none heard the eight are dark and take no press.
 	 */
 	private trackLanes: Array<string | undefined> = new Array(TRACK_ROWS).fill(undefined)
 	private lanesAskedAt = 0
-	private lanesHeld = false
-	private lanesHeldAt = 0
-	private lanesUsed = false
+	private menuHeld = false
+	private menuHeldAt = 0
+	private menuWasOpen = false
+	private menuUsed = false
 	private pickerDown = new Set<number>()
 	private unsurface: (() => void) | null = null
 	private voicedSteps = new Set<number>()
@@ -702,19 +703,25 @@ export class IsoSurfacePage implements Page {
 				if (this.transposerShown) this.panelShown = false
 				ctx.setDirty()
 			} else if (ev.y === PANEL_TOGGLE_ROW) {
-				// Held: the lane picker on the top row. A quick tap that picked nothing: the panel.
+				// One menu: the panel and the lane picker together (see trackLanes).
+				if (!this.hasPanel()) return
 				if (ev.s) {
-					this.lanesHeld = true
-					this.lanesHeldAt = Date.now()
-					this.lanesUsed = false
+					this.menuHeld = true
+					this.menuHeldAt = Date.now()
+					this.menuWasOpen = this.panelShown
+					this.menuUsed = false
+					this.panelShown = true
+					this.transposerShown = false
 					this.lanesAskedAt = 0
 					this.askLanes(ctx, Date.now())
-				} else if (this.lanesHeld) {
-					this.lanesHeld = false
-					if (!this.lanesUsed && Date.now() - this.lanesHeldAt < PICKER_TAP_MS && this.hasPanel()) {
-						this.panelShown = !this.panelShown
-						if (this.panelShown) this.transposerShown = false
-						if (!this.panelShown) this.tintKeyDown = false
+				} else if (this.menuHeld) {
+					this.menuHeld = false
+					const tap = Date.now() - this.menuHeldAt < MENU_TAP_MS
+					// A tap from shut leaves it open. Anything else shuts it: a tap when it was
+					// open, a hold, or a quick press that was used as a shift.
+					if (!(tap && !this.menuWasOpen && !this.menuUsed)) {
+						this.panelShown = false
+						this.tintKeyDown = false
 					}
 				}
 				ctx.setDirty()
@@ -725,7 +732,10 @@ export class IsoSurfacePage implements Page {
 		if (this.panelShown && ev.x >= PANEL_X0 && ev.x < PANEL_X0 + PANEL_W) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (!ev.s && this.held.has(i)) this.releaseKey(i, ctx) // held from before the panel
-			else this.panelKey(ev, ctx)
+			else {
+				if (ev.s) this.menuUsed = true
+				this.panelKey(ev, ctx)
+			}
 			return
 		}
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
@@ -767,13 +777,12 @@ export class IsoSurfacePage implements Page {
 
 	/** The lane picker's row: true when the key was the picker's (see trackLanes). */
 	private pickerKey(ev: KeyEvent, ctx: PageContext): boolean {
-		if (ev.y !== 0 || ev.x < KEYS_X0 || ev.x >= this.keysW) return false
+		if (ev.y !== 0 || ev.x < PICKER_X0 || ev.x >= PICKER_X0 + PICKER_LANES || ev.x >= this.keysW) return false
 		const i = ledIndex(this.size, ev.x, ev.y)
 		if (!ev.s) return this.pickerDown.delete(i) // a note held from before still lets go
-		if (!this.lanesHeld) return false
-		this.pickerDown.add(i) // the whole top row is the picker's while it is open: no note, no panel key
-		this.lanesUsed = true
-		if (ev.x < PICKER_X0 || ev.x >= PICKER_X0 + PICKER_LANES) return true
+		if (!this.panelShown || !this.hasPanel()) return false
+		this.pickerDown.add(i) // the menu's: no note
+		this.menuUsed = true
 		const heard = [...this.selected].filter((t) => this.trackLanes[t] !== undefined)
 		if (heard.length === 0) return true // not heard yet: never guess what a toggle means
 		const digit = String(ev.x - PICKER_X0 + 1)
@@ -1423,11 +1432,9 @@ export class IsoSurfacePage implements Page {
 			}
 		}
 		if (this.hasPanel() && this.panelShown) this.renderPanel(f)
-		// The lane picker has the playing area's top row while x0 y6 is held, over the panel too:
-		// the row goes dark and lanes 1-8 sit on x4-x11, where every surface page has them.
-		if (this.lanesHeld) {
+		// ... and, as part of the same menu, the lanes on the rest of the top row.
+		if (this.hasPanel() && this.panelShown) {
 			this.askLanes(ctx, Date.now())
-			for (let x = KEYS_X0; x < this.keysW; x++) f[ledIndex(this.size, x, 0)] = 0
 			const heard = [...this.selected].map((t) => this.trackLanes[t]).filter((l): l is string => l !== undefined)
 			for (let l = 0; l < PICKER_LANES; l++) {
 				const n = heard.filter((lanes) => lanes.includes(String(l + 1))).length
@@ -2217,7 +2224,7 @@ const pick = (n: number, cur: number, home: number) =>
 /** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS.filter((k) => k.y !== PANEL_TOGGLE_ROW && k.y !== TRANSPOSE_TOGGLE_ROW), // no left shifts on iso
-	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Performance panel", short: "Panel", help: "Hold: the top row x4-x11 is lanes 1-8 for the selected tracks. Tap: show the octave / arp speed / probability / strum / tint panel on cols 1-4. Dim-bright when a non-default value is in force while hidden. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Menu: panel + lanes", short: "Menu", help: "One menu: the panel on cols 1-4 and, on the top row x5-x12, lanes 1-8 for the selected tracks. Tap: open, tap again: shut. Hold: open only while held. Dim-bright when a panel value is away from rest while shut. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
@@ -2229,7 +2236,8 @@ export const keymap: KeySpec[] = [
 	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
 	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "A missed beat rests without advancing; the due note plays on the next beat.", lit: pick(PROB_ROWS, 0, 0) },
 	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
-	{ x: PANEL_X0 + PANEL_W, y: 0, w: KEYS_W - PANEL_X0 - PANEL_W, h: 8, view: "panel", name: "Keyboard", help: "Still playable beside the panel. While Tint is held, presses edit the triad instead.", lit: keyboardLit(PANEL_X0 + PANEL_W, KEYS_W - PANEL_X0 - PANEL_W, 8) },
+	{ x: PICKER_X0, y: 0, w: PICKER_LANES, view: "panel", name: "Lanes 1–8", short: "Lanes", help: "Part of the menu: which idk.surface lanes the selected tracks play. Bright = plays it, dim = does not. A press switches it. All dark = the app has not answered.", lit: Array.from({ length: PICKER_LANES }, () => LVL_PICK_OFF) },
+	{ x: PANEL_X0 + PANEL_W, y: 1, w: KEYS_W - PANEL_X0 - PANEL_W, h: 7, view: "panel", name: "Keyboard", help: "Still playable beside the panel, below the lanes. While Tint is held, presses edit the triad instead.", lit: keyboardLit(PANEL_X0 + PANEL_W, KEYS_W - PANEL_X0 - PANEL_W, 8).slice(KEYS_W - PANEL_X0 - PANEL_W) },
 	{ x: KEYS_W, y: 0, h: 8, name: "Chord presets", short: "Chords", help: "Press: play the saved chord. With the sustain toggle on: save what's ringing (same slot again releases). Shift 1 + press clears.", lit: [LVL_PRESET_FULL, LVL_PRESET_FULL, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY] },
 	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Where live notes go. Shift 2 + press multi-selects; Shift 1 + press edits which loopers feed it and, on the bottom row x1-x8, which idk.surface lanes it plays.", lit: [LVL_TRACK_ON, 2, 3, 4] },
 	{ x: KEYS_W + 1, y: ARP_ROW_START, h: ARP_BUTTONS.length, name: "Arp: up · down · palindrome · urn", short: "Arp", help: "Arpeggiate the held chord; press the lit one to stop.", lit: [1, 2, 3, 4] },
