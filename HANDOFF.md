@@ -4,11 +4,11 @@ updated: 2026-11-13
 entries: 2
 ---
 
-### idk.surface pages (PLAY, home, iso lanes, REEL pads) — opened 2026-11-11, owner: claude-gridmapper
-- done: branch `feat/play-surface`, not merged; pushed up to 279defc, later commits are local only. PLAY page (slot c), the new home page ON (set-surface: FX row, FOCUS, MOTION, BOW/FREEZE/DAMP), iso's lane picker, REEL pads + step line page ON since 12:30 (slot d, key x0 y4), one cheat sheet per surface page. 708 tests pass (2026-11-12). PLAY has a XEN CHORDS toggle at x2 y1 (e4c6e32): lit, lane column 1-8 sends `/xen/go <1-8>` to xen-harmony on UDP 57170 (send-only socket opened at the first chord; never sent for real yet). Nothing has been played by Ian; the grid was off USB at session end.
-- next: THE AGENT RESTART IS OWED AND MUST WAIT (2026-11-13): commits 1e5dacd (ARP = the app's one switch) and the OSC 4 commit after it are not in the running agent. Do not restart until the idk.surface session says its app has `/surface/osc/4/release` and the prefixed own notes (they are refused before that). Then: Ian's playing check of all four pages. Merge to main after it. Any agent restart: only while surface is silent (two silent reads of the `lanes` topic), then one line to `hc send surface-inbox`.
-- blockers: none. A second session (2026-11-11 evening, commits 2611ffe, 36c6640, dc21170) added an ARP key on PLAY (x14 y7) and on REEL pads (x14 y4) and a REEL step fix, and restarted the agent at 18:48; its cheat sheets were updated in those commits. Open with Ian: PLAY's shift 2 latch time; my six calls on the REEL page (pad order, clearing a step, key latching, hand speed, lane clearing, playing-step look) are in docs/reel-surface-cheatsheet.md as built.
-- context: CLAUDE.md (file map entries for play-surface, set-surface, reel-surface, pageSelectorSurface); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-11-grid-play-page-design.md and 2026-11-11-reel-step-line-design.md; idk.surface docs/osc/reference.txt (never guess an address); reports in idk.surface/.superpowers/reports/ (play-page*.md, play-y-axis.md, home-page-now.md).
+### idk.surface pages (iso layers, PLAY, home, REEL pads, cells key, Twister overlay) — opened 2026-11-11, owner: claude-gridmapper
+- done: branch `feat/play-surface`, pushed, NOT merged to main, and what the agent has run since 2026-11-13 (restarts only at Ian's word). iso is four track layers on the app's per-track ARP and LATCH (no arpeggiator or sustain of its own, no loop routes); PLAY plays through the app's OSC 4 and has the arp's order keys (x14 y3-y6); the surface link probes the app, releases what the grid held and has every page re-read on reconnect; iso's x0 y6 is one menu (panel + lanes on x5-x12, tap toggles, hold is temporary, time alone decides); x0 y5 opens the Twister overlay (pages, scenes to A and B, store, fader); x0 y3 is the cells key, pulsing while cells plays. 772 tests pass.
+- next: Ian's playing check, then merge to main. Any agent restart: only at Ian's word. First thing to confirm on iso: LATCH lit, press and release a key, it stays lit (the app's /remote echo).
+- blockers: none. Parked by Ian (2026-11-13): cells following the app's TEMPO, and the app's temperaments as cells tuning options. Asked of the idk.surface session, not built: cells notes let go on a restart, a tuned note in the cells packet, a reported beat; for the Twister overlay, which scenes are stored and the Twister's page in front. Ian's to judge on the grid: the dim plane (6, 10 on a root), the cells pulse (2 to 5, 1 s each), the 300 ms tap window, the arp order keys' spot on PLAY, LATCH still arming chord saving.
+- context: CLAUDE.md (entries for iso-surface, play-surface, pageSelectorSurface, liveLink); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-13-iso-track-layers-design.md; idk.surface docs/osc/reference.txt (never guess an address). To read what the running grid shows without touching it: the LED frame on the agent's web socket, ws://localhost:57191, path /grid/out/leds (args: w, h, then 128 levels).
 
 ### Cells score editor — opened 2026-09-22, owner: claude-gridmapper
 - done: design settled with Ian; open items resolved 2026-09-27 (step-or-Hz entries, edits land at the cutoff, variant lengths divide the world cycle, pitch loops per world + row); phased build plan written.
@@ -127,6 +127,12 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-11-13 (later) — Claude — iso track layers, one menu, Twister overlay, cells key
+- iso-surface rebuilt as four track layers on the app's ARP and LATCH (cc7d86e, 67e68e2): front track, dim plane, per-track octave and tint, loops record the front track and mark their notes; what LATCH holds comes from the app's /remote echo, the sounding step from /surface/keys/<t>/arp/at. Switched on with the app's half at 06:23 at Ian's word.
+- iso's x0 y6: the panel and the lane picker are one menu (2ec1c56); time alone decides tap or hold (845ac81), after a quick overlapping press shut it unseen and panel presses became sustained notes; two levels as the key below it (25caac4); arp speeds in order of speed, triplets first (f1c5bd2).
+- Twister overlay on x0 y5 for every surface page (49b512d). Cells key on x0 y3 with a pulse while cells plays (cbad425, built by a Sonnet helper, reviewed and re-tested here).
+- Lesson: when Ian reports lights that "stay", read the live LED frame first (see the entry's context line). It showed sustained notes, not a drawing fault.
 
 ### 2026-11-13 — Claude — ARP is the app's one switch; PLAY through OSC 4; the link watches the app
 - `1e5dacd`: the ARP keys (PLAY x14 y7, REEL pads x14 y4) send `/surface/arp` flipped and follow the app's value; no local flag.

@@ -3,12 +3,12 @@ project: gridmapper
 state: active
 updated: 2026-11-13
 machine: mac
-summary: Branch feat/play-surface holds the idk.surface work (PLAY, home, iso lane picker, REEL pads, a cheat sheet per page); on 2026-11-13 the ARP keys became the app's one ARP switch and PLAY moved to the app's OSC 4 source with a link that releases held notes and re-reads on reconnect, both committed but not in the running agent; none of it has been played by Ian.
+summary: Branch feat/play-surface is what the agent runs since 2026-11-13 - iso as four track layers on the app's own ARP and LATCH, PLAY through the app's OSC 4 with arp order keys, one menu on iso's x0 y6, a Twister overlay on x0 y5, and cells as the fourth page on x0 y3; Ian is playing it but has not given it a full check, and it is not merged to main.
 next:
-  - Restart the agent only after the idk.surface session says its app has /surface/osc/4/release and the prefixed own notes (1e5dacd and b1ffeb1 wait for that), then check both against the live app
-  - Plug the grid in and let Ian play PLAY, home, iso and REEL pads against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
+  - Fix what Ian finds while playing (concert 2026-11-14); first thing to confirm on iso is that a key kept by LATCH stays lit, which needs the app's /remote echo
   - Merge feat/play-surface to main once Ian has played it
-  - Tune PLAY's shift 2 latch time (latchMs) with Ian
+  - Cells, parked by Ian 2026-11-13 - follow the app's TEMPO, and the app's temperaments as tuning options; app-side asks sent (release on restart, a tuned note in the packet, a reported beat)
+  - Tune by hand with Ian - the dim plane's level (6, 10 on a root), the cells key's pulse (2 to 5), the 300 ms tap window, PLAY's shift 2 latch time
 handoff_for: claude-gridmapper
 ---
 
