@@ -45,7 +45,9 @@ const rig = () => {
 	const sent = () => app.splice(0).filter((m) => m[0] !== "/surface/get" && m[0] !== "/surface/subscribe")
 	const say = (path: string, ...args: any[]) => hear(path, args)
 	const track = (n: number) => tap(TRACKS, n - 1)
-	return { page, ctx, app, max, modifiers, key, tap, led, notes, sent, say, track }
+	/** The app's echo of what a key track holds: /remote <step> <1|0> <track 0-3>. */
+	const holds = (step: number, on: 0 | 1, t = 0) => page.onOsc!("/remote", [step, on, t], ctx)
+	return { page, ctx, app, max, modifiers, key, tap, led, notes, sent, say, track, holds }
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(4_000_000) })
@@ -114,18 +116,28 @@ describe("iso-surface layers: one track in front", () => {
 })
 
 describe("iso-surface layers: ARP and LATCH are the app's", () => {
-	it("no sustain of its own: a release is sent even with LATCH lit, and the note stays shown until LATCH goes off", () => {
+	it("no sustain of its own: a release is sent even with LATCH lit, and the note stays lit for as long as the app says it holds it", () => {
 		const r = rig()
 		r.tap(...LATCH)
 		expect(r.sent()).toEqual([["/surface/keys/1/latch", 1]])
 		expect(r.led(...LATCH)).toBe(15)
-		r.tap(3, 7)
+		r.key(3, 7); r.holds(2, 1) // the app echoes the press
+		r.key(3, 7, 0)
 		expect(r.notes()).toEqual([[2, 1, 0], [2, 0, 0]])
-		expect(r.led(3, 7)).toBe(12) // the picture of what the app's LATCH holds
+		expect(r.led(3, 7)).toBe(12) // LATCH keeps it: the app has not said off
 		r.tap(...LATCH)
 		expect(r.sent()).toEqual([["/surface/keys/1/latch", 0]])
+		expect(r.led(3, 7)).toBe(12) // the page guesses nothing: it waits for the app
+		r.holds(2, 0)
 		expect(r.led(3, 7)).toBe(3)
 		expect(r.notes()).toEqual([]) // letting go is the app's doing
+	})
+
+	it("without the app's echo a released key is simply dark: the page keeps no picture of its own", () => {
+		const r = rig()
+		r.say("/surface/keys/1/latch", 1)
+		r.tap(3, 7)
+		expect(r.led(3, 7)).toBe(3)
 	})
 
 	it("LATCH is per track and lit from the app, whoever switched it", () => {
@@ -143,16 +155,31 @@ describe("iso-surface layers: ARP and LATCH are the app's", () => {
 		expect(r.led(...LATCH)).toBe(1)
 	})
 
-	it("the app switching LATCH off empties that track's picture, and only that track's", () => {
+	it("what another track holds is on the dim plane, and comes to the front with its track", () => {
 		const r = rig()
-		r.say("/surface/keys/1/latch", 1); r.say("/surface/keys/2/latch", 1)
-		r.tap(3, 7)
-		r.track(2); r.tap(5, 7); r.track(1)
+		r.holds(2, 1, 0); r.holds(4, 1, 1)
 		expect(r.led(3, 7)).toBe(12)
 		expect(r.led(5, 7)).toBe(6)
-		r.say("/surface/keys/1/latch", 0)
-		expect(r.led(3, 7)).toBe(3)
-		expect(r.led(5, 7)).toBe(6)
+		r.track(2)
+		expect(r.led(3, 7)).toBe(6)
+		expect(r.led(5, 7)).toBe(12)
+	})
+
+	it("the step the front track's arp is sounding is the brightest; its chord and the finger step down under it", () => {
+		const r = rig()
+		r.say("/surface/keys/1/arp", 1)
+		r.key(3, 7); r.holds(2, 1); r.holds(4, 1)
+		expect(r.led(3, 7)).toBe(12) // under a finger, ARP on
+		expect(r.led(5, 7)).toBe(9) // in the chord
+		r.say("/surface/keys/1/arp/at", 4)
+		expect(r.led(5, 7)).toBe(15)
+		r.say("/surface/keys/1/arp/at", -1)
+		expect(r.led(5, 7)).toBe(9)
+		r.say("/surface/keys/2/arp/at", 4) // another track's step lights nothing here
+		expect(r.led(5, 7)).toBe(9)
+		r.say("/surface/keys/1/arp", 0)
+		r.say("/surface/keys/1/arp/at", 4) // ARP off: no step shown
+		expect(r.led(5, 7)).toBe(12)
 	})
 
 	it("the pedal is a momentary LATCH on the front track; a double tap keeps it until the next press", () => {
@@ -270,9 +297,8 @@ describe("iso-surface layers: ARP and LATCH are the app's", () => {
 		vi.advanceTimersByTime(2100)
 		r.led(0, 0)
 		expect(r.app).toContainEqual(["/surface/get", "/surface/keys/2/arp"])
-		// The app came back: it holds nothing, so the latch picture goes.
-		r.say("/surface/keys/1/latch", 1)
-		r.tap(3, 7)
+		// The app came back: it holds nothing, so what it had lit here goes.
+		r.holds(2, 1)
 		expect(r.led(3, 7)).toBe(12)
 		r.say("/link/up")
 		expect(r.led(3, 7)).toBe(3)
@@ -383,11 +409,15 @@ describe("iso-surface layers: chords, and files from before", () => {
 	it("chords play on the front track; with its LATCH lit by the key they save what it rings; the pedal does not arm", () => {
 		const r = rig()
 		r.tap(...LATCH)
-		r.tap(3, 7); r.tap(5, 7) // latched in the app; the picture has both
+		r.tap(3, 7); r.tap(5, 7)
+		r.holds(2, 1); r.holds(4, 1) // the app says its LATCH keeps both
 		r.tap(CHORDS, 0) // save
 		expect((r.page.serialize() as any).chords[0]).toEqual([2, 4])
-		r.tap(CHORDS, 0) // the same slot again: LATCH off and on lets the app go of it
-		expect(r.sent().slice(-2)).toEqual([["/surface/keys/1/latch", 0], ["/surface/keys/1/latch", 1]])
+		r.sent()
+		r.tap(CHORDS, 0) // the same slot again: the app lets go of what LATCH holds, LATCH stays
+		expect(r.sent()).toEqual([["/surface/keys/1/release"]])
+		expect(r.led(...LATCH)).toBe(15)
+		r.holds(2, 0); r.holds(4, 0)
 		r.tap(...LATCH); r.notes()
 		r.track(3)
 		r.key(CHORDS, 0)

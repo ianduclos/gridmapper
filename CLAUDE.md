@@ -385,9 +385,10 @@ src/
                          ARP and LATCH (/surface/keys/<1-4>/arp|latch over ctx.surface) do the rest; the arp keys
                          set /surface/arp/order + the front track's ARP, the panel's SPEED and PROB are
                          /surface/arp/rate and /prob (prob-mode wait), LATCH and the pedal are the front track's
-                         LATCH. All shown from the app's values (polled while focused, `values` topic). The app
-                         does not report what LATCH holds, so the page keeps a PICTURE of it for lights and chord
-                         saving. Octave and tint per track; transposer and strum global. A loop records each
+                         LATCH. All shown from the app's values (polled while focused, `values` topic). What a
+                         track holds comes from the app's /remote echo of every grid key (kept by LATCH = still on),
+                         the sounding arp step from /surface/keys/<t>/arp/at; /surface/keys/<t>/release lets go of
+                         what LATCH holds. The page guesses none of it. Octave and tint per track; transposer and strum global. A loop records each
                          press with the front track (one number: recKey) and sends it back with a fourth note
                          argument 1; an old routed loop is cleared on load. The lane picker is the front track's.
                          PLAY has the arp's four ORDER keys at x14 y3-y6.

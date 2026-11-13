@@ -86,9 +86,8 @@
  * LATCH (column 15 row 4) is the front track's LATCH, and lit by that key it arms the chord
  * presets for saving; the PEDAL (row 5) is a momentary LATCH (double-tap keeps it) that
  * does not. All of it is shown from the app's values, never from a flag kept here.
- * The app does not say what its LATCH holds, so the page keeps a PICTURE of it for the
- * lights and for saving chords: a note let go while its track's LATCH is lit stays shown
- * until that LATCH goes off.
+ * What a track's LATCH holds comes from the app (its `remote` echo of every grid key), and
+ * the step its arp is sounding from /surface/keys/<t>/arp/at; the page guesses neither.
  *
  * TRANSPOSER and STRUM are global; OCTAVE and TINT (on, mode, octave, triad) are per track.
  *
@@ -250,6 +249,7 @@ export const ARP_ORDERS = ["up", "down", "up-down", "urn"] as const
 export const ARP_RATES = ["1/16", "1/16T", "1/8", "1/8T", "1/4", "1/2", "1/1"] as const
 const ARP_ADDR = (t: number) => `/surface/keys/${t + 1}/arp`
 const LATCH_ADDR = (t: number) => `/surface/keys/${t + 1}/latch`
+const RELEASE_ADDR = (t: number) => `/surface/keys/${t + 1}/release` // lets go of what LATCH holds; LATCH stays
 const ORDER_ADDR = "/surface/arp/order"
 const RATE_ADDR = "/surface/arp/rate"
 const PROB_ADDR = "/surface/arp/prob"
@@ -289,6 +289,11 @@ const LVL_HELD = 15 // this exact cell is under a finger
 // it still reads there. (How dim is Ian's to judge on the grid.)
 const LVL_LAYER_DIM = 6
 const LVL_LAYER_DIM_ROOT = 10
+// While the front track's ARP is on, its chord and the finger step down under the step the
+// app's arp is sounding now.
+const LVL_ARP_CHORD = 9
+const LVL_ARP_HELD = 12
+const LVL_ARP_VOICE = 15
 const LVL_SHIFT = 1 // control keys are faint markers
 const LVL_SHIFT_IDLE = 6 // ... except the two shifts, which stand apart from the column
 const LVL_TINT_LO = 4 // the dim half of a T-voice's shimmer
@@ -502,25 +507,20 @@ export class IsoSurfacePage implements Page {
 	/** Address → when this page last wrote it (see WRITE_QUIET_MS). */
 	private wroteAt = new Map<string, number>()
 	private appSubscribedAt = 0
-	/**
-	 * A PICTURE of what the app's LATCH holds, since the app does not report it: a note let go
-	 * while its track's LATCH was lit stays shown until that LATCH goes off. Hands' notes and
-	 * loops' notes apart, because a loop's stay on the dim plane. It is this page's guess at
-	 * the app's rule, used for the lights and for saving a chord, never for sound.
-	 */
-	private latchHand = new Set<number>()
-	private latchLoop = new Set<number>()
+	/** Per key track: the step now sounding in that track's arp (/surface/keys/<t>/arp/at), -1 for none. */
+	private appArpAt = new Array<number>(TRACK_ROWS).fill(-1)
 	/** Tracks whose LATCH the PEDAL lit: that one does not arm the chord presets for saving. */
 	private pedalMade = new Set<number>()
 	/** The track the pedal is holding LATCH on right now, or null. */
 	private pedalTrack: number | null = null
 	/**
-	 * REMOTE notes: keys played in idk.surface itself (its computer keys), sent here only to
-	 * be LIT (/grid/in/page/<slot>/remote <step> <1|0> <track 0-3>). Keyed (track, step). They
-	 * are display and nothing else: never sent back as a note (surface would play it twice),
-	 * never recorded by a looper, never held by sustain, never part of a saved chord. A
-	 * remote note looks exactly like a note you played here, twins included; a finger on the
-	 * same cell still reads brighter.
+	 * REMOTE notes: what idk.surface says each key track HOLDS (/grid/in/page/<slot>/remote
+	 * <step> <1|0> <track 0-3>): the keys played in the app itself, and (since 2026-11-13) an
+	 * echo of every grid hand key, on at the press and off when it leaves the track's held
+	 * set, so a key the app's LATCH keeps stays on. Keyed (track, step). They are the page's
+	 * only knowledge of what LATCH holds: lit (bright on the front track, dim on the others)
+	 * and counted when a chord is saved. Never sent back as a note, never recorded by a
+	 * looper. Loop notes are not reported.
 	 */
 	private remote = new Set<number>()
 	/** When the peer's last heartbeat came (0 = it does not send them). */
@@ -616,8 +616,6 @@ export class IsoSurfacePage implements Page {
 		this.size = ctx.size
 		this.keysW = Math.min(KEYS_W, this.size.width)
 		this.releaseLive(ctx)
-		this.latchHand.clear()
-		this.latchLoop.clear()
 		for (const r of this.recorders) r.clear()
 		this.syncTimer()
 		// A ping means surface has just (re)connected: whatever it had lit before is void.
@@ -645,10 +643,10 @@ export class IsoSurfacePage implements Page {
 	/** What idk.surface says: the KEYS rows' lanes, each key track's ARP and LATCH, the shared arp settings. */
 	private hear(path: string, args: any[], ctx: PageContext) {
 		if (path === SURFACE_LINK_UP) {
-			// The app is (back) there, holding nothing of ours: the latch picture is void, and
-			// everything shown from the app is read again.
-			this.latchHand.clear()
-			this.latchLoop.clear()
+			// The app is (back) there, holding nothing of ours: what it had lit here is void,
+			// and everything shown from the app is read again.
+			this.remote.clear()
+			this.appArpAt.fill(-1)
 			for (const a of LANES_ADDRS) ctx.surface?.send("/surface/get", a)
 			this.readApp(ctx)
 			this.appSubscribedAt = 0
@@ -667,11 +665,12 @@ export class IsoSurfacePage implements Page {
 		else if (path === RATE_ADDR) { if (typeof v === "string") this.appRate = v }
 		else if (path === PROB_ADDR) { if (Number.isFinite(Number(v))) this.appProb = Number(v) }
 		else {
-			const m = /^\/surface\/keys\/([1-4])\/(arp|latch)$/.exec(addr)
+			const m = /^\/surface\/keys\/([1-4])\/(arp|latch|arp\/at)$/.exec(addr)
 			if (!m || !Number.isFinite(Number(v))) return
 			const t = Number(m[1]) - 1
 			const on = Number(v) !== 0
-			if (m[2] === "arp") this.appArp[t] = on
+			if (m[2] === "arp/at") this.appArpAt[t] = Math.round(Number(v))
+			else if (m[2] === "arp") this.appArp[t] = on
 			else this.heardLatch(t, on)
 		}
 		ctx.setDirty()
@@ -709,7 +708,6 @@ export class IsoSurfacePage implements Page {
 			this.pedalTrack = null
 			this.sustainLatched = false
 		}
-		for (const set of [this.latchHand, this.latchLoop]) for (const key of set) if (trackOf(key) === t) set.delete(key)
 	}
 
 	/** Write one of the app's values, and stop listening to it for a moment (WRITE_QUIET_MS). */
@@ -1129,10 +1127,10 @@ export class IsoSurfacePage implements Page {
 		if (this.saveArmed()) {
 			const chord = this.soundingChord()
 			// Pressing the slot you JUST saved to, with that chord still ringing, releases
-			// it — the "right, next one" gesture: LATCH off and on again lets the app go of it.
+			// it — the "right, next one" gesture: the app lets go of what that track's LATCH
+			// holds, and LATCH stays lit.
 			if (chord.length && sameChord(this.chords.get(slot), chord)) {
-				this.setLatch(this.front, false, ctx)
-				this.setLatch(this.front, true, ctx)
+				ctx.surface?.send(RELEASE_ADDR(this.front))
 				return
 			}
 			if (chord.length) {
@@ -1233,8 +1231,9 @@ export class IsoSurfacePage implements Page {
 			this.peerBeatAt = 0
 			this.remote.clear()
 		}
-		// TWO PLANES. Bright: what the hands hold on the FRONT track, what its LATCH keeps of
-		// them, and the keys played in the app on that track. Dim: every other track's notes,
+		// TWO PLANES. Bright: what the hands hold on the FRONT track, and what the app says
+		// that track holds (`remote`: its own keys, and every grid key until it leaves the
+		// track's held set, so one kept by LATCH stays lit). Dim: every other track's notes,
 		// and every loop's playback, the front track's included. A note is lit at EVERY cell
 		// that plays it, placed by the front track's offset (the map under your fingers).
 		const front = this.front
@@ -1242,9 +1241,11 @@ export class IsoSurfacePage implements Page {
 		const dim = new Set<number>()
 		const place = (key: number, hand: boolean) => (hand && trackOf(key) === front ? bright : dim).add(stepOf(key))
 		for (const key of this.lastSounding) place(key, this.lastLive.has(key))
-		for (const key of this.latchHand) place(key, true)
-		for (const key of this.latchLoop) place(key, false)
 		for (const key of this.remote) place(key, true)
+		// The front track's ARP on: the chord steps down so the step sounding now stands out
+		// (12 against 15 cannot be told apart at the top of varibright).
+		const arpOn = this.appArp[front] === true
+		const arpAt = arpOn ? this.appArpAt[front] : -1
 
 		const f = makeFrame(this.size)
 		// T-voices shimmer so they read apart from the notes you played. A T-voice that is
@@ -1260,9 +1261,10 @@ export class IsoSurfacePage implements Page {
 				let lvl = this.baseLevel(step)
 				const sounding = step + this.offset()
 				if (dim.has(sounding)) lvl = lvl >= LVL_ROOT ? LVL_LAYER_DIM_ROOT : LVL_LAYER_DIM
-				if (bright.has(sounding)) lvl = LVL_UNISON
+				if (bright.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
 				if (shimmerLo && tSteps.has(sounding) && bright.has(sounding)) lvl = LVL_TINT_LO
-				if (this.held.has(i)) lvl = LVL_HELD
+				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
+				if (arpAt >= -NOTE_BIAS && arpAt !== -1 && sounding === arpAt) lvl = LVL_ARP_VOICE
 				if (this.tintKeyDown && this.panelShown && editPcs.has(this.pc(sounding))) lvl = LVL_TINT_EDIT
 				f[i] = lvl
 			}
@@ -1665,12 +1667,12 @@ export class IsoSurfacePage implements Page {
 	}
 
 	/**
-	 * The pitches the FRONT track is ringing: what is down on it now, and what this page
-	 * believes its LATCH keeps. This is what a chord preset saves.
+	 * The pitches the FRONT track is ringing: what is down on it now from here, and what the
+	 * app says the track holds (so what its LATCH keeps). This is what a chord preset saves.
 	 */
 	private soundingChord(): number[] {
 		const steps = new Set<number>()
-		for (const set of [this.lastSounding, this.latchHand, this.latchLoop])
+		for (const set of [this.lastSounding, this.remote])
 			for (const key of set) if (trackOf(key) === this.front) steps.add(stepOf(key))
 		return [...steps].sort((a, b) => a - b)
 	}
@@ -1761,8 +1763,7 @@ export class IsoSurfacePage implements Page {
 	/**
 	 * One press or release to the app: /note <step> <1|0> <track>, with a fourth argument 1
 	 * when it is a LOOP's (no hand or chord holds the note), so the app's LOOPS THROUGH ARP
-	 * can tell them apart. A hand's message is unchanged. A release while its track's LATCH is
-	 * lit is remembered in the latch picture (see latchHand).
+	 * can tell them apart; the mark goes on the let-go too. A hand's message is unchanged.
 	 */
 	private note(ctx: PageContext, key: number, on: boolean) {
 		const track = trackOf(key)
@@ -1770,7 +1771,6 @@ export class IsoSurfacePage implements Page {
 		const loop = on ? !this.lastLive.has(key) : this.sentAsLoop.has(key)
 		if (on && loop) this.sentAsLoop.add(key)
 		else this.sentAsLoop.delete(key)
-		if (!on && this.appLatch[track] === true) (loop ? this.latchLoop : this.latchHand).add(key)
 		const addr = `/grid/out/page/${ctx.slotLabel}/note`
 		if (loop) ctx.osc.send(addr, stepOf(key), on ? 1 : 0, track, 1)
 		else ctx.osc.send(addr, stepOf(key), on ? 1 : 0, track)

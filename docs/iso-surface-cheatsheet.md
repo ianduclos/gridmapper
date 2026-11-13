@@ -79,7 +79,7 @@ row is the keyboard again.
   track's LATCH lit it keeps ringing, so chords stack.
 - **Save:** with LATCH (x15 y4) lit by the LATCH key, press a slot: it takes what
   the front track is ringing. Saving silence clears the slot. Press the slot you
-  just saved again to let the chord go.
+  just saved again to let the chord go (LATCH stays lit).
 - **Shift 1 + press:** clear the slot.
 - A chord remembers the transposition and octave it was saved at and moves from
   there.
@@ -98,8 +98,8 @@ These are the app's LATCH, one per track, the same switch as in the app's window
   the next press puts it out. The chord slots still play. It does nothing on a
   track whose LATCH is already lit.
 - Pressing a ringing note no longer takes it out of the chord; it strikes again.
-- The notes LATCH keeps stay lit here by the grid's own reckoning; the app does
-  not report them. If the two ever differ, put LATCH out and on again.
+- The notes LATCH keeps stay lit because the app says it still holds them; the
+  grid guesses nothing. A loop's notes kept by LATCH are not shown.
 
 ## Arps (x14 y4-y7)
 
@@ -109,6 +109,8 @@ This is the app's ARP: its timing, its settings. The grid has none of its own.
   or urn (random without repeats). **Press the lit one** to switch that track's
   ARP off.
 - The order is one setting for the whole app, so it changes for every track.
+- **On the keyboard, ARP on:** the step sounding now is the brightest; the rest
+  of the chord, and a key under your finger, sit a step below it.
 - **Lights:** bright = the front track's ARP is on in this order. Medium = this
   is the app's order, but the front track's ARP is off. All dim = the app is on
   an order with no key here, or has not answered.

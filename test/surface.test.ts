@@ -239,14 +239,14 @@ describe("iso-surface: notes played in surface light here", () => {
 		expect(r.led(3, 7)).toBe(idle)
 	})
 
-	it("is display only: not in a saved chord, not held by sustain, not in a loop", () => {
+	it("is never sent back and never in a loop; it is what the track holds, so a saved chord takes it", () => {
 		const r = mk()
 		r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
 		r.page.onKey({ x: 15, y: 0, s: 1 }, r.ctx) // arm looper 1
-		r.page.onKey({ x: 15, y: 4, s: 1 }, r.ctx) // sustain toggle: arms chord saving
-		r.page.onKey({ x: 13, y: 0, s: 1 }, r.ctx) // save "what is ringing" to chord 1: silence
+		r.page.onKey({ x: 15, y: 4, s: 1 }, r.ctx) // LATCH: arms chord saving
+		r.page.onKey({ x: 13, y: 0, s: 1 }, r.ctx) // save what the front track holds
 		const out = JSON.parse(JSON.stringify(r.page.serialize()))
-		expect(JSON.stringify(out.chords ?? [])).not.toContain("2")
+		expect(out.chords[0]).toEqual([2])
 		expect((out.patterns ?? []).every((p: any) => !p.events?.length)).toBe(true)
 		expect(r.sent.filter((m) => m[0].endsWith("/note"))).toEqual([])
 	})
