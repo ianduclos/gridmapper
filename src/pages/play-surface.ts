@@ -73,6 +73,7 @@
  * ------------------------------------------------------------------------------
  */
 
+import { SURFACE_LINK_UP } from "../io/liveLink.js"
 import {
 	type Page,
 	type PageContext,
@@ -221,6 +222,14 @@ interface ArpCall { lane: number; row: number; kind: "note" | "own" | "slice"; k
 const AT_ADDR = "/surface/arp/call/at"
 /** The app's one ARP switch: its window button, the computer keys' C, and this page's key. */
 const ARP_ADDR = "/surface/arp"
+/** Everything this page PLAYS (notes, own notes, strikes) goes through the app's OSC 4 source, so the
+ *  app knows the grid as a source and can let go of all it holds (/surface/osc/4/release). Switches,
+ *  dials and arp calls stay unprefixed. */
+const OSC4 = "/surface/osc/4"
+/** OSC 4 must be on, and play a lane, for that lane to sound from here. */
+const OSC4_ON = "/surface/route/osc4/on"
+const OSC4_LANES = "/surface/route/osc4/lanes"
+const OSC4_BLINK_MS = 600
 
 /** The dial families height can set with PITCH unlit: the slot table's first five, in order. */
 const Y_FAMILIES = ["tone", "time", "force", "move", "place"]
@@ -324,6 +333,7 @@ export class PlaySurfacePage implements Page {
 		this.ctx = ctx
 		this.unlisten =
 			ctx.surface?.on((path, args) => {
+				if (path === SURFACE_LINK_UP) return this.linkUp(ctx)
 				const arp = this.arp
 				if (this.mirror.feed(path, args, Date.now())) ctx.setDirty()
 				// ARP flipped in the app: what the hands hold changes between calls and plain notes.
@@ -338,6 +348,33 @@ export class PlaySurfacePage implements Page {
 		take(ctx.shared?.get(SCALE_SURFACE))
 		this.unshare = ctx.shared?.subscribe(SCALE_SURFACE, take) ?? null
 		this.announce(ctx)
+	}
+
+	/**
+	 * The app has just been found, at the agent's start or after it was away. The link has told it to
+	 * let go of everything OSC 4 and the arp held, so this page's picture of what is held starts empty
+	 * (a running loop sends its notes again), and everything it shows is read afresh.
+	 */
+	private linkUp(ctx: PageContext) {
+		this.held.clear()
+		this.latched.clear()
+		this.ending.clear()
+		this.notesSent = new Set()
+		this.callsSent.clear()
+		this.commit(ctx)
+		this.lastFastMs = this.lastSlowMs = this.lastSubMs = 0
+		if (!this.focused) this.readAll(ctx)
+	}
+
+	private readAll(ctx: PageContext) {
+		for (const a of [...BASE_READS, ARP_ADDR, OSC4_ON, OSC4_LANES]) ctx.surface?.send("/surface/get", a)
+	}
+
+	/** Does a press on this lane (0-7) reach it? Unknown reads as yes. */
+	private reaches(lane: number) {
+		if (this.mirror.num(OSC4_ON) === 0) return false
+		const lanes = this.mirror.str(OSC4_LANES) ?? this.mirror.num(OSC4_LANES)?.toString()
+		return lanes === undefined || lanes.includes(String(lane + 1))
 	}
 
 	onFocus(ctx: PageContext) {
@@ -641,7 +678,7 @@ export class PlaySurfacePage implements Page {
 
 	/** Strike a lane on the note it already has. */
 	private strikeOwn(lane: number, velocity: number, ctx: PageContext) {
-		this.send(ctx, `/surface/lane/${lane + 1}/strike/own`, float(velocity))
+		this.send(ctx, `${OSC4}/lane/${lane + 1}/strike/own`, float(velocity))
 	}
 
 	private bank(): Bank {
@@ -838,18 +875,18 @@ export class PlaySurfacePage implements Page {
 		const key = step & 127
 		const n = lane + 1
 		if (isOwn(step)) {
-			if (!on) return this.send(ctx, `/surface/lane/${n}/own/off`)
+			if (!on) return this.send(ctx, `${OSC4}/lane/${n}/own/off`)
 			// Height is not how hard (Ian, 2026-11-11): it sets the chosen dial, or nothing.
 			this.setY(lane, step & 7, ctx)
-			this.send(ctx, `/surface/lane/${n}/own/on`, float(Number(this.settings.velocity)))
+			this.send(ctx, `${OSC4}/lane/${n}/own/on`, float(Number(this.settings.velocity)))
 			this.lastRow[lane] = step & 7
 			return
 		}
-		if (!on) return this.send(ctx, `/surface/lane/${n}/note/off`, key)
+		if (!on) return this.send(ctx, `${OSC4}/lane/${n}/note/off`, key)
 		// A lane that keeps its own note (V) ignores the pitch of a note sent to it, so the
 		// row would not set it: move its own note first. Pads never touch it.
 		if (!pad && this.mirror.ownNote(lane)) this.send(ctx, `/surface/lane/${n}/modal/voiceNote`, float(key))
-		this.send(ctx, `/surface/lane/${n}/note/on`, key, float(Number(this.settings.velocity)))
+		this.send(ctx, `${OSC4}/lane/${n}/note/on`, key, float(Number(this.settings.velocity)))
 		if (!pad) this.lastRowFromKey(lane, key)
 	}
 
@@ -935,8 +972,7 @@ export class PlaySurfacePage implements Page {
 		}
 		if (now - this.lastSlowMs >= SLOW_POLL_MS) {
 			this.lastSlowMs = now
-			for (const a of BASE_READS) get(a)
-			get(ARP_ADDR)
+			this.readAll(ctx)
 		}
 		if (now - this.lastFastMs >= FAST_POLL_MS && now - this.mirror.heardAt < LINK_LOST_MS) {
 			this.lastFastMs = now
@@ -960,6 +996,8 @@ export class PlaySurfacePage implements Page {
 		const blinkOn = now % (BLINK_MS * 2) < BLINK_MS
 
 		for (const y of [LAYER_KEYS, LAYER_PRESETS]) set(CHOOSER_X, y, y === this.layer ? LVL_CHOOSER_ON : LVL_CHOOSER)
+		// OSC 4 off in the app: nothing played here sounds. The KEYS key blinks slowly to say so.
+		if (this.mirror.num(OSC4_ON) === 0 && now % (OSC4_BLINK_MS * 2) >= OSC4_BLINK_MS) set(CHOOSER_X, LAYER_KEYS, 0)
 		set(CHOOSER_X, XEN_Y, this.xenChords ? LVL_XEN_ON : LVL_XEN_OFF)
 
 		for (let lane = 0; lane < LANES; lane++) {
@@ -1018,6 +1056,8 @@ export class PlaySurfacePage implements Page {
 	private drawKeys(lane: number, x: number, set: (x: number, y: number, l: number) => void, ctx: PageContext) {
 		const e = this.mirror.engine(lane)
 		if (e === "blank") return
+		// A lane OSC 4 does not play stays dark: a press there would be silent.
+		if (!this.reaches(lane)) return
 		const cell = (row: number) => ledIndex(ctx.size, x, ROWS - 1 - row)
 		// PITCH unlit, the column is one trigger (a pad lane keeps its pads).
 		const trigger = !this.settings.pitch && !this.mirror.slices(lane)

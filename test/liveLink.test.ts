@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { createLiveLink } from "../src/io/liveLink.js"
+import { createLiveLink, createSurfaceLink } from "../src/io/liveLink.js"
 
 function fakeOsc() {
 	const sent: Array<{ path: string; args: any[] }> = []
@@ -138,5 +138,65 @@ describe("liveLink", () => {
 		} finally {
 			link.close()
 		}
+	})
+})
+
+describe("surface link: it watches the app", () => {
+	const names = (o: ReturnType<typeof fakeOsc>) => o.sent.map((m) => [m.path, ...m.args])
+	const RELEASE = [["/surface/osc/4/release"], ["/surface/arp/call/clear"]]
+
+	it("asks the app every second while a page listens, and stops when the last one leaves", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink({ inPort: 57133, outPort: 57150 }, o.make)
+		expect(link.port).toBe(57133)
+		const off = link.on(() => {})
+		expect(names(o)).toEqual([["/surface/get", "/surface/arp"]])
+		vi.advanceTimersByTime(2000)
+		expect(names(o).length).toBe(3)
+		off()
+		vi.advanceTimersByTime(5000)
+		expect(names(o).length).toBe(3)
+		vi.useRealTimers()
+	})
+
+	it("the first answer sends the release once and tells the pages, before the answer itself", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink({ inPort: 57133, outPort: 57150 }, o.make)
+		const a: string[] = [], b: string[] = []
+		link.on((p) => a.push(p))
+		link.on((p) => b.push(p))
+		o.sent.length = 0
+		o.incoming("/surface/arp", 0)
+		expect(names(o)).toEqual(RELEASE)
+		expect(a).toEqual(["/link/up", "/surface/arp"])
+		expect(b).toEqual(["/link/up", "/surface/arp"])
+		o.incoming("/surface/arp", 0)
+		vi.advanceTimersByTime(1000)
+		o.incoming("/surface/arp", 0)
+		expect(names(o).filter((m) => m[0] !== "/surface/get")).toEqual(RELEASE) // only once
+		expect(a.filter((p) => p === "/link/up").length).toBe(1)
+		link.close()
+		vi.useRealTimers()
+	})
+
+	it("after the app was away for three seconds, its return is a new link up", () => {
+		vi.useFakeTimers()
+		const o = fakeOsc()
+		const link = createSurfaceLink({ inPort: 57133, outPort: 57150 }, o.make)
+		const a: string[] = []
+		link.on((p) => a.push(p))
+		o.incoming("/surface/arp", 0)
+		vi.advanceTimersByTime(2000) // a short gap is not away
+		o.incoming("/surface/arp", 0)
+		expect(a.filter((p) => p === "/link/up").length).toBe(1)
+		vi.advanceTimersByTime(5000) // silence: the app is gone
+		o.sent.length = 0
+		o.incoming("/surface/arp", 1)
+		expect(names(o)).toEqual(RELEASE)
+		expect(a.filter((p) => p === "/link/up").length).toBe(2)
+		link.close()
+		vi.useRealTimers()
 	})
 })

@@ -51,6 +51,7 @@
  * ------------------------------------------------------------------------------
  */
 
+import { SURFACE_LINK_UP } from "../io/liveLink.js"
 import {
 	type Page,
 	type PageContext,
@@ -339,6 +340,11 @@ export class SetSurfacePage implements Page {
 
 	/** What idk.surface says: replies to our gets, and the `lanes` reports. */
 	private hear(path: string, args: any[], ctx: PageContext) {
+		if (path === SURFACE_LINK_UP) {
+			// The app is (back) there: subscribe and read the view again at once.
+			this.lastPollMs = this.lastSubMs = 0
+			return
+		}
 		const v = args[0]
 		if (path === "/surface/view/focus") {
 			const n = Math.round(Number(v))

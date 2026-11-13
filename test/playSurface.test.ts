@@ -100,11 +100,11 @@ describe("play-surface: keys", () => {
 	it("a press plays that lane at the row's pitch and holds it until release", () => {
 		const r = rig(); r.world(); r.sent()
 		r.key(LANE_X0 + 2, 7) // lane 3, bottom row
-		expect(r.sent()).toEqual([["/surface/lane/3/note/on", 60, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/3/note/on", 60, 0.8]])
 		r.key(LANE_X0 + 2, 5) // two rows up: E
-		expect(r.sent()).toEqual([["/surface/lane/3/note/on", 64, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/3/note/on", 64, 0.8]])
 		r.key(LANE_X0 + 2, 7, 0)
-		expect(r.sent()).toEqual([["/surface/lane/3/note/off", 60]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/3/note/off", 60]])
 		r.key(ALL, 7) // no all column on KEYS
 		expect(r.sent()).toEqual([])
 	})
@@ -113,23 +113,23 @@ describe("play-surface: keys", () => {
 		const r = rig(); r.world(); r.sent()
 		r.shared.set(SCALE_SURFACE, { npo: 12, root: 2, scale: "dorian" })
 		r.key(LANE_X0, 6)
-		expect(r.sent()[0]).toEqual(["/surface/lane/1/note/on", 64, 0.8]) // D dorian's second note
+		expect(r.sent()[0]).toEqual(["/surface/osc/4/lane/1/note/on", 64, 0.8]) // D dorian's second note
 	})
 
 	it("a lane that keeps its own note has it moved first, so the row sets it", () => {
 		const r = rig(); r.world()
 		r.say("/surface/lane/1/owner/voiceNote", "voice"); r.sent()
 		r.key(LANE_X0, 6)
-		expect(r.sent()).toEqual([["/surface/lane/1/modal/voiceNote", 62], ["/surface/lane/1/note/on", 62, 0.8]])
+		expect(r.sent()).toEqual([["/surface/lane/1/modal/voiceNote", 62], ["/surface/osc/4/lane/1/note/on", 62, 0.8]])
 	})
 
 	it("a REEL lane in SLICES takes the row as its pad, 1 at the bottom, PITCH or not", () => {
 		const r = rig(); r.world(); r.sent()
 		r.key(LANE_X0 + 6, 7)
 		r.key(LANE_X0 + 6, 5)
-		expect(r.sent()).toEqual([["/surface/lane/7/note/on", 60, 0.8], ["/surface/lane/7/note/on", 62, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/7/note/on", 60, 0.8], ["/surface/osc/4/lane/7/note/on", 62, 0.8]])
 		r.tapKey(RIGHT, 4) // PITCH off
-		r.key(LANE_X0 + 6, 4); expect(r.sent()).toContainEqual(["/surface/lane/7/note/on", 63, 0.8])
+		r.key(LANE_X0 + 6, 4); expect(r.sent()).toContainEqual(["/surface/osc/4/lane/7/note/on", 63, 0.8])
 	})
 
 	it("PITCH unlit: a press holds the lane on its own note, the same wherever you press", () => {
@@ -150,20 +150,20 @@ describe("play-surface: keys", () => {
 		r.key(LANE_X0 + 1, 7, 0) // one of lane 2's two keys up: it is still held
 		r.key(LANE_X0 + 1, 0, 0)
 		expect(r.sent()).toEqual([
-			["/surface/lane/2/own/on", 0.8],
-			["/surface/lane/2/own/on", 0.8],
-			["/surface/lane/1/own/on", 0.8],
-			["/surface/lane/1/own/off"],
-			["/surface/lane/2/own/off"],
+			["/surface/osc/4/lane/2/own/on", 0.8],
+			["/surface/osc/4/lane/2/own/on", 0.8],
+			["/surface/osc/4/lane/1/own/on", 0.8],
+			["/surface/osc/4/lane/1/own/off"],
+			["/surface/osc/4/lane/2/own/off"],
 		])
 		// LATCH keeps it, its column stays lit, and unlighting LATCH lets it go.
 		r.tapKey(RIGHT, 7)
 		r.tapKey(LANE_X0 + 2, 3)
-		expect(r.sent()).toEqual([["/surface/lane/3/own/on", 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/3/own/on", 0.8]])
 		expect(r.led(LANE_X0 + 2, 3)).toBe(12)
 		expect(r.led(LANE_X0 + 2, 6)).toBe(10)
 		r.tapKey(RIGHT, 7)
-		expect(r.sent()).toEqual([["/surface/lane/3/own/off"]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/3/own/off"]])
 		expect(r.led(LANE_X0 + 2, 6)).toBe(6)
 	})
 
@@ -175,11 +175,11 @@ describe("play-surface: keys", () => {
 		expect(r.sent()).toEqual([
 			["/surface/lane/1/modal/hardness/norm", 1],
 			["/surface/lane/1/owner/hardness", "voice"],
-			["/surface/lane/1/own/on", 0.8],
+			["/surface/osc/4/lane/1/own/on", 0.8],
 		])
 		r.key(LANE_X0, 0, 0); r.sent()
 		r.tapKey(LANE_X0, 7) // already its own: only the value, at the bottom
-		expect(r.sent()).toEqual([["/surface/lane/1/modal/hardness/norm", 0], ["/surface/lane/1/own/on", 0.8], ["/surface/lane/1/own/off"]])
+		expect(r.sent()).toEqual([["/surface/lane/1/modal/hardness/norm", 0], ["/surface/osc/4/lane/1/own/on", 0.8], ["/surface/osc/4/lane/1/own/off"]])
 		r.tapKey(LANE_X0 + 7, 0) // STRING: its own tone dial
 		expect(r.sent()[0]).toEqual(["/surface/lane/8/string/stringBrightness/norm", 1])
 		r.page.onOsc!("/setting/y", ["force"], r.ctx); r.sent()
@@ -228,19 +228,19 @@ describe("play-surface: latch", () => {
 		expect(r.led(RIGHT, 7)).toBe(12)
 		r.tapKey(LANE_X0, 7)
 		r.tapKey(LANE_X0 + 1, 6)
-		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 62, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8], ["/surface/osc/4/lane/2/note/on", 62, 0.8]])
 		expect(r.led(LANE_X0, 7)).toBe(12)
 		r.tapKey(LANE_X0, 7) // the same cell: subtract it, no new note
-		expect(r.sent()).toEqual([["/surface/lane/1/note/off", 60]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/off", 60]])
 		r.tapKey(LANE_X0 + 6, 7) // a pad latches too
 		r.sent()
 		r.page.onBlur(r.ctx) // a page switch does not drop them
 		expect(r.sent()).toEqual([])
 		r.page.onFocus(r.ctx)
 		r.tapKey(RIGHT, 7)
-		expect(r.sent().map((x) => x[0]).sort()).toEqual(["/surface/lane/2/note/off", "/surface/lane/7/note/off"])
+		expect(r.sent().map((x) => x[0]).sort()).toEqual(["/surface/osc/4/lane/2/note/off", "/surface/osc/4/lane/7/note/off"])
 		r.tapKey(LANE_X0, 7) // unlit: momentary again
-		expect(r.sent().map((x) => x[0])).toEqual(["/surface/lane/1/note/on", "/surface/lane/1/note/off"])
+		expect(r.sent().map((x) => x[0])).toEqual(["/surface/osc/4/lane/1/note/on", "/surface/osc/4/lane/1/note/off"])
 	})
 
 	it("a loop records a latched note as a held one", () => {
@@ -252,9 +252,9 @@ describe("play-surface: latch", () => {
 		r.tapKey(RIGHT, 0) // plays
 		r.sent()
 		vi.advanceTimersByTime(300)
-		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8]])
 		vi.advanceTimersByTime(200)
-		expect(r.sent()).toEqual([["/surface/lane/1/note/off", 60]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/off", 60]])
 	})
 })
 
@@ -267,7 +267,7 @@ describe("play-surface: the chooser and SLEW", () => {
 		}
 		expect(r.led(CHOOSER, 0)).toBe(15) // still KEYS
 		r.tapKey(LANE_X0, 7)
-		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/1/note/off", 60]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8], ["/surface/osc/4/lane/1/note/off", 60]])
 		r.layer(7)
 		expect(r.led(CHOOSER, 7)).toBe(15)
 		expect(r.led(ALL, 3)).toBe(2)
@@ -346,7 +346,7 @@ describe("play-surface: presets", () => {
 		expect(m).toContainEqual(["/surface/lane/2/modal/decay/norm", 0.25])
 		expect(m).toContainEqual(["/surface/lane/2/owner/position", "follow"])
 		expect(m).not.toContainEqual(["/surface/lane/2/owner/hardness", "follow"])
-		expect(m).toContainEqual(["/surface/lane/2/strike/own", 0.8]) // STRIKE starts lit
+		expect(m).toContainEqual(["/surface/osc/4/lane/2/strike/own", 0.8]) // STRIKE starts lit
 		expect(r.led(LANE_X0 + 1, 0)).toBe(15)
 		r.tapKey(RIGHT, 5) // STRIKE off
 		r.tapKey(LANE_X0, 0)
@@ -463,7 +463,7 @@ describe("play-surface: shift 2 and loopers", () => {
 		expect(r.sent().filter((x) => x[1] === 0)).toHaveLength(8)
 		r.key(0, 6, 0)
 		r.key(LANE_X0, 7) // closed again: a note
-		expect(r.sent()[0][0]).toBe("/surface/lane/1/note/on")
+		expect(r.sent()[0][0]).toBe("/surface/osc/4/lane/1/note/on")
 	})
 
 	it("held about a second with nothing pressed it stays open; a tap closes it", () => {
@@ -471,19 +471,19 @@ describe("play-surface: shift 2 and loopers", () => {
 		r.key(0, 6); vi.advanceTimersByTime(300); r.key(0, 6, 0)
 		r.sent()
 		r.tapKey(LANE_X0, 6)
-		expect(r.sent().map((x) => x[0])).toEqual(["/surface/lane/1/note/on", "/surface/lane/1/note/off"])
+		expect(r.sent().map((x) => x[0])).toEqual(["/surface/osc/4/lane/1/note/on", "/surface/osc/4/lane/1/note/off"])
 		r.key(0, 6); vi.advanceTimersByTime(1100); r.key(0, 6, 0)
 		r.sent()
 		r.tapKey(LANE_X0, 6)
 		expect(r.sent()).toEqual([["/surface/lane/1/freeze", 1]])
 		r.tapKey(0, 6)
 		r.tapKey(LANE_X0, 6)
-		expect(r.sent().map((x) => x[0])).toEqual(["/surface/lane/1/note/on", "/surface/lane/1/note/off"])
+		expect(r.sent().map((x) => x[0])).toEqual(["/surface/osc/4/lane/1/note/on", "/surface/osc/4/lane/1/note/off"])
 		// Used while held: it does not stay open.
 		r.key(0, 6); r.tapKey(LANE_X0, 5); vi.advanceTimersByTime(1500); r.key(0, 6, 0)
 		r.sent()
 		r.key(LANE_X0, 5)
-		expect(r.sent()[0][0]).toBe("/surface/lane/1/note/on")
+		expect(r.sent()[0][0]).toBe("/surface/osc/4/lane/1/note/on")
 	})
 
 	it("a loop catches notes and recalls, and plays them whatever the chooser shows", () => {
@@ -502,8 +502,8 @@ describe("play-surface: shift 2 and loopers", () => {
 		r.sent()
 		vi.advanceTimersByTime(520) // one more turn of the loop
 		const m = r.sent()
-		expect(m).toContainEqual(["/surface/lane/1/note/on", 60, 0.8])
-		expect(m).toContainEqual(["/surface/lane/1/note/off", 60])
+		expect(m).toContainEqual(["/surface/osc/4/lane/1/note/on", 60, 0.8])
+		expect(m).toContainEqual(["/surface/osc/4/lane/1/note/off", 60])
 		expect(m).toContainEqual(["/surface/lane/2/owner/decay", "follow"])
 		r.tapKey(RIGHT, 0) // pause
 		r.sent()
@@ -522,7 +522,7 @@ describe("play-surface: shift 2 and loopers", () => {
 		r.page.onBlur(r.ctx)
 		r.sent()
 		vi.advanceTimersByTime(700)
-		expect(r.sent().some((x) => x[0] === "/surface/lane/1/note/on")).toBe(true)
+		expect(r.sent().some((x) => x[0] === "/surface/osc/4/lane/1/note/on")).toBe(true)
 		r.page.dispose(r.ctx)
 		r.sent()
 		vi.advanceTimersByTime(2000)
@@ -599,11 +599,11 @@ describe("play-surface: arp (x14 y7)", () => {
 		expect(r.sent()).toEqual([
 			["/surface/arp", 0],
 			["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1],
-			["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 60, 0.8],
+			["/surface/osc/4/lane/1/note/on", 60, 0.8], ["/surface/osc/4/lane/2/note/on", 60, 0.8],
 		])
 		r.tapKey(...ARP) // and back: the notes go, the calls return
 		expect(r.sent().map((m) => m[0]).sort()).toEqual([
-			"/surface/arp", "/surface/arp/call", "/surface/arp/call", "/surface/lane/1/note/off", "/surface/lane/2/note/off",
+			"/surface/arp", "/surface/arp/call", "/surface/arp/call", "/surface/osc/4/lane/1/note/off", "/surface/osc/4/lane/2/note/off",
 		])
 	})
 
@@ -624,15 +624,15 @@ describe("play-surface: arp (x14 y7)", () => {
 	it("ARP flipped in the app turns held keys into calls, and back into plain notes", () => {
 		const r = rig(); r.world(); r.sent()
 		r.key(LANE_X0, 7)
-		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8]])
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8]])
 		r.say("/surface/arp", 1)
-		expect(r.sent().map((m) => m[0]).sort()).toEqual(["/surface/arp/call", "/surface/lane/1/note/off"])
+		expect(r.sent().map((m) => m[0]).sort()).toEqual(["/surface/arp/call", "/surface/osc/4/lane/1/note/off"])
 		r.key(LANE_X0 + 1, 7)
 		expect(r.sent()).toEqual([["/surface/arp/call", 1, 2, "note", 60, 0.8]])
 		r.say("/surface/arp", 0)
 		expect(r.sent()).toEqual([
 			["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1],
-			["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 60, 0.8],
+			["/surface/osc/4/lane/1/note/on", 60, 0.8], ["/surface/osc/4/lane/2/note/on", 60, 0.8],
 		])
 	})
 
@@ -651,7 +651,7 @@ describe("play-surface: arp (x14 y7)", () => {
 		r.sent()
 		vi.advanceTimersByTime(700)
 		const m = r.sent()
-		expect(m.some((x) => x[0] === "/surface/lane/1/note/on")).toBe(true)
+		expect(m.some((x) => x[0] === "/surface/osc/4/lane/1/note/on")).toBe(true)
 		expect(m.some((x) => x[0] === "/surface/arp/call")).toBe(false)
 		r.page.dispose(r.ctx)
 	})
@@ -677,12 +677,66 @@ describe("play-surface: arp (x14 y7)", () => {
 	})
 })
 
+describe("play-surface: OSC 4 and the link coming up", () => {
+	it("plays through OSC 4: notes, own notes and strikes carry the prefix; switches and calls do not", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(LANE_X0, 7)
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8], ["/surface/osc/4/lane/1/note/off", 60]])
+		r.tapKey(RIGHT, 4); r.sent() // PITCH off
+		r.tapKey(LANE_X0, 7)
+		expect(r.sent().map((m) => m[0])).toEqual(["/surface/osc/4/lane/1/own/on", "/surface/osc/4/lane/1/own/off"])
+	})
+
+	it("link up: what was held is forgotten without a word, and everything is read again", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(RIGHT, 7) // LATCH
+		r.tapKey(LANE_X0, 7); r.key(LANE_X0 + 1, 7); r.sent()
+		r.page.onBlur(r.ctx); r.out.length = 0
+		r.say("/link/up")
+		const m = r.out.splice(0)
+		expect(m.filter((x) => x[0] !== "/surface/get")).toEqual([]) // the link released them; no note/off from here
+		for (const a of ["/surface/lane/*/engine", "/surface/arp", "/surface/route/osc4/on", "/surface/route/osc4/lanes"])
+			expect(m).toContainEqual(["/surface/get", a])
+		r.page.onFocus(r.ctx)
+		expect(r.led(LANE_X0, 0)).toBe(2) // the latched column is no longer lit
+		r.tapKey(LANE_X0, 7) // and its cell plays anew instead of ending a note
+		expect(r.sent()[0]).toEqual(["/surface/osc/4/lane/1/note/on", 60, 0.8])
+	})
+
+	it("link up: a running loop sends its held note again", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(RIGHT, 0)
+		r.key(LANE_X0, 7); vi.advanceTimersByTime(400); r.key(LANE_X0, 7, 0)
+		r.tapKey(RIGHT, 0) // close and play: the loop is one long note
+		vi.advanceTimersByTime(100); r.sent()
+		r.say("/link/up")
+		expect(r.sent()).toEqual([["/surface/osc/4/lane/1/note/on", 60, 0.8]])
+		r.page.dispose(r.ctx)
+	})
+
+	it("a lane OSC 4 does not play is dark; OSC 4 off, every lane is dark and the KEYS key blinks", () => {
+		const r = rig(); r.world()
+		vi.advanceTimersByTime(20)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/route/osc4/on"])
+		expect(r.led(LANE_X0, 3)).toBe(2) // unknown reads as played
+		r.say("/surface/route/osc4/on", 1); r.say("/surface/route/osc4/lanes", "2345678")
+		expect(r.led(LANE_X0, 3)).toBe(0)
+		expect(r.led(LANE_X0 + 1, 3)).toBe(2)
+		r.say("/surface/route/osc4/on", 0)
+		expect(r.led(LANE_X0 + 1, 3)).toBe(0)
+		vi.setSystemTime(1_200_000) // 1 200 000 % 1200 = 0: lit half
+		expect(r.led(CHOOSER, 0)).toBe(15)
+		vi.setSystemTime(1_200_700)
+		expect(r.led(CHOOSER, 0)).toBe(0)
+	})
+})
+
 describe("play-surface: xen chords (x2 y1)", () => {
 	it("off, the key is dim and a press plays its note as before", () => {
 		const r = rig(); r.world(); r.sent()
 		expect(r.led(2, 1)).toBe(2)
 		r.key(6, 7)
-		expect(r.sent().some((m) => m[0] === "/surface/lane/3/note/on")).toBe(true)
+		expect(r.sent().some((m) => m[0] === "/surface/osc/4/lane/3/note/on")).toBe(true)
 		expect(r.xen).toEqual([])
 	})
 
@@ -716,7 +770,7 @@ describe("play-surface: xen chords (x2 y1)", () => {
 		expect(JSON.stringify(r.page.serialize())).not.toMatch(/xen/i)
 		r.tapKey(2, 1)
 		r.key(6, 7)
-		expect(r.sent().some((m) => m[0] === "/surface/lane/3/note/on")).toBe(true)
+		expect(r.sent().some((m) => m[0] === "/surface/osc/4/lane/3/note/on")).toBe(true)
 		expect(r.xen).toEqual([])
 	})
 })

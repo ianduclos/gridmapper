@@ -176,6 +176,7 @@
  * columns give most cells several twins). Fewer lit twins there is the geometry, not a bug.
  */
 
+import { SURFACE_LINK_UP } from "../io/liveLink.js"
 import {
 	type Page,
 	type PageContext,
@@ -665,6 +666,11 @@ export class IsoSurfacePage implements Page {
 		this.unsurface?.()
 		this.unsurface =
 			ctx.surface?.on((path, args) => {
+				// The app is (back) there: read every track's lanes again, so the picker is true when it opens.
+				if (path === SURFACE_LINK_UP) {
+					for (const a of LANES_ADDRS) ctx.surface?.send("/surface/get", a)
+					return
+				}
 				const t = LANES_ADDRS.indexOf(path)
 				if (t < 0 || typeof args[0] !== "string" && typeof args[0] !== "number") return
 				this.trackLanes[t] = cleanLanes(String(args[0]))

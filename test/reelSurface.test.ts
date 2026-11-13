@@ -311,6 +311,16 @@ describe("reel-surface: arp (x14 y4)", () => {
 		expect(r.sent()).toEqual([["/surface/lane/3/reel/slice", 2, 1]])
 	})
 
+	it("link up: the app dropped every call, so held pads are sent again and nothing is let go twice", () => {
+		const r = mk()
+		r.say("/surface/arp", 1)
+		r.key(2, 7, 1); r.sent()
+		r.say("/link/up", undefined)
+		expect(r.sent()).toEqual([["/surface/arp/call", 64, 3, "slice", 1]])
+		r.key(2, 7, 0)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 64]])
+	})
+
 	it("asks the app for ARP while focused", () => {
 		const r = mk()
 		r.page.onFocus(r.ctx)

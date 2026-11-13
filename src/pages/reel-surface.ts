@@ -45,6 +45,7 @@
  *           `values` topic.
  */
 
+import { SURFACE_LINK_UP } from "../io/liveLink.js"
 import { type Page, type PageContext, type KeyEvent, type LedFrame, makeFrame, ledIndex, float } from "../core/types.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { SELECTOR_KEYS, selectorKey, shiftKey, releaseShifts, drawSelector, REEL_PAGE_LIVE, REEL_ROW } from "../util/pageSelectorSurface.js"
@@ -426,6 +427,13 @@ export class ReelSurfacePage implements Page {
 	// ---------------------------------------------------------------- what surface says
 
 	private hear(path: string, args: any[], ctx: PageContext) {
+		if (path === SURFACE_LINK_UP) {
+			// The app is (back) there and has dropped every call: forget ours, send the held pads again, read afresh.
+			this.calls.clear()
+			if (this.arp) for (const h of this.held) this.callOn(h.t, h.pad, ctx)
+			this.lastPollMs = this.lastSubMs = this.lastArpPollMs = 0
+			return
+		}
 		const v = args[0]
 		const n = Math.round(Number(v))
 		if (path === `${LINE}/play`) this.playing = Number(v) !== 0

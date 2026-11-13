@@ -58,6 +58,18 @@ x2 y2-y6 are dark and do nothing.
   them all, bowed ones too. Works with PITCH lit or unlit. Latched notes outlive
   a page switch.
 
+## When a lane is dark, or KEYS blinks
+
+The page plays through the app's **OSC 4** source (ROUTE in the app).
+
+- **A lane column all dark on KEYS:** OSC 4 does not play that lane, so a press
+  there makes no sound. Add the lane to OSC 4 in the app.
+- **The KEYS key (x2 y0) blinking slowly, every lane dark:** OSC 4 is switched
+  off in the app. Switch it on.
+- **After a restart** of the app or of the grid's agent, nothing the grid held
+  keeps ringing: latched notes and arp keys are let go, and the page reads the
+  app again by itself. Loops that were playing carry on.
+
 ## ARP (x14 y7)
 
 - **One switch with the app:** this key is the app's own ARP, the same one as its

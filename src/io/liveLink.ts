@@ -87,15 +87,91 @@ export function createLiveLink(
 	}
 }
 
+/** How often the surface link asks the app something, to know it is there. */
+export const SURFACE_PROBE_MS = 1000
+/** No word from the app for this long: it is away. */
+export const SURFACE_AWAY_MS = 3000
+/** What the probe asks (any cheap address; the pages want this one anyway). */
+export const SURFACE_PROBE_ADDR = "/surface/arp"
+/** Sent to the app each time it is found (again): let go of everything the grid held. */
+export const SURFACE_RELEASE = ["/surface/osc/4/release", "/surface/arp/call/clear"] as const
+/**
+ * A message the LINK makes up, never the app: the app has just been found, at the agent's
+ * start or after it was away. The link has already sent SURFACE_RELEASE; a page hearing
+ * this empties its picture of what it holds and reads the app's state again.
+ */
+export const SURFACE_LINK_UP = "/link/up"
+
 /**
  * The idk.surface link: a THIRD peer, same lazy socket as the Live link. Surface listens on
  * 57150 and answers /surface/get on the socket that asked; a subscribe names our port, so
- * the page needs to know it (`port`). Only pages/play-surface.ts uses it.
+ * the page needs to know it (`port`). The surface pages use it.
+ *
+ * It also WATCHES the app (Ian, 2026-11-13): while a page listens it asks SURFACE_PROBE_ADDR
+ * every SURFACE_PROBE_MS. The first answer, and the first one after SURFACE_AWAY_MS of
+ * silence, means the app is (back) there: the link sends SURFACE_RELEASE once, then tells
+ * every page SURFACE_LINK_UP, before the pages see the answer itself. That is what ends notes
+ * a restarted agent left ringing, and what makes every page re-read after either side restarts.
  */
 export function createSurfaceLink(
 	opts: { inPort: number; outPort: number },
 	makeOsc?: MakeOsc,
 	retryMs = RETRY_MS,
 ): LiveLinkHandle & { port: number } {
-	return { ...createLiveLink(opts, makeOsc, retryMs, "surface"), port: opts.inPort }
+	const base = createLiveLink(opts, makeOsc, retryMs, "surface")
+	const pages = new Set<(path: string, args: any[]) => void>()
+	let unwatch: (() => void) | null = null
+	let timer: ReturnType<typeof setInterval> | null = null
+	let up = false
+	let heardAt = 0
+
+	const watch = (path: string) => {
+		if (!path.startsWith("/surface/")) return
+		heardAt = Date.now()
+		if (up) return
+		up = true
+		for (const a of SURFACE_RELEASE) base.send(a)
+		for (const fn of [...pages]) {
+			try {
+				fn(SURFACE_LINK_UP, [])
+			} catch (err) {
+				console.error("[surface] listener threw:", err)
+			}
+		}
+	}
+	const probe = () => {
+		if (up && Date.now() - heardAt > SURFACE_AWAY_MS) up = false
+		base.send("/surface/get", SURFACE_PROBE_ADDR)
+	}
+	const stop = () => {
+		if (timer) clearInterval(timer)
+		timer = null
+		unwatch?.()
+		unwatch = null
+		up = false
+	}
+
+	return {
+		port: opts.inPort,
+		send: base.send,
+		on: (fn) => {
+			// The watcher listens first, so a page hears SURFACE_LINK_UP before the answer that caused it.
+			if (!unwatch) {
+				unwatch = base.on(watch)
+				timer = setInterval(probe, SURFACE_PROBE_MS)
+				probe()
+			}
+			pages.add(fn)
+			const off = base.on(fn)
+			return () => {
+				off()
+				pages.delete(fn)
+				if (!pages.size) stop()
+			}
+		},
+		close: () => {
+			stop()
+			base.close()
+		},
+	}
 }

@@ -514,3 +514,41 @@ describe("set-surface: the next home page (view on)", () => {
 		r.page.dispose(r.ctx)
 	})
 })
+
+describe("surface pages: the link coming up reads the app again", () => {
+	const mk = (make: () => any, slot: number) => {
+		const out: Array<[string, ...any[]]> = []
+		const modifiers = { held: new Set<number>(), shift1: false, shift2: false }
+		let hear: (path: string, args: any[]) => void = () => {}
+		const ctx = {
+			size: SIZE, modifiers, slot, slotLabel: "abcdefgh"[slot], shared: new SharedStore(),
+			clock: { running: false, rate: 20, tick: 0, lanes: [{ div: 1 }, { div: 1 }, { div: 1 }, { div: 1 }] },
+			osc: { send() {} },
+			surface: { port: 57133, send: (path: string, ...a: any[]) => out.push([path, ...a]), on: (fn: any) => ((hear = fn), () => {}) },
+			setDirty() {}, setShift() {}, focus() {}, persist() {},
+		} as unknown as PageContext
+		const page = make()
+		page.init(ctx)
+		return { page, ctx, out, up: () => hear("/link/up", []) }
+	}
+
+	it("iso reads every track's lanes", () => {
+		const r = mk(() => new IsoSurfacePage(), 0)
+		r.out.length = 0
+		r.up()
+		expect(r.out).toEqual(["keys", "keys2", "keys3", "keys4"].map((k) => ["/surface/get", `/surface/route/${k}/lanes`]))
+	})
+
+	it("home subscribes and reads the view at once, without waiting for its five seconds", () => {
+		vi.useFakeTimers(); vi.setSystemTime(2_000_000)
+		const r = mk(() => new SetSurfacePage(true), 5)
+		r.page.onFocus(r.ctx)
+		vi.advanceTimersByTime(1000); r.out.length = 0
+		r.up()
+		vi.advanceTimersByTime(100)
+		expect(r.out).toContainEqual(["/surface/subscribe", "127.0.0.1", 57133, "values"])
+		expect(r.out).toContainEqual(["/surface/get", "/surface/view/focus"])
+		r.page.dispose(r.ctx)
+		vi.useRealTimers()
+	})
+})

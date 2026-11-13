@@ -413,6 +413,14 @@ src/
                          idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
                          XEN CHORDS (x2 y1, not saved): lit, a KEYS press in lane column 1-8 sends `/xen/go <1-8>` to
                          xen-harmony on UDP 57170 (a send-only socket of the page's own, opened at the first chord).
+                         PLAYS THROUGH OSC 4 (Ian, 2026-11-13): every note, own note and strike goes to
+                         /surface/osc/4/lane/<n>/... (switches, dials and arp calls stay unprefixed), so the app
+                         knows the grid as a source. THE LINK WATCHES THE APP (io/liveLink.ts createSurfaceLink): it
+                         asks /surface/arp every second; the first answer, and the first after 3 s of silence, sends
+                         /surface/osc/4/release + /surface/arp/call/clear ONCE and tells every surface page
+                         `/link/up` (SURFACE_LINK_UP, made up by the link, never the app). A page hearing it empties
+                         its picture of what it holds and re-reads the app. A new surface page must handle it.
+                         On KEYS a lane OSC 4 does not play is dark; OSC 4 off, the KEYS key blinks slowly.
                          ARP (PLAY x14 y7, REEL pads x14 y4) is ONE SWITCH WITH THE APP (Ian, 2026-11-13): the key
                          sends /surface/arp flipped and follows the app's value; neither page keeps a flag of its own.
                          CHEATSHEET: docs/play-surface-cheatsheet.md is Ian's player-facing sheet. Any change
