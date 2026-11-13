@@ -128,6 +128,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-11-13 — Claude (from the idk.surface session, at Ian's ask) — left column order; iso's lane picker on shift 2
+- **What:** util/pageSelectorSurface.ts: the shared column is now y0 iso, y1 PLAY, y2 REEL pads, y3 the page's own, y4 home, y5 Twister (Ian: "pads mode below play mode and send the twister to the bottom and home right on top of that"). Cells' DAMP moved from x0 y4 to x0 y3 (y4 is home), and cells now shows the REEL key. pages/iso-surface.ts: the lane picker left the shift 1 latch and the bottom row; while shift 2 (x15 y6) is held, the top row x1-x8 shows lanes 1-8 for every selected track (bright all, medium some, dim none) and a press sets the lane for all of them, or drops it when all have it. It is handled before the panel, which used to swallow x1-x4. Shift 1 + track still latches a track for the looper routing.
+- **Verified:** tsc clean, 710 tests; agent restarted (`kickstart -k`) at 00:31. **Not** on hardware. Ian had said the old picker "is not working for some reason": the app answered `/surface/get` for the four KEYS rows correctly (tracks 2-4 hold no lanes: `''`), so the likely causes were the panel swallowing the keys, or tracks 2-4 simply playing nothing.
+- **Next:** Ian's hands. The five cheat sheets are updated.
+
 ### 2026-11-12 — Claude — PLAY: XEN CHORDS toggle
 - **What:** pages/play-surface.ts: a quiet toggle at x2 y1 (dim off, medium on, not saved). Lit and on KEYS, a press in lane column 1-8 plays no note and sends `/xen/go <1-8>` to 127.0.0.1:57170 (xen-harmony; address from `uv run xen osc` there), once per press; the column last called is lit. Cheat sheet updated in the same commit. Agent restarted while surface was silent.
 - **Verified:** tsc clean, 708 tests (the send is a spy in tests). NOT verified: no real `/xen/go` was sent, nothing seen on the grid.
