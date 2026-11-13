@@ -1,7 +1,7 @@
 # PLAY page cheatsheet
 
 The grid's PLAY page for idk.surface (`src/pages/play-surface.ts`, slot c).
-Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-12.
+Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-13.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `play-surface.ts` changes this file in the same commit.
@@ -12,18 +12,18 @@ Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-12.
 x:  0     2     4 ........ 11   12    14   15
 y0  iso   KEYS  lane 1 ... 8    all        loop 1
 y1  PLAY  XEN                   all        loop 2
-y2  twist .                     all        loop 3
+y2  REEL  .                     all        loop 3
 y3  .     .                     all        loop 4
-y4  REEL  .                     all        PITCH
-y5  home  .                     all        STRIKE
+y4  home  .                     all        PITCH
+y5  twist .                     all        STRIKE
 y6  sh 2  .                     all        SLEW
 y7  sh 1  PRE                   all   ARP  LATCH
 ```
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
-| x0 y2 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | shift 2 | Hold: BOW, FREEZE, DAMP on the lanes (below). |
 | x0 y7 | shift 1 | Hold, then press a thing: store, clear, or strike all. |
 | x2 y0 | KEYS | The lanes play notes. |
@@ -129,7 +129,7 @@ The rows above them keep working as before.
   DAMP is full bright while a lane is damped. The all cell is bright when all
   eight are on.
 - It works on KEYS and on PRESETS alike, and the loopers record all three.
-- The home page (x0 y5) has the same three rows in the same order, always open.
+- The home page (x0 y4) has the same three rows in the same order, always open.
 
 ## Loopers (x15 y0-y3)
 

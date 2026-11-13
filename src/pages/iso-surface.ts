@@ -209,6 +209,7 @@ const LANES_ADDRS = ["/surface/route/keys/lanes", "/surface/route/keys2/lanes", 
 const PICKER_LANES = 8
 const PICKER_ASK_MS = 1000
 const LVL_PICK_ON = 13
+const LVL_PICK_SOME = 8 // only some of the selected tracks play the lane
 const LVL_PICK_OFF = 3
 /** A lanes string as surface spells it: digits 1-8, each once, in order. */
 const cleanLanes = (s: string) => [...new Set(s.replace(/[^1-8]/g, ""))].sort().join("")
@@ -547,11 +548,14 @@ export class IsoSurfacePage implements Page {
 	private peerBeatAt = 0
 	private unpeer: (() => void) | null = null
 	/**
-	 * THE LANE PICKER. While a track is latched for editing (shift 1 + its key), the bottom
-	 * keyboard row x1-x8 shows idk.surface's lanes 1-8, lit where that track plays, and a
-	 * press toggles one. The truth is surface's KEYS row (/surface/route/keys<n>/lanes, a
-	 * string of digits): read over ctx.surface while the edit is open, written on a press,
-	 * never stored here. A row not heard yet shows nothing and takes no press.
+	 * THE LANE PICKER (2026-11-13, Ian: part of the shift 2 menu, on the top row). While
+	 * shift 2 is held, the top keyboard row x1-x8 shows idk.surface's lanes 1-8 for the
+	 * SELECTED tracks: bright where every selected track plays the lane, medium where only
+	 * some do, dim where none. A press switches the lane on for all of them, or off when
+	 * all already play it. The truth is surface's KEYS rows (/surface/route/keys<n>/lanes,
+	 * a string of digits): read over ctx.surface while shift 2 is held, written on a press,
+	 * never stored here. A track not heard yet is left out; with none heard the row is dark
+	 * and takes no press. It sits above the panel, so it works with the panel open.
 	 */
 	private trackLanes: Array<string | undefined> = new Array(TRACK_ROWS).fill(undefined)
 	private lanesAskedAt = 0
@@ -693,13 +697,13 @@ export class IsoSurfacePage implements Page {
 			}
 			return
 		}
+		if (this.pickerKey(ev, ctx)) return
 		if (this.panelShown && ev.x >= PANEL_X0 && ev.x < PANEL_X0 + PANEL_W) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (!ev.s && this.held.has(i)) this.releaseKey(i, ctx) // held from before the panel
 			else this.panelKey(ev, ctx)
 			return
 		}
-		if (this.pickerKey(ev, ctx)) return
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (ev.s) this.setTranspose(ev.x - TRANSPOSE_ZERO_COL, ctx, true)
@@ -709,7 +713,11 @@ export class IsoSurfacePage implements Page {
 		// Right-edge control keys. Both shifts route through the shared ShiftInput, so a
 		// local shift behaves exactly like one sent over OSC.
 		if (this.isShift1(ev.x, ev.y)) { ctx.setShift(1, !!ev.s); return }
-		if (this.isShift2(ev.x, ev.y)) { ctx.setShift(2, !!ev.s); return }
+		if (this.isShift2(ev.x, ev.y)) {
+			ctx.setShift(2, !!ev.s)
+			if (ev.s) { this.lanesAskedAt = 0; this.askLanes(ctx, Date.now()) } // the picker opens with it
+			return
+		}
 		if (this.isSustainPedal(ev.x, ev.y)) { this.sustainKey(ev, ctx); return }
 		if (this.isSustainToggle(ev.x, ev.y)) { this.toggleKey(ev, ctx); return }
 
@@ -739,28 +747,31 @@ export class IsoSurfacePage implements Page {
 
 	/** The lane picker's row: true when the key was the picker's (see trackLanes). */
 	private pickerKey(ev: KeyEvent, ctx: PageContext): boolean {
-		if (ev.y !== this.size.height - 1 || ev.x < KEYS_X0 || ev.x >= KEYS_X0 + PICKER_LANES) return false
+		if (ev.y !== 0 || ev.x < KEYS_X0 || ev.x >= KEYS_X0 + PICKER_LANES) return false
 		const i = ledIndex(this.size, ev.x, ev.y)
 		if (!ev.s) return this.pickerDown.delete(i) // a note held from before still lets go
-		const track = this.editingTrack
-		if (track === null) return false
+		if (!ctx.modifiers.shift2) return false
 		this.pickerDown.add(i)
-		const now = this.trackLanes[track]
-		if (now === undefined) return true // not heard yet: never guess what a toggle means
+		const heard = [...this.selected].filter((t) => this.trackLanes[t] !== undefined)
+		if (heard.length === 0) return true // not heard yet: never guess what a toggle means
 		const digit = String(ev.x - KEYS_X0 + 1)
-		const next = cleanLanes(now.includes(digit) ? now.replace(digit, "") : now + digit)
-		this.trackLanes[track] = next
-		ctx.surface?.send(LANES_ADDRS[track], next)
+		const drop = heard.every((t) => this.trackLanes[t]!.includes(digit))
+		for (const t of heard) {
+			const now = this.trackLanes[t]!
+			const next = cleanLanes(drop ? now.replace(digit, "") : now + digit)
+			if (next === now) continue
+			this.trackLanes[t] = next
+			ctx.surface?.send(LANES_ADDRS[t], next)
+		}
 		ctx.setDirty()
 		return true
 	}
 
-	/** Ask surface which lanes the latched track plays, now and about once a second after. */
+	/** Ask surface which lanes the selected tracks play, now and about once a second while shift 2 is held. */
 	private askLanes(ctx: PageContext, nowMs: number) {
-		const track = this.editingTrack
-		if (track === null || nowMs - this.lanesAskedAt < PICKER_ASK_MS) return
+		if (nowMs - this.lanesAskedAt < PICKER_ASK_MS) return
 		this.lanesAskedAt = nowMs
-		ctx.surface?.send("/surface/get", LANES_ADDRS[track])
+		for (const t of this.selected) ctx.surface?.send("/surface/get", LANES_ADDRS[t])
 	}
 
 	/** Transposer plus octave: the offset a note takes when it starts. */
@@ -1127,8 +1138,6 @@ export class IsoSurfacePage implements Page {
 			} else {
 				this.editingTrack = this.editingTrack === idx ? null : idx
 			}
-			this.lanesAskedAt = 0 // the picker reads the new track's lanes at once
-			this.askLanes(ctx, Date.now())
 			this.emitTracks(ctx)
 			this.commit(ctx)
 			return
@@ -1137,8 +1146,6 @@ export class IsoSurfacePage implements Page {
 			// Same track closes the edit; a different one moves it. You leave edit mode
 			// before you can change the selection — one mode at a time.
 			this.editingTrack = this.editingTrack === idx ? null : idx
-			this.lanesAskedAt = 0
-			this.askLanes(ctx, Date.now())
 			this.emitTracks(ctx)
 			return
 		}
@@ -1149,6 +1156,8 @@ export class IsoSurfacePage implements Page {
 				if (this.selected.size === 1) return
 				this.selected.delete(idx)
 			} else this.selected.add(idx)
+			this.lanesAskedAt = 0 // the picker (shift 2 is held) reads the new selection's lanes at once
+			this.askLanes(ctx, Date.now())
 		} else {
 			if (this.selected.size === 1 && this.selected.has(idx)) return
 			this.selected = new Set([idx])
@@ -1316,14 +1325,6 @@ export class IsoSurfacePage implements Page {
 				f[i] = lvl
 			}
 		}
-		// The lane picker covers the bottom row's first eight keys while a track is latched.
-		if (this.editingTrack !== null) {
-			this.askLanes(ctx, Date.now())
-			const lanes = this.trackLanes[this.editingTrack]
-			for (let l = 0; l < PICKER_LANES; l++)
-				f[ledIndex(this.size, KEYS_X0 + l, this.size.height - 1)] =
-					lanes === undefined ? 0 : lanes.includes(String(l + 1)) ? LVL_PICK_ON : LVL_PICK_OFF
-		}
 		// Control keys down the right edge. Shifts are faint markers that light while held;
 		// both halves of sustain light while they are holding notes.
 		if (this.hasControls()) {
@@ -1392,7 +1393,7 @@ export class IsoSurfacePage implements Page {
 				f[ledIndex(this.size, cx, slot)] = lvl
 			}
 		}
-		if (this.transposerShown && this.editingTrack === null) { // the lane picker has the row meanwhile
+		if (this.transposerShown) {
 			const y = this.size.height - 1
 			for (let x = KEYS_X0; x < this.keysW; x++) {
 				const t = x - TRANSPOSE_ZERO_COL
@@ -1401,6 +1402,16 @@ export class IsoSurfacePage implements Page {
 			}
 		}
 		if (this.hasPanel() && this.panelShown) this.renderPanel(f)
+		// The lane picker covers the top row's first eight keys while shift 2 is held, over the panel too.
+		if (ctx.modifiers.shift2) {
+			this.askLanes(ctx, Date.now())
+			const heard = [...this.selected].map((t) => this.trackLanes[t]).filter((l): l is string => l !== undefined)
+			for (let l = 0; l < PICKER_LANES; l++) {
+				const n = heard.filter((lanes) => lanes.includes(String(l + 1))).length
+				f[ledIndex(this.size, KEYS_X0 + l, 0)] =
+					heard.length === 0 ? 0 : n === heard.length ? LVL_PICK_ON : n > 0 ? LVL_PICK_SOME : LVL_PICK_OFF
+			}
+		}
 		drawSelector(f, ctx)
 		// Iso's own two toggles sit where the other surface pages have the left shifts.
 		f[ledIndex(this.size, 0, PANEL_TOGGLE_ROW)] = !this.hasPanel() ? 0
@@ -2202,7 +2213,7 @@ export const keymap: KeySpec[] = [
 	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
 	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Sustain toggle", short: "Sus. tog", help: "Latching sustain; also arms the chord presets for saving.", lit: LVL_SHIFT },
 	{ x: KEYS_W + 2, y: SUSTAIN_PEDAL_ROW, name: "Sustain pedal", short: "Pedal", help: "Momentary sustain; double-tap to latch.", lit: LVL_SHIFT },
-	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold + track: multi-select tracks.", lit: LVL_SHIFT_IDLE },
+	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold: the top row x1-x8 is the lanes the selected tracks play. Hold + track: multi-select tracks.", lit: LVL_SHIFT_IDLE },
 	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear. Hold + track: routing edit.", lit: LVL_SHIFT_IDLE },
 ]
 

@@ -1,7 +1,7 @@
 # ISO page cheatsheet
 
 The grid's keyboard page for idk.surface (`src/pages/iso-surface.ts`, slot a).
-Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
+Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-13.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `iso-surface.ts` changes this file in the same commit.
@@ -12,18 +12,18 @@ Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
 x:  0      1 ............ 12   13      14       15
 y0  iso    keyboard            chord 1 track 1  loop 1
 y1  PLAY                       chord 2 track 2  loop 2
-y2  twist                      chord 3 track 3  loop 3
+y2  REEL                       chord 3 track 3  loop 3
 y3  .                          chord 4 track 4  loop 4
-y4  REEL                       chord 5 arp up   SUSTAIN
-y5  home                       chord 6 arp down PEDAL
+y4  home                       chord 5 arp up   SUSTAIN
+y5  twist                      chord 6 arp down PEDAL
 y6  PANEL                      chord 7 arp pal. shift 2
 y7  TRANSP                     chord 8 arp urn  shift 1
 ```
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
-| x0 y2 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | PANEL | Show or hide the performance panel on x1-x4. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
 | x1-x12 | keyboard | Right = one step up, up a row = a fourth up (5 steps). Home is bottom left. |
@@ -33,8 +33,8 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 | x15 y0-y3 | loopers 1-4 | Record and loop what you play. |
 | x15 y4 | SUSTAIN | Latching sustain; also arms the chords for saving. |
 | x15 y5 | PEDAL | Sustain while held; double-tap to latch. |
-| x15 y6 | shift 2 | Hold + track: add or drop a track. |
-| x15 y7 | shift 1 | Hold + looper or chord: clear. Hold + track: edit its routing. |
+| x15 y6 | shift 2 | Hold: the top row x1-x8 is the lanes of the selected tracks. Hold + track: add or drop a track. |
+| x15 y7 | shift 1 | Hold + looper or chord: clear. Hold + track: edit which loopers feed it. |
 
 On this page the shifts are on the right (x15). The left x0 y6 and y7 are the
 panel and the transposer; x0 y3 is dark.
@@ -55,12 +55,14 @@ panel and the transposer; x0 y3 is dark.
 
 - **Press:** your notes go to that track alone.
 - **Shift 2 + press:** add or drop a track; one always stays.
-- **Shift 1 + press:** latch that track for editing (let shift go). Then:
-  - the **looper keys** mean "this looper feeds this track" (bright = yes) and do
-    not record;
-  - the **bottom row x1-x8** is surface's lanes 1-8, lit where this track plays.
-    A press switches a lane on or off for the track.
-  - Press the latched track to leave, or another track to edit that one.
+- **Shift 2 held, top row x1-x8:** surface's lanes 1-8 for the selected tracks.
+  Bright = every selected track plays that lane, medium = only some do, dim =
+  none. A press switches the lane on for all of them, or off when all already
+  play it. Let shift 2 go and the row is the keyboard again. It works with the
+  panel open. A dark row means surface has not answered (is the app open?).
+- **Shift 1 + press:** latch that track for editing (let shift go). Then the
+  **looper keys** mean "this looper feeds this track" (bright = yes) and do not
+  record. Press the latched track to leave, or another track to edit that one.
 - **Shift 1 + all four tracks together:** every looper goes back to following
   the selection.
 - A looper routed nowhere follows the selected tracks. Each note-on pulses its
@@ -104,7 +106,7 @@ panel and the transposer; x0 y3 is dark.
   up to +4.
 - A note keeps the transposition it started with. Chords and loops move with it
   (two page settings switch that off). Not saved: 0 after a load.
-- Hidden while a track is latched for editing, and while the panel is open.
+- Hidden while the panel is open.
 
 ## Performance panel (x0 y6)
 

@@ -4,10 +4,10 @@
  *
  *   y0  iso            (slot a)
  *   y1  PLAY           (slot c)
- *   y2  Twister        hold = the Twister's page chooser
+ *   y2  REEL pads      (slot d)
  *   y3  free           the page's own
- *   y4  free           the page's own
- *   y5  home           (slot f: set-surface until a home page is built)
+ *   y4  home           (slot f)
+ *   y5  Twister        hold = the Twister's page chooser
  *   y6  shift 2
  *   y7  shift 1
  *
@@ -36,22 +36,22 @@ export const SELECTOR_COL = 0
 export const SELECTOR_SLOT_AT_ROW: ReadonlyMap<number, Slot> = new Map<number, Slot>([
 	[0, 0], // iso
 	[1, 2], // PLAY
-	[5, 5], // home
+	[4, 5], // home
 ])
 export const PLAY_SLOT: Slot = 2
 /**
- * The REEL pads page (pages/reel-surface.ts, slot d) and its key on free row y4. On since
+ * The REEL pads page (pages/reel-surface.ts, slot d) and its key on row y2. On since
  * the surface session confirmed the step line live in the running app (2026-11-11). Cells
  * (slot b) keeps its damp on that cell, so it shows no key for the page.
  */
 export const REEL_PAGE_LIVE = true
 export const REEL_SLOT: Slot = 3
-export const REEL_ROW = 4
-const CELLS_SLOT: Slot = 1
-const reelKeyOn = (ctx: PageContext) => REEL_PAGE_LIVE && ctx.slot !== CELLS_SLOT
-export const TWISTER_ROW = 2
-/** The two rows a page may use for itself. */
-export const FREE_ROWS = [3, 4] as const
+export const REEL_ROW = 2
+const reelKeyOn = (_ctx: PageContext) => REEL_PAGE_LIVE
+export const HOME_ROW = 4
+export const TWISTER_ROW = 5
+/** The row a page may use for itself. Order since 2026-11-13 (Ian): pads under PLAY, home above the Twister at the foot. */
+export const FREE_ROWS = [3] as const
 export const SHIFT2_ROW = 6
 export const SHIFT1_ROW = 7
 export const TWISTER_OVERLAY_PATH = "/twister/in/overlay"
@@ -72,8 +72,8 @@ export const SELECTOR_KEYS: KeySpec[] = [
 	{ x: 0, y: 0, name: "Iso", help: "Jump to the iso keyboard. Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: 1, name: "Play", help: "Jump to the PLAY page. Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: TWISTER_ROW, name: "Twister pages", short: "Twister", help: "Hold to show the Twister's page chooser; pick a page on the Twister, let go to close.", lit: LVL_TWISTER },
-	...(REEL_PAGE_LIVE ? [{ x: 0, y: 4, name: "Reel pads", short: "Reel", help: "Jump to the REEL pads page. Lit when you're on it. Held while on it: the top row picks the two lanes.", lit: 2 }] : []),
-	{ x: 0, y: 5, name: "Home", help: "Jump to home (the set page for now). Lit when you're on it.", lit: LVL_OTHER },
+	...(REEL_PAGE_LIVE ? [{ x: 0, y: REEL_ROW, name: "Reel pads", short: "Reel", help: "Jump to the REEL pads page. Lit when you're on it. Held while on it: the top row picks the two lanes.", lit: 2 }] : []),
+	{ x: 0, y: HOME_ROW, name: "Home", help: "Jump to home (the set page for now). Lit when you're on it.", lit: LVL_OTHER },
 	{ x: 0, y: SHIFT2_ROW, name: "Shift 2", short: "Shift 2", help: "The second shift.", lit: LVL_SHIFT_IDLE },
 	{ x: 0, y: SHIFT1_ROW, name: "Shift 1", short: "Shift 1", help: "Hold, then press a thing: its way back, or its store.", lit: LVL_SHIFT_IDLE },
 ]

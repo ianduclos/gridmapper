@@ -2,7 +2,7 @@
 
 The grid's REEL pads and step line page for idk.surface
 (`src/pages/reel-surface.ts`, slot d). Positions are `x y`, x0 at the left, y0 at
-the top. Last updated 2026-11-11.
+the top. Last updated 2026-11-13.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `reel-surface.ts` changes this file in the same commit.
@@ -13,10 +13,10 @@ the top. Last updated 2026-11-11.
 x:  0     2 ........................ 13   14    15
 y0  iso   steps  1-12                           loop 1
 y1  PLAY  steps 13-24                           loop 2
-y2  twist steps 25-36                           loop 3
+y2  REEL  steps 25-36                           loop 3
 y3  .
-y4  REEL  LEFT pads   SPEED  value  SPEED  RIGHT pads  ARP
-y5  home  (x2-x5)     ROLL   x7-x8  ROLL   (x10-x13)
+y4  home  LEFT pads   SPEED  value  SPEED  RIGHT pads  ARP
+y5  twist (x2-x5)     ROLL   x7-x8  ROLL   (x10-x13)
 y6  sh 2              CHANCE        CHANCE
 y7  sh 1              BLEND         BLEND        play
                       x6            x9           x14
@@ -24,9 +24,9 @@ y7  sh 1              BLEND         BLEND        play
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y5 | iso / PLAY / home | Go to that page. |
-| x0 y2 | Twister | Hold: the Twister shows its page chooser. |
-| x0 y4 | REEL | Go to this page. Held while on it: pick the two lanes. |
+| x0 y0 / y1 / y4 | iso / PLAY / home | Go to that page. |
+| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y2 | REEL | Go to this page. Held while on it: pick the two lanes. |
 | x0 y7 | shift 1 | Hold, then press a step: the length. Or a looper: clear. |
 | x2-x13 y0-y2 | steps 1-36 | The step line, twelve a row, step 1 top left. |
 | x2-x5 y4-y7 | LEFT pads | Sixteen slices of LEFT's lane. |
@@ -99,7 +99,7 @@ Shift 2 does nothing on this page.
 
 ## Lanes
 
-Hold the REEL key (x0 y4) while on the page: the top row x4-x11 becomes lanes
+Hold the REEL key (x0 y2) while on the page: the top row x4-x11 becomes lanes
 1-8. The first tap sets LEFT's lane, a second sets RIGHT's. The two cannot be the
 same lane. Tapping the lane a track already has sets that track to none.
 Bright = LEFT's, medium = RIGHT's.

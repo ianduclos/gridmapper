@@ -42,7 +42,7 @@ const CELLS_VIEW_X = 1,
 /** Damp at x0 y6 (hold = all six). Hold it with shift (x0 y7) to toggle damp mode, where
  *  the mute column damps single voices; press either key to leave. set-surface sends it. */
 const DAMP_X = 0,
-	DAMP_Y = 4 // col 0's second free row: rows 6-7 are the system's shifts
+	DAMP_Y = 3 // col 0's free row (y4 is home since 2026-11-13): rows 6-7 are the system's shifts
 /** Bottom row: shift held at x0, play toggle at x1, four gesture loopers at x12-15. */
 const SHIFT_X = 0,
 	PLAY_X = 1,

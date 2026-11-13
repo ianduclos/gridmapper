@@ -65,7 +65,7 @@ const rig = (Cells: any, SetPage: any) => {
 describe("surface damp keys", () => {
 	it("cells-surface damps through set-surface via the surface keys", () => {
 		const r = rig(CellsSurfacePage, SetSurfacePage)
-		r.cells.onKey({ x: 0, y: 4, s: 1 }, r.cc) // damp sits on col 0's free row: 6-7 are the shifts
+		r.cells.onKey({ x: 0, y: 3, s: 1 }, r.cc) // damp sits on col 0's free row: 6-7 are the shifts
 		expect(r.damp()).toEqual([1, 2, 3, 4, 5, 6].map((v) => [v, "damp", 1]))
 		expect(r.shared.get(DAMP_FROM_CELLS_SURFACE)).toBeDefined()
 		expect(r.shared.get(DAMP_STATE_SURFACE)).toBeDefined()
@@ -139,19 +139,19 @@ describe("surface left column", () => {
 		hotKey({ x: SELECTOR_COL, y: TWISTER_ROW, s: 0 }, r.ctx)
 	})
 
-	it("iso at the top, PLAY under it, REEL pads on y4, home third from the bottom; cells has no key", () => {
+	it("iso at the top, PLAY under it, REEL pads on y2, home on y4, the Twister under it", () => {
 		const r = mk(5)
 		for (let y = 0; y < 8; y++) surfaceKey({ x: 0, y, s: 1 }, r.ctx)
-		expect(r.focused).toEqual([0, 2, 3]) // y0 iso (a), y1 PLAY (c), y4 REEL pads (d); y5 is where we already are
+		expect(r.focused).toEqual([0, 2, 3]) // y0 iso (a), y1 PLAY (c), y2 REEL pads (d); y4 is where we already are
 		const f = r.draw(surfaceDraw)
-		expect(f[ledIndex(SIZE, 0, 5)]).toBe(12)
+		expect(f[ledIndex(SIZE, 0, 4)]).toBe(12)
 		expect(f[ledIndex(SIZE, 0, 0)]).toBe(2)
-		expect(f[ledIndex(SIZE, 0, 4)]).toBe(2)
-		// Cells (slot b) keeps its damp on y4: no REEL key there, pressed or drawn.
+		expect(f[ledIndex(SIZE, 0, 2)]).toBe(2)
+		// Cells (slot b) keeps its damp on the free row y3: the column leaves it alone.
 		const c = mk(1)
-		expect(surfaceKey({ x: 0, y: 4, s: 1 }, c.ctx)).toBe(false)
+		expect(surfaceKey({ x: 0, y: 3, s: 1 }, c.ctx)).toBe(false)
 		expect(c.focused).toEqual([])
-		expect(c.draw(surfaceDraw)[ledIndex(SIZE, 0, 4)]).toBe(0)
+		expect(c.draw(surfaceDraw)[ledIndex(SIZE, 0, 3)]).toBe(0)
 	})
 
 	it("leaves row 3 to the page and gives rows 6-7 to the shifts", () => {
@@ -283,42 +283,67 @@ describe("iso-surface: the lane picker", () => {
 		page.init(ctx)
 		notes.length = 0
 		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
-		const latch = (track: number) => { modifiers.shift1 = true; key(14, track, 1); key(14, track, 0); modifiers.shift1 = false }
-		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 1 + l, 7)]) }
+		const shift2 = (on: boolean) => { modifiers.shift2 = on; key(15, 6, on ? 1 : 0) }
+		const pick = (track: number) => { key(14, track, 1); key(14, track, 0) }
+		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
-		return { page, key, latch, row, out, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
+		const sets = () => out.filter((m) => m[0] !== "/surface/get")
+		return { page, key, shift2, pick, row, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
-	it("shows the latched track's lanes on the bottom row and toggles them in surface", () => {
+	it("with shift 2 held, the top row shows the selected track's lanes and toggles them in surface", () => {
 		const r = mk()
-		r.latch(1)
+		r.pick(1)
+		r.shift2(true)
 		expect(r.row()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]) // not heard yet
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys2/lanes"])
-		r.key(1, 7, 1); r.key(1, 7, 0) // unknown: no guess, no note
-		expect(r.out.filter((m) => m[0] !== "/surface/get")).toEqual([])
+		r.key(1, 0, 1); r.key(1, 0, 0) // unknown: no guess, no note
+		expect(r.sets()).toEqual([])
 		r.say("/surface/route/keys2/lanes", "31")
 		expect(r.row()).toEqual([13, 3, 13, 3, 3, 3, 3, 3])
-		r.key(2, 7, 1); r.key(2, 7, 0) // add lane 2
-		r.key(1, 7, 1); r.key(1, 7, 0) // drop lane 1
-		expect(r.out.filter((m) => m[0] !== "/surface/get")).toEqual([
+		r.key(2, 0, 1); r.key(2, 0, 0) // add lane 2
+		r.key(1, 0, 1); r.key(1, 0, 0) // drop lane 1
+		expect(r.sets()).toEqual([
 			["/surface/route/keys2/lanes", "123"],
 			["/surface/route/keys2/lanes", "23"],
 		])
 		expect(r.noteMsgs()).toEqual([])
-		r.key(9, 7, 1) // the rest of the keyboard still plays
+		r.key(9, 0, 1) // the rest of the row still plays
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 
-	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once the edit closes", () => {
+	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once shift 2 is let go", () => {
 		const r = mk()
-		r.latch(0)
+		r.shift2(true)
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys/lanes"])
 		r.say("/surface/route/keys/lanes", "12345678")
-		r.key(8, 7, 1); r.key(8, 7, 0)
+		r.key(8, 0, 1); r.key(8, 0, 0)
 		expect(r.out).toContainEqual(["/surface/route/keys/lanes", "1234567"])
-		r.key(14, 0, 1); r.key(14, 0, 0) // same track closes the edit
-		r.key(1, 7, 1)
+		r.shift2(false)
+		r.key(1, 0, 1)
 		expect(r.noteMsgs()).toHaveLength(1)
+	})
+
+	it("several selected tracks: medium where only some play a lane, and a press sets it for all of them", () => {
+		const r = mk()
+		r.shift2(true)
+		r.pick(1) // shift 2 + track: tracks 1 and 2 selected
+		r.say("/surface/route/keys/lanes", "12")
+		r.say("/surface/route/keys2/lanes", "2")
+		expect(r.row()).toEqual([8, 13, 3, 3, 3, 3, 3, 3])
+		r.key(1, 0, 1); r.key(1, 0, 0) // lane 1: only track 1 has it, so track 2 gets it
+		expect(r.sets()).toEqual([["/surface/route/keys2/lanes", "12"]])
+		r.key(2, 0, 1); r.key(2, 0, 0) // lane 2: both have it, so both drop it
+		expect(r.sets().slice(1)).toEqual([["/surface/route/keys/lanes", "1"], ["/surface/route/keys2/lanes", "1"]])
+	})
+
+	it("works with the panel open: the panel's top keys give way while shift 2 is held", () => {
+		const r = mk()
+		r.key(0, 6, 1); r.key(0, 6, 0) // PANEL
+		r.shift2(true)
+		r.say("/surface/route/keys/lanes", "")
+		r.key(1, 0, 1); r.key(1, 0, 0)
+		expect(r.sets()).toEqual([["/surface/route/keys/lanes", "1"]])
 	})
 })
 
@@ -345,7 +370,7 @@ describe("iso-surface: the left column's bottom two keys are iso's own", () => {
 		expect(led(0, 6)).toBeGreaterThan(idle6) // panel shown, transposer hidden
 		expect(led(0, 7)).toBe(idle7)
 		expect(led(0, 3)).toBe(0)
-		expect(led(0, 4)).toBe(2) // the REEL pads key, the system's
+		expect(led(0, 2)).toBe(2) // the REEL pads key, the system's
 		page.onKey({ x: 15, y: 7, s: 1 }, ctx)
 		page.onKey({ x: 15, y: 6, s: 1 }, ctx)
 		expect(shifts).toEqual([[1, true], [2, true]])

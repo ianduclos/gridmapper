@@ -39,7 +39,7 @@ describe("reel-surface: REEL pads and the step line", () => {
 	it("off, it sends idk.surface nothing and its keys do nothing", () => {
 		const r = mk(false)
 		r.page.onFocus(r.ctx)
-		r.tap(2, 7); r.tap(14, 7); r.tap(2, 0); r.tap(0, 4)
+		r.tap(2, 7); r.tap(14, 7); r.tap(2, 0); r.tap(0, 2)
 		vi.advanceTimersByTime(6000)
 		expect(r.out).toEqual([])
 		expect(r.led(2, 7)).toBe(0)
@@ -153,15 +153,15 @@ describe("reel-surface: REEL pads and the step line", () => {
 
 	it("holding the page key: the top row picks LEFT's lane, then RIGHT's; never the same lane", () => {
 		const r = mk()
-		r.key(0, 4, 1)
+		r.key(0, 2, 1)
 		r.tap(5, 0); r.tap(5, 0); r.tap(9, 0)
-		r.key(0, 4, 0)
+		r.key(0, 2, 0)
 		expect(r.sent()).toEqual([["/surface/reel/line/left", 2], ["/surface/reel/line/right", 6]])
-		r.key(0, 4, 1)
+		r.key(0, 2, 1)
 		expect(r.led(5, 0)).toBe(13)
 		expect(r.led(9, 0)).toBe(8)
 		r.tap(5, 0) // LEFT's own lane again: none
-		r.key(0, 4, 0)
+		r.key(0, 2, 0)
 		expect(r.sent()).toEqual([["/surface/reel/line/left", 0]])
 	})
 

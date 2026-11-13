@@ -2,7 +2,7 @@
 
 The grid's hocket sequencer page for idk.surface (`src/pages/cells-surface.ts`,
 slot b). Positions are `x y`, x0 at the left, y0 at the top.
-Last updated 2026-11-11.
+Last updated 2026-11-13.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `cells-surface.ts` changes this file in the same commit.
@@ -17,19 +17,19 @@ so REEL pads cannot be reached from here.
 x:  0      1     2  3  4    5 ............ 15
 y0  iso    mute  cell 1-3   phase            voice 1
 y1  PLAY   mute  cell 1-3   phase            voice 2
-y2  twist  mute  cell 1-3   phase            voice 3
-y3  .      mute  cell 1-3   phase            voice 4
-y4  DAMP   mute  cell 1-3   phase            voice 5
-y5  home   mute  cell 1-3   phase            voice 6
+y2  REEL   mute  cell 1-3   phase            voice 3
+y3  DAMP   mute  cell 1-3   phase            voice 4
+y4  home   mute  cell 1-3   phase            voice 5
+y5  twist  mute  cell 1-3   phase            voice 6
 y6  sh 2   CELLS RHY TUN  EVOLVE LOCKS REC.T (x1-x6)
 y7  shift  play        ens 1-3 (x4-x6)       loop 1-4 (x12-x15)
 ```
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y5 | iso / PLAY / home | Go to that page. |
-| x0 y2 | Twister | Hold: the Twister shows its page chooser. |
-| x0 y4 | DAMP | Hold: damps all six voices. |
+| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y3 | DAMP | Hold: damps all six voices. |
 | x0 y7 | shift | Hold, then press a looper: clear. With DAMP: damp mode. |
 | x1 y0-y5 | mute | Mute or rejoin that voice. |
 | x2-x4 y0-y5 | cells 1-3 | Choose the voice's cell. |
@@ -58,7 +58,7 @@ Starts or stops cells. Cells owns the tempo: if the transport is stopped, play
 starts it at this page's tempo. Stopping cells leaves the transport running for
 the other pages. Cells joins a running transport on its next beat.
 
-## Damp (x0 y4)
+## Damp (x0 y3)
 
 - **Hold:** damps all six voices, through the home page, so both agree.
 - **Hold with shift (x0 y7):** switches damp mode on. The mute column (x1) then

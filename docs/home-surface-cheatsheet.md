@@ -1,7 +1,7 @@
 # HOME page cheatsheet
 
 The grid's home page for idk.surface (`src/pages/set-surface.ts`, slot f).
-Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
+Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-13.
 
 > Keep this in step with the page: any change to a key, a gesture or a default in
 > `set-surface.ts` changes this file in the same commit.
@@ -12,18 +12,18 @@ Positions are `x y`, x0 at the left, y0 at the top. Last updated 2026-11-11.
 x:  0     2     4 ........ 11        15
 y0  iso         A B C D . S1 S2 M    loop 1
 y1  PLAY                             loop 2
-y2  twist                            loop 3
+y2  REEL                             loop 3
 y3  .     all   FOCUS  lane 1 ... 8  Twister a
-y4  REEL  all   MOTION               Twister b
-y5  home  all   BOW                  Twister c
+y4  home  all   MOTION               Twister b
+y5  twist all   BOW                  Twister c
 y6  sh 2  all   FREEZE               Twister d
 y7  sh 1  all   DAMP                 Twister e
 ```
 
 | Where | Key | What it does |
 |---|---|---|
-| x0 y0 / y1 / y4 / y5 | iso / PLAY / REEL pads / home | Go to that page. |
-| x0 y2 | Twister | Hold: the Twister shows its page chooser. |
+| x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
+| x0 y5 | Twister | Hold: the Twister shows its page chooser. |
 | x0 y6 | shift 2 | Hold, then press a FOCUS key: the way home (below). |
 | x0 y7 | shift 1 | Hold, then press: add to the selection, or clear a looper. |
 | x4-x11 | lanes 1-8 | One column per lane, rows y3-y7. |
