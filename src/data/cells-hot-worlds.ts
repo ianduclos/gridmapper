@@ -44,7 +44,7 @@ export type World = {
 	/**
 	 * The tempo this world is meant at, in BPM of the performance beat. Optional: a world
 	 * without one keeps whatever tempo is in force. cells-surface applies it when the world
-	 * lands (Ian, 2026-11-13); cells-hot ignores it. No world carries one yet.
+	 * lands (Ian, 2026-11-13); cells-hot ignores it. Filled from `recommendedBpm` below.
 	 */
 	recommendedBpm?: number
 	source: string
@@ -342,7 +342,30 @@ const legacyEvolution: Record<string, { rows: number[]; choices: number[][] }[]>
  manjanin: [{ rows: [4,5], choices: [[0,0],[1,1],[2,2]] }],
  ngon: [{ rows: [4,5], choices: [[0,0],[1,1],[2,2]] }],
 }
+/**
+ * A tempo for each world, in BPM of its own performance beat, taken when the world lands in
+ * cells-surface. SUGGESTIONS, entered at Ian's word on 2026-11-13 for him to correct by ear.
+ * Only three rest on a source: manjanin (Polak 2010, the cycles used), sikuri (the file's
+ * printed 70 and 61) and tshikona (the cited 90). manjanin-ii and woloso lean on Polak's
+ * ranges. The rest are guesses from what is usual for the tradition.
+ */
+export const recommendedBpm: Record<string, number> = {
+ "horn-relay": 120,
+ "amadinda-ndyegulira": 160,
+ "amadinda-ssematimba": 150,
+ "mbira-chakwi": 100,
+ manjanin: 150,
+ "manjanin-ii": 160,
+ ngon: 120,
+ woloso: 115,
+ kotekan: 100,
+ "mbira-nyamaropa": 105,
+ sikuri: 65,
+ tshikona: 90,
+ kecak: 100,
+}
 for (const world of Object.values(worlds)) {
+ world.recommendedBpm ??= recommendedBpm[world.id]
  world.pulsesPerBeat ??= 3
  world.performanceBeatBasis ??= ["manjanin", "ngon"].includes(world.id)
   ? "Three design pulses per documented beat; uneven onsets retained."

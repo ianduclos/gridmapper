@@ -68,8 +68,12 @@ the other pages. Cells joins a running transport on its next beat.
 - **CELLS (x1):** the main view above.
 - **RHYTHM (x2):** the top rows list the rhythm worlds, fifteen a row from x1.
   Press one: the world changes on the next shared beat, and arrives with its
-  own recommended tuning (and its own tempo, for a world that has one; none
-  does yet). You can change either afterwards.
+  own recommended tuning and tempo. You can change either afterwards.
+
+  The tempos are first suggestions for you to correct by ear (BPM of the beat):
+  horn relay 120, amadinda Ndyegulira 160, amadinda Ssematimba 150, mbira Chakwi
+  100, manjanin 150, manjanin II 160, ngòn 120, woloso 115, kotekan 100, mbira
+  Nyamaropa 105, sikuri 65, tshikona 90, kecak 100.
 - **TUNING (x3):** the top two rows list the tunings: included ones on y0,
   the keyboard scales on y1.
 - **Recommended tuning (x6):** back to the world's own after you chose another;

@@ -66,24 +66,32 @@ const rig = (Cells: any, SetPage: any) => {
 }
 
 describe("cells-surface: a world lands with its own tuning and tempo", () => {
-	it("choosing a world takes its recommended tuning; a world with a recommended tempo takes that too, others keep the tempo", () => {
+	it("choosing a world takes its recommended tuning and tempo; a world without a tempo keeps the one in force", () => {
 		const r = rig(CellsSurfacePage, SetSurfacePage)
 		const state = () => r.cells.serialize() as any
 		r.cells.onOsc("/setting/tuning", ["tritave"], r.cc)
-		r.cells.onOsc("/setting/bpm", [100], r.cc)
-		r.cells.onOsc("/setting/rhythmWorld", ["kecak"], r.cc)
-		expect(state().rhythmWorld).toBe("kecak")
-		expect(state().tuning).toBe(worlds.kecak.recommendedTuning)
-		expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(100) // kecak has no tempo of its own yet
-		const kotekan = worlds.kotekan as any
-		kotekan.recommendedBpm = 72
+		r.cells.onOsc("/setting/bpm", [133], r.cc)
+		r.cells.onOsc("/setting/rhythmWorld", ["sikuri"], r.cc)
+		expect(state().rhythmWorld).toBe("sikuri")
+		expect(state().tuning).toBe(worlds.sikuri.recommendedTuning)
+		expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(65)
+		r.cells.onOsc("/setting/tuning", ["tritave"], r.cc) // both are free to change afterwards
+		r.cells.onOsc("/setting/bpm", [80], r.cc)
+		expect(state().tuning).toBe("tritave")
+		expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(80)
+		const kecak = worlds.kecak as any, was = kecak.recommendedBpm
+		kecak.recommendedBpm = undefined
 		try {
-			r.cells.onOsc("/setting/rhythmWorld", ["kotekan"], r.cc)
-			expect(state().tuning).toBe(worlds.kotekan.recommendedTuning)
-			expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(72)
-			r.cells.onOsc("/setting/tuning", ["tritave"], r.cc) // still free to change afterwards
-			expect(state().tuning).toBe("tritave")
-		} finally { delete kotekan.recommendedBpm }
+			r.cells.onOsc("/setting/rhythmWorld", ["kecak"], r.cc)
+			expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(80)
+		} finally { kecak.recommendedBpm = was }
+	})
+
+	it("every world has a tempo, inside the page's range", () => {
+		for (const w of Object.values(worlds)) {
+			expect(w.recommendedBpm, w.id).toBeGreaterThanOrEqual(20)
+			expect(w.recommendedBpm, w.id).toBeLessThanOrEqual(400)
+		}
 	})
 })
 
