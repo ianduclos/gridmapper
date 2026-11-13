@@ -556,7 +556,7 @@ export class IsoSurfacePage implements Page {
 	 * rest of the top row (x5-x12): idk.surface's lanes 1-8 for the SELECTED tracks. They are
 	 * one overlay with one state (`panelShown`); there is no picker without the panel. The key
 	 * opens it at once on the press; let go within MENU_TAP_MS it stays (or, if it was open
-	 * already, shuts); held longer, or used while held from shut, it shuts on release.
+	 * already, shuts); held longer, it shuts on release. Only the time counts.
 	 * The lanes are surface's KEYS rows (/surface/route/keys<n>/lanes, a string of digits):
 	 * read over ctx.surface while the menu is open, written on a press, never stored here. A
 	 * track not heard yet is left out; with none heard the eight are dark and take no press.
@@ -566,7 +566,6 @@ export class IsoSurfacePage implements Page {
 	private menuHeld = false
 	private menuHeldAt = 0
 	private menuWasOpen = false
-	private menuUsed = false
 	private pickerDown = new Set<number>()
 	private unsurface: (() => void) | null = null
 	private voicedSteps = new Set<number>()
@@ -709,7 +708,6 @@ export class IsoSurfacePage implements Page {
 					this.menuHeld = true
 					this.menuHeldAt = Date.now()
 					this.menuWasOpen = this.panelShown
-					this.menuUsed = false
 					this.panelShown = true
 					this.transposerShown = false
 					this.lanesAskedAt = 0
@@ -717,9 +715,11 @@ export class IsoSurfacePage implements Page {
 				} else if (this.menuHeld) {
 					this.menuHeld = false
 					const tap = Date.now() - this.menuHeldAt < MENU_TAP_MS
-					// A tap from shut leaves it open. Anything else shuts it: a tap when it was
-					// open, a hold, or a quick press that was used as a shift.
-					if (!(tap && !this.menuWasOpen && !this.menuUsed)) {
+					// Time alone decides (Ian: "long press temporary, short press toggles"). A tap
+					// from shut leaves it open; a tap when it was open, or a hold, shuts it. What
+					// was pressed meanwhile does not count: a quick press overlapping a panel key
+					// once shut the menu unseen, and the next panel presses were NOTES (2026-11-13).
+					if (!(tap && !this.menuWasOpen)) {
 						this.panelShown = false
 						this.tintKeyDown = false
 					}
@@ -732,10 +732,7 @@ export class IsoSurfacePage implements Page {
 		if (this.panelShown && ev.x >= PANEL_X0 && ev.x < PANEL_X0 + PANEL_W) {
 			const i = ledIndex(this.size, ev.x, ev.y)
 			if (!ev.s && this.held.has(i)) this.releaseKey(i, ctx) // held from before the panel
-			else {
-				if (ev.s) this.menuUsed = true
-				this.panelKey(ev, ctx)
-			}
+			else this.panelKey(ev, ctx)
 			return
 		}
 		if (this.transposerShown && ev.y === this.size.height - 1 && ev.x >= KEYS_X0 && ev.x < this.keysW) {
@@ -782,7 +779,6 @@ export class IsoSurfacePage implements Page {
 		if (!ev.s) return this.pickerDown.delete(i) // a note held from before still lets go
 		if (!this.panelShown || !this.hasPanel()) return false
 		this.pickerDown.add(i) // the menu's: no note
-		this.menuUsed = true
 		const heard = [...this.selected].filter((t) => this.trackLanes[t] !== undefined)
 		if (heard.length === 0) return true // not heard yet: never guess what a toggle means
 		const digit = String(ev.x - PICKER_X0 + 1)

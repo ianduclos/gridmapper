@@ -27,8 +27,7 @@
  * THE TWISTER OVERLAY (Ian, 2026-11-13: "the twister key can open up an overlay in grid to
  * deal with the presets, A B, and maybe even focus the pages"). The Twister key opens it over
  * whatever page is in front, with x0 y6's rule on iso: it opens on the press; let go within
- * TW_TAP_MS it stays (a tap when open shuts it); held longer, or used while held, it shuts on
- * release. While open everything right of column 0 is the overlay's and the page under it
+ * TW_TAP_MS it stays (a tap when open shuts it); held longer, it shuts on release. While open everything right of column 0 is the overlay's and the page under it
  * gets no key. On x4-x11:
  *   y0  the Twister's pages a-e (x4-x8)   /twister/in/focus/page <a-e>, lit = last pressed here
  *   y2  scene 1-8 onto the fader's A side  /surface/scene/a <n>, lit = the scene on A
@@ -107,7 +106,6 @@ const LVL_TW_FADER_BELOW = 7
 const tw = {
 	open: false,
 	wasOpen: false,
-	used: false,
 	downAt: 0,
 	page: -1, // the Twister page last chosen here; the Twister does not report its own
 	a: 0, // the scene on each side, 0 = none or not heard
@@ -123,7 +121,7 @@ const twLinks = new WeakSet<SurfaceLink>()
 
 /** For tests: the overlay's state is the module's, so a rig starts it afresh. */
 export function resetTwisterOverlay(): void {
-	Object.assign(tw, { open: false, wasOpen: false, used: false, downAt: 0, page: -1, a: 0, b: 0, fader: undefined, polledAt: 0, subscribedAt: 0 })
+	Object.assign(tw, { open: false, wasOpen: false, downAt: 0, page: -1, a: 0, b: 0, fader: undefined, polledAt: 0, subscribedAt: 0 })
 	tw.down.clear()
 	tw.storedAt.fill(0)
 	twisterHeld = false
@@ -171,7 +169,6 @@ function twKey(ev: KeyEvent, ctx: PageContext): boolean {
 		return true
 	}
 	if (!tw.open) return false
-	tw.used = true
 	const n = ev.x - TW_X0 + 1
 	tw.down.set(i, { y: ev.y, n, at: Date.now(), stored: false })
 	if (n >= 1 && n <= TW_SCENES) {
@@ -235,13 +232,12 @@ export function selectorKey(ev: KeyEvent, ctx: PageContext): boolean {
 			ctx.osc.send(TWISTER_OVERLAY_PATH, held ? 1 : 0)
 			if (held) {
 				tw.wasOpen = tw.open
-				tw.used = false
 				tw.downAt = Date.now()
 				tw.open = true
 				tw.polledAt = tw.subscribedAt = 0 // read the scenes and the fader at once
-			} else if (!(Date.now() - tw.downAt < TW_TAP_MS && !tw.wasOpen && !tw.used)) {
-				// Only a tap from shut leaves it open: a tap when open, a hold, or a press
-				// used as a shift all shut it.
+			} else if (!(Date.now() - tw.downAt < TW_TAP_MS && !tw.wasOpen)) {
+				// Time alone decides: a tap from shut leaves it open; a tap when open, or a
+				// hold, shuts it. What was pressed meanwhile does not count (as iso's menu).
 				tw.open = false
 			}
 			ctx.setDirty()

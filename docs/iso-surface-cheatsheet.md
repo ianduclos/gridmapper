@@ -112,8 +112,8 @@ panel and the transposer; x0 y3 is dark.
 ## The menu (x0 y6): panel and lanes
 
 One overlay. **Tap** x0 y6 (under a third of a second): it opens and stays; tap
-again to shut it. **Hold** it: it is open only while held. A quick press during
-which you pressed something in it also shuts on release.
+again to shut it. **Hold** it: it is open only while held. Only the time
+counts, not what you pressed meanwhile. The key is bright while the menu is open.
 
 The panel is on x1-x4; the lanes are on the top row x5-x12 (see Tracks). The
 keyboard stays playable on x5-x12 below the top row. It and the transposer hide each other.

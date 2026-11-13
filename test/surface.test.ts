@@ -331,8 +331,9 @@ describe("iso-surface: the lane picker", () => {
 		r.say("/surface/route/keys/lanes", "12345678")
 		r.key(12, 0, 1); r.key(12, 0, 0)
 		expect(r.out).toContainEqual(["/surface/route/keys/lanes", "1234567"])
-		r.shift2(false) // used while held: it was a hold, the menu shuts
-		expect((r.page as any).panelShown).toBe(false)
+		r.shift2(false) // a quick press: the menu stays, and the lanes with it
+		expect((r.page as any).panelShown).toBe(true)
+		r.shift2(true); r.shift2(false) // tap again: shut
 		r.key(5, 0, 1)
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
@@ -372,15 +373,18 @@ describe("iso-surface: the lane picker", () => {
 		} finally { vi.useRealTimers() }
 	})
 
-	it("a quick press used as a shift (a lane or a panel key pressed meanwhile) shuts on release; from open, a tap shuts", () => {
+	it("only the time counts: a quick press stays open even if a key was pressed meanwhile, so panel keys never turn into notes", () => {
 		const r = mk()
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "")
 		r.key(5, 0, 1); r.key(5, 0, 0)
 		expect(r.sets()).toEqual([["/surface/route/keys/lanes", "1"]])
+		r.key(2, 3, 1) // a panel key, overlapping the menu key's release
 		r.shift2(false)
-		expect((r.page as any).panelShown).toBe(false)
-		r.shift2(true); r.shift2(false) // tap: open and stays
+		r.key(2, 3, 0)
+		expect((r.page as any).panelShown).toBe(true)
+		r.key(2, 4, 1); r.key(2, 4, 0) // the next panel key is still the panel's
+		expect(r.noteMsgs()).toEqual([])
 		r.key(4, 0, 1); r.key(4, 0, 0) // x4 y0 is the panel's STRUM, not a lane
 		expect(r.sets()).toHaveLength(1)
 		expect((r.page as any).panelShown).toBe(true)
@@ -688,11 +692,13 @@ describe("surface left column: the Twister overlay", () => {
 		expect(r.max.filter((m) => m[0] === "/twister/in/focus/page")).toHaveLength(1)
 	})
 
-	it("used while held from shut, it shuts on release even if quick; shut, the keys are the page's again", () => {
+	it("only the time counts: a quick press stays open even if a key was pressed meanwhile; shut, the keys are the page's again", () => {
 		const r = mk()
 		r.key(0, TW)
 		r.tap(4, 5)
 		r.key(0, TW, 0)
+		expect(twisterOverlayOpen()).toBe(true)
+		r.tap(0, TW)
 		expect(twisterOverlayOpen()).toBe(false)
 		r.sent()
 		r.tap(4, 5)
