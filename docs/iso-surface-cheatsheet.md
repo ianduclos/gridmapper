@@ -16,7 +16,7 @@ y2  REEL                       chord 3 track 3  loop 3
 y3  .                          chord 4 track 4  loop 4
 y4  home                       chord 5 arp up   LATCH
 y5  twist                      chord 6 arp down PEDAL
-y6  PANEL                      chord 7 arp u-d  shift 2
+y6  MENU                       chord 7 arp u-d  shift 2
 y7  TRANSP                     chord 8 arp urn  shift 1
 ```
 
@@ -24,7 +24,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 |---|---|---|
 | x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y5 | Twister | Hold: the Twister shows its page chooser. |
-| x0 y6 | PANEL / lanes | Tap: show or hide the performance panel on x1-x4. Hold: the lanes of the track in front on the top row. |
+| x0 y6 | MENU | One menu: the panel on x1-x4 and the lanes of the track in front on the top row x5-x12. Tap: open, tap again: shut. Hold: open only while held. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
 | x1-x12 | keyboard | Right = one step up, up a row = a fourth up (5 steps). Home is bottom left. |
 | x13 y0-y7 | chords 1-8 | Play, save or clear a chord. |
@@ -54,12 +54,11 @@ One track is in front at a time. Press a track key to bring it forward.
   tracks (see Loopers).
 - Each note-on pulses its track's key.
 
-**Lanes of the front track (hold x0 y6):** the playing area's top row goes dark
-and x4-x11 show surface's lanes 1-8 for the track in front: bright = it plays
-that lane, dim = it does not. A press switches the lane. Let go and the row is
-the keyboard again. It works with the panel open. All eight dark means surface
-has not answered (is the app open?). A quick tap of x0 y6 (under a third of a
-second, no lane pressed) is still the panel.
+**Lanes of the front track (in the menu, x0 y6):** whenever the menu is open,
+x5-x12 of the top row show surface's lanes 1-8 for the track in front: bright =
+it plays that lane, dim = it does not. A press switches the lane. All eight
+dark means surface has not answered (is the app open?). Shut the menu and the
+row is the keyboard again.
 
 ## Keyboard (x1-x12)
 
@@ -128,9 +127,14 @@ This is the app's ARP: its timing, its settings. The grid has none of its own.
   off). Not saved: 0 after a load.
 - Hidden while the panel is open.
 
-## Performance panel (x0 y6)
+## The menu (x0 y6): panel and lanes
 
-Opens over x1-x4; x5-x12 stay playable. It and the transposer hide each other.
+One overlay. **Tap** x0 y6 (under a third of a second): it opens and stays; tap
+again to shut it. **Hold** it: it is open only while held. A quick press during
+which you pressed something in it also shuts on release.
+
+The panel is on x1-x4; the lanes are on the top row x5-x12 (see the layers
+section). The keyboard stays playable on x5-x12 below the top row. It and the transposer hide each other.
 The key glows when the front track's octave, its tint or strum is away from
 rest while hidden.
 

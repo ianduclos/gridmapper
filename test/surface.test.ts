@@ -289,69 +289,105 @@ describe("iso-surface: the lane picker", () => {
 		const shift2 = (on: boolean) => key(0, 6, on ? 1 : 0) // the picker's key: the left column's x0 y6, held
 		const pick = (track: number) => { key(14, track, 1); key(14, track, 0) }
 		const add = (track: number) => { modifiers.shift2 = true; pick(track); modifiers.shift2 = false }
-		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 4 + l, 0)]) }
+		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 5 + l, 0)]) }
 		const top = () => { const f = page.render(ctx)!; return Array.from({ length: 12 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
 		const sets = () => out.filter((m) => /^\/surface\/route\//.test(m[0]))
 		return { page, key, shift2, pick, add, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
-	it("with x0 y6 held, the top row shows the selected track's lanes on x4-x11 and toggles them in surface", () => {
+	it("x0 y6 opens ONE menu: the panel on x1-x4 and the lanes of the track on x5-x12 of the top row, together", () => {
 		const r = mk()
 		r.pick(1)
 		r.shift2(true)
+		expect((r.page as any).panelShown).toBe(true) // at once, on the press
 		expect(r.row()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]) // not heard yet
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys2/lanes"])
-		r.key(4, 0, 1); r.key(4, 0, 0) // unknown: no guess, no note
+		r.key(5, 0, 1); r.key(5, 0, 0) // unknown: no guess, no note
 		expect(r.sets()).toEqual([])
 		r.say("/surface/route/keys2/lanes", "31")
 		expect(r.row()).toEqual([13, 3, 13, 3, 3, 3, 3, 3])
-		expect(r.top()).toEqual([0, 0, 0, 13, 3, 13, 3, 3, 3, 3, 3, 0]) // the rest of the row is cleared
-		r.key(5, 0, 1); r.key(5, 0, 0) // add lane 2
-		r.key(4, 0, 1); r.key(4, 0, 0) // drop lane 1
+		// The panel's own top row is not covered: TINT, the first SPEED and PROB rows, STRUM.
+		expect(r.top().slice(0, 4).every((l) => l > 0)).toBe(true)
+		r.key(6, 0, 1); r.key(6, 0, 0) // add lane 2
+		r.key(5, 0, 1); r.key(5, 0, 0) // drop lane 1
 		expect(r.sets()).toEqual([
 			["/surface/route/keys2/lanes", "123"],
 			["/surface/route/keys2/lanes", "23"],
 		])
-		r.key(1, 0, 1); r.key(1, 0, 0); r.key(12, 0, 1); r.key(12, 0, 0) // the cleared keys play nothing
-		expect(r.noteMsgs()).toEqual([])
+		expect(r.noteMsgs()).toEqual([]) // the lanes play nothing
 		r.key(9, 7, 1) // the rows below still play
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 
-	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once the key is let go", () => {
+	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once the menu is shut", () => {
 		const r = mk()
 		r.shift2(true)
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys/lanes"])
 		r.say("/surface/route/keys/lanes", "12345678")
-		r.key(11, 0, 1); r.key(11, 0, 0)
+		r.key(12, 0, 1); r.key(12, 0, 0)
 		expect(r.out).toContainEqual(["/surface/route/keys/lanes", "1234567"])
-		r.shift2(false)
-		r.key(1, 0, 1)
+		r.shift2(false) // used while held: it was a hold, the menu shuts
+		expect((r.page as any).panelShown).toBe(false)
+		r.key(5, 0, 1)
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 
-	it("only the track in front: shift 2 + a track key no longer adds one, and the picker is that track's alone", () => {
+	it("only the track in front: shift 2 + a track key no longer adds one, and the lanes are that track's alone", () => {
 		const r = mk()
 		r.add(1) // shift 2 + track 2: it simply comes to the front
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "12")
 		r.say("/surface/route/keys2/lanes", "2")
 		expect(r.row()).toEqual([3, 13, 3, 3, 3, 3, 3, 3])
-		r.key(4, 0, 1); r.key(4, 0, 0)
+		r.key(5, 0, 1); r.key(5, 0, 0)
 		expect(r.sets()).toEqual([["/surface/route/keys2/lanes", "12"]])
 	})
 
-	it("a quick tap of x0 y6 is still the panel; with the panel open the picker has the top row", () => {
+	it("a short press toggles the menu, a long press shows it only while held", () => {
+		vi.useFakeTimers(); vi.setSystemTime(6_000_000)
+		try {
+			const r = mk()
+			const open = () => (r.page as any).panelShown as boolean
+			r.shift2(true); vi.advanceTimersByTime(100); r.shift2(false) // tap: open
+			expect(open()).toBe(true)
+			r.say("/surface/route/keys/lanes", "1")
+			expect(r.row()).toEqual([13, 3, 3, 3, 3, 3, 3, 3]) // the lanes are there whenever the panel is
+			r.shift2(true); vi.advanceTimersByTime(100); r.shift2(false) // tap again: shut
+			expect(open()).toBe(false)
+			expect(r.row().some((l) => l === 13)).toBe(false)
+			r.shift2(true); vi.advanceTimersByTime(600)
+			expect(open()).toBe(true) // held: shown
+			r.shift2(false)
+			expect(open()).toBe(false) // let go: gone
+			r.shift2(true); vi.advanceTimersByTime(100); r.shift2(false) // open by a tap ...
+			r.shift2(true); vi.advanceTimersByTime(600); r.shift2(false) // ... a long press shuts it on release
+			expect(open()).toBe(false)
+		} finally { vi.useRealTimers() }
+	})
+
+	it("a quick press used as a shift (a lane or a panel key pressed meanwhile) shuts on release; from open, a tap shuts", () => {
 		const r = mk()
-		r.key(0, 6, 1); r.key(0, 6, 0) // a tap: PANEL
-		expect((r.page as any).panelShown).toBe(true)
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "")
-		r.key(4, 0, 1); r.key(4, 0, 0) // x4 is the panel's STRUM when the picker is shut
+		r.key(5, 0, 1); r.key(5, 0, 0)
 		expect(r.sets()).toEqual([["/surface/route/keys/lanes", "1"]])
-		r.shift2(false) // a lane was picked: letting go does not flip the panel
+		r.shift2(false)
+		expect((r.page as any).panelShown).toBe(false)
+		r.shift2(true); r.shift2(false) // tap: open and stays
+		r.key(4, 0, 1); r.key(4, 0, 0) // x4 y0 is the panel's STRUM, not a lane
+		expect(r.sets()).toHaveLength(1)
 		expect((r.page as any).panelShown).toBe(true)
+		r.shift2(true); r.shift2(false)
+		expect((r.page as any).panelShown).toBe(false)
+	})
+
+	it("opening the menu hides the transposer", () => {
+		const r = mk()
+		r.key(0, 7, 1); r.key(0, 7, 0)
+		expect((r.page as any).transposerShown).toBe(true)
+		r.shift2(true)
+		expect((r.page as any).transposerShown).toBe(false)
 	})
 })
 
