@@ -30,7 +30,11 @@
  *           lit solid and equal: one trigger each. Any key held in a lane's column lights
  *           the whole column while it is down, and a latched note keeps it lit. No all column.
  * ARP     : x14 y7 (the spec's "free: arp later" spot, x15 y7, became LATCH, so the key sits
- *           beside it; Ian, 2026-11-11). While lit, a KEYS press is a CALL in idk.surface's one
+ *           beside it; Ian, 2026-11-11). ONE SWITCH WITH THE APP (Ian, 2026-11-13): the key is
+ *           /surface/arp, the app's own ARP (its window button, the computer keys' C). A press
+ *           sends the flipped value; the light, and whether held keys are calls or plain notes,
+ *           follow the app's value (read every 250 ms while focused). No flag of this page's own.
+ *           While lit, a KEYS press is a CALL in idk.surface's one
  *           arp, the app timing it (spec 2026-11-11-grid-arp-design.md): /surface/arp/call <id>
  *           <lane> note <key> <vel> (PITCH lit), own <vel> (PITCH unlit) or slice <n> (a REEL
  *           lane in slices), and its release sends /surface/arp/call/off <id>. id = row * 8 + lane,
@@ -215,6 +219,8 @@ export const arpId = (row: number, lane: number) => row * LANES + lane
 /** One held call in surface's arp: the lane (0-7) and what its step plays. */
 interface ArpCall { lane: number; row: number; kind: "note" | "own" | "slice"; key: number }
 const AT_ADDR = "/surface/arp/call/at"
+/** The app's one ARP switch: its window button, the computer keys' C, and this page's key. */
+const ARP_ADDR = "/surface/arp"
 
 /** The dial families height can set with PITCH unlit: the slot table's first five, in order. */
 const Y_FAMILIES = ["tone", "time", "force", "move", "place"]
@@ -263,8 +269,10 @@ export class PlaySurfacePage implements Page {
 	/** LATCH: runtime only, never saved. Cell index → the note step it keeps holding. */
 	private latch = false
 	private latched = new Map<number, number>()
-	/** ARP: runtime only, never saved. Held cells are calls in the app's arp, not direct notes. */
-	private arp = false
+	/** ARP is the APP's switch (/surface/arp), never a flag of this page: lit, held cells are calls in the app's arp. */
+	private get arp() {
+		return (this.mirror.num(ARP_ADDR) ?? 0) !== 0
+	}
 	/** XEN CHORDS toggle (not saved) and the chord last sent, 1-8 (0 = none yet). */
 	private xenChords = false
 	private xenLast = 0
@@ -316,7 +324,10 @@ export class PlaySurfacePage implements Page {
 		this.ctx = ctx
 		this.unlisten =
 			ctx.surface?.on((path, args) => {
+				const arp = this.arp
 				if (this.mirror.feed(path, args, Date.now())) ctx.setDirty()
+				// ARP flipped in the app: what the hands hold changes between calls and plain notes.
+				if (this.arp !== arp) this.commit(ctx)
 			}) ?? null
 		const take = (v: unknown) => {
 			this.isoScale =
@@ -378,7 +389,10 @@ export class PlaySurfacePage implements Page {
 		if (ev.x === RIGHT_X) return this.rightKey(ev.y, down, ctx)
 		if (ev.x === ARP_X && ev.y === ARP_Y) {
 			if (down) {
-				this.arp = !this.arp
+				// Flip the app's switch; taken at once here, and the app's own value has the last word.
+				const on = this.arp ? 0 : 1
+				this.send(ctx, ARP_ADDR, on)
+				this.mirror.set(ARP_ADDR, on)
 				this.commit(ctx)
 			}
 			return
@@ -922,9 +936,11 @@ export class PlaySurfacePage implements Page {
 		if (now - this.lastSlowMs >= SLOW_POLL_MS) {
 			this.lastSlowMs = now
 			for (const a of BASE_READS) get(a)
+			get(ARP_ADDR)
 		}
 		if (now - this.lastFastMs >= FAST_POLL_MS && now - this.mirror.heardAt < LINK_LOST_MS) {
 			this.lastFastMs = now
+			get(ARP_ADDR)
 			if (this.arp) get(AT_ADDR)
 			if (this.bigThreeOpen(ctx)) {
 				get("/surface/lane/*/arm")

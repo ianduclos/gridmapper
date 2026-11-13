@@ -60,6 +60,9 @@ x2 y2-y6 are dark and do nothing.
 
 ## ARP (x14 y7)
 
+- **One switch with the app:** this key is the app's own ARP, the same one as its
+  ARP button and the computer keys' C. Press it here and the app's lights; flip
+  it in the app and this key follows, with whatever you hold.
 - **Lit:** a KEYS press no longer plays the note. The app holds it in one arp and
   steps through everything held, in order low to high (a lower row, then a lower
   lane), on its own ORDER, RATE and the rest. Keys in several lanes are one chord,
@@ -73,7 +76,7 @@ x2 y2-y6 are dark and do nothing.
 - **Loopers** still record the presses but play them back as plain notes, never
   arpeggiated.
 - **Lights:** a held key is medium; the one whose step sounds now is the brightest.
-- ARP is not saved with a preset.
+- The grid keeps no ARP of its own: on or off is whatever the app says.
 
 ## XEN CHORDS (x2 y1)
 

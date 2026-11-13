@@ -597,13 +597,49 @@ describe("play-surface: arp (x14 y7)", () => {
 		r.key(LANE_X0, 7); r.key(LANE_X0 + 1, 7); r.sent()
 		r.tapKey(...ARP)
 		expect(r.sent()).toEqual([
+			["/surface/arp", 0],
 			["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1],
 			["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 60, 0.8],
 		])
 		r.tapKey(...ARP) // and back: the notes go, the calls return
 		expect(r.sent().map((m) => m[0]).sort()).toEqual([
-			"/surface/arp/call", "/surface/arp/call", "/surface/lane/1/note/off", "/surface/lane/2/note/off",
+			"/surface/arp", "/surface/arp/call", "/surface/arp/call", "/surface/lane/1/note/off", "/surface/lane/2/note/off",
 		])
+	})
+
+	it("is the app's one switch: a press sends /surface/arp flipped, and the app's value lights the key", () => {
+		const r = rig(); r.world(); r.sent()
+		r.tapKey(...ARP)
+		expect(r.sent()).toEqual([["/surface/arp", 1]])
+		r.tapKey(...ARP)
+		expect(r.sent()).toEqual([["/surface/arp", 0]])
+		r.say("/surface/arp", 1) // flipped in the app
+		expect(r.led(...ARP)).toBe(12)
+		r.tapKey(...ARP) // so the grid's press now turns it off
+		expect(r.sent()).toEqual([["/surface/arp", 0]])
+		r.say("/surface/arp", 1); r.say("/surface/arp", 0)
+		expect(r.led(...ARP)).toBe(5)
+	})
+
+	it("ARP flipped in the app turns held keys into calls, and back into plain notes", () => {
+		const r = rig(); r.world(); r.sent()
+		r.key(LANE_X0, 7)
+		expect(r.sent()).toEqual([["/surface/lane/1/note/on", 60, 0.8]])
+		r.say("/surface/arp", 1)
+		expect(r.sent().map((m) => m[0]).sort()).toEqual(["/surface/arp/call", "/surface/lane/1/note/off"])
+		r.key(LANE_X0 + 1, 7)
+		expect(r.sent()).toEqual([["/surface/arp/call", 1, 2, "note", 60, 0.8]])
+		r.say("/surface/arp", 0)
+		expect(r.sent()).toEqual([
+			["/surface/arp/call/off", 0], ["/surface/arp/call/off", 1],
+			["/surface/lane/1/note/on", 60, 0.8], ["/surface/lane/2/note/on", 60, 0.8],
+		])
+	})
+
+	it("asks the app for ARP while focused", () => {
+		const r = rig()
+		vi.advanceTimersByTime(20)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/arp"])
 	})
 
 	it("loopers play back direct notes, never calls", () => {

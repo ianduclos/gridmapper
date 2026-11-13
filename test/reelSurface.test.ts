@@ -269,7 +269,7 @@ describe("reel-surface: arp (x14 y4)", () => {
 		r.tap(14, 4)
 		r.key(2, 7, 1); r.key(3, 7, 1); r.sent()
 		r.tap(14, 4)
-		expect(r.sent()).toEqual([["/surface/arp/call/off", 64], ["/surface/arp/call/off", 66]])
+		expect(r.sent()).toEqual([["/surface/arp", 0], ["/surface/arp/call/off", 64], ["/surface/arp/call/off", 66]])
 		r.tap(14, 4)
 		r.key(2, 7, 0); r.key(3, 7, 0); r.sent()
 		r.sent()
@@ -282,7 +282,41 @@ describe("reel-surface: arp (x14 y4)", () => {
 		const r = mk()
 		r.key(2, 7, 1); r.sent()
 		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp", 1], ["/surface/arp/call", 64, 3, "slice", 1]])
+	})
+
+	it("is the app's one switch: a press sends /surface/arp flipped, and the app's value lights the key", () => {
+		const r = mk()
+		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp", 1]])
+		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp", 0]])
+		r.say("/surface/arp", 1) // flipped in the app
+		expect(r.led(14, 4)).toBe(12)
+		r.tap(14, 4)
+		expect(r.sent()).toEqual([["/surface/arp", 0]])
+		expect(r.led(14, 4)).toBe(5)
+	})
+
+	it("ARP flipped in the app: held pads join the arp, new pads are calls, and off lets them go", () => {
+		const r = mk()
+		r.key(2, 7, 1); r.sent()
+		r.say("/surface/arp", 1)
 		expect(r.sent()).toEqual([["/surface/arp/call", 64, 3, "slice", 1]])
+		r.key(3, 7, 1)
+		expect(r.sent()).toEqual([["/surface/arp/call", 66, 3, "slice", 2]])
+		r.say("/surface/arp", 0)
+		expect(r.sent()).toEqual([["/surface/arp/call/off", 64], ["/surface/arp/call/off", 66]])
+		r.key(3, 7, 0); r.key(3, 7, 1)
+		expect(r.sent()).toEqual([["/surface/lane/3/reel/slice", 2, 1]])
+	})
+
+	it("asks the app for ARP while focused", () => {
+		const r = mk()
+		r.page.onFocus(r.ctx)
+		vi.advanceTimersByTime(600)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/arp"])
+		r.page.dispose(r.ctx)
 	})
 
 	it("writing steps still works with ARP lit", () => {

@@ -413,6 +413,8 @@ src/
                          idk.surface docs/specs/2026-11-11-grid-play-page-design.md.
                          XEN CHORDS (x2 y1, not saved): lit, a KEYS press in lane column 1-8 sends `/xen/go <1-8>` to
                          xen-harmony on UDP 57170 (a send-only socket of the page's own, opened at the first chord).
+                         ARP (PLAY x14 y7, REEL pads x14 y4) is ONE SWITCH WITH THE APP (Ian, 2026-11-13): the key
+                         sends /surface/arp flipped and follows the app's value; neither page keeps a flag of its own.
                          CHEATSHEET: docs/play-surface-cheatsheet.md is Ian's player-facing sheet. Any change
                          to a key, gesture, light or default of this page updates it IN THE SAME COMMIT.
                          EVERY SURFACE PAGE HAS ONE (Ian, 2026-11-11: "make sure all the surface cheat sheets

@@ -51,6 +51,9 @@ Shift 2 does nothing on this page.
 
 ## ARP (x14 y4)
 
+- **One switch with the app:** this key is the app's own ARP, the same one as its
+  ARP button, the computer keys' C and PLAY's ARP key. Press it here and the
+  app's lights; flip it in the app and this key follows, with whatever you hold.
 - **Lit:** a pad press no longer fires the slice. The app holds it in one arp and
   steps through everything held, low pad to high, on its own ORDER, RATE and the
   rest. Pads from both blocks are one chord; each step plays on its own track's lane.
@@ -60,7 +63,7 @@ Shift 2 does nothing on this page.
 - **Loopers** still record the presses but play them back as plain slices, never
   arpeggiated.
 - **Lights:** a held pad is medium; the one whose step sounds now is the brightest.
-- ARP is not saved.
+- The grid keeps no ARP of its own: on or off is whatever the app says.
 
 ## Steps
 

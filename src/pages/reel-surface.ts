@@ -16,7 +16,10 @@
  *           y6 CHANCE, y7 BLEND. The value in the centre (x7-x8, y4-y7, bottom = lowest)
  *           while one of them is lit. Play x14 y7. Gesture loops x15 y0-y2.
  *           ARP x14 y4 (free in column 14; Ian, 2026-11-11).
- * Arp     : while ARP is lit a pad press sends /surface/arp/call <id> <lane> slice <pad> instead
+ * Arp     : ONE SWITCH WITH THE APP (Ian, 2026-11-13): the key is /surface/arp, the app's own
+ *           ARP. A press sends the flipped value; the light and the pads follow the app's value
+ *           (the `values` topic, and a read every 500 ms while focused).
+ *           While ARP is lit a pad press sends /surface/arp/call <id> <lane> slice <pad> instead
  *           of the direct slice, and its release /surface/arp/call/off <id>; the APP times the
  *           arp (spec 2026-11-11-grid-arp-design.md). id = 64 + (pad - 1) * 2 + track (0 LEFT,
  *           1 RIGHT), so 64-95 and rising id is up; both blocks are one chord. Writing steps
@@ -159,6 +162,9 @@ const noteId = (t: Track, pad: number) => t * 64 + pad
 /** The arp's id for a pad (1-16) of a track: 64-95, rising id = up. */
 export const arpId = (t: Track, pad: number) => 64 + (pad - 1) * 2 + t
 const AT_ADDR = "/surface/arp/call/at"
+/** The app's one ARP switch: its window button, the computer keys' C, and this page's key. */
+const ARP_ADDR = "/surface/arp"
+const ARP_POLL_MS = 500
 
 export class ReelSurfacePage implements Page {
 	private steps: [Step[], Step[]] = [Array.from({ length: STEPS }, fresh), Array.from({ length: STEPS }, fresh)]
@@ -177,8 +183,9 @@ export class ReelSurfacePage implements Page {
 	private modHeld: { t: Track; mod: Mod; at: number; used: boolean } | null = null
 	private modLatched: { t: Track; mod: Mod } | null = null
 	private pageKeyHeld = false
-	/** ARP: runtime only. The calls surface holds for this page, by id, with the lane they went to. */
+	/** ARP is the APP's switch (/surface/arp); this is the value last heard (or just sent). The calls surface holds for this page, by id, with the lane they went to. */
 	private arp = false
+	private lastArpPollMs = 0
 	private calls = new Map<number, number>()
 	private callAt = -1
 	private lanePicks = 0
@@ -203,7 +210,7 @@ export class ReelSurfacePage implements Page {
 
 	onFocus(ctx: PageContext) {
 		this.focused = true
-		this.lastPollMs = this.lastSubMs = 0
+		this.lastPollMs = this.lastSubMs = this.lastArpPollMs = 0
 		this.announce(ctx)
 		this.syncTimer()
 	}
@@ -249,9 +256,9 @@ export class ReelSurfacePage implements Page {
 		}
 		if (x === ARP_X && y === ARP_Y) {
 			if (!ev.s) return
-			this.arp = !this.arp
-			if (!this.arp) this.callsOff(ctx)
-			else for (const h of this.held) this.callOn(h.t, h.pad, ctx) // pads already down join the chord
+			// Flip the app's switch; taken at once here, and the app's own value has the last word.
+			ctx.surface?.send(ARP_ADDR, this.arp ? 0 : 1)
+			this.setArp(!this.arp, ctx)
 			ctx.setDirty()
 			return
 		}
@@ -359,6 +366,14 @@ export class ReelSurfacePage implements Page {
 		ctx.surface?.send("/surface/arp/call", id, this.lanes[t], "slice", pad)
 	}
 
+	/** ARP changed, here or in the app: held pads join the chord, or every call is let go. */
+	private setArp(on: boolean, ctx: PageContext) {
+		if (on === this.arp) return
+		this.arp = on
+		if (!on) this.callsOff(ctx)
+		else for (const h of this.held) this.callOn(h.t, h.pad, ctx)
+	}
+
 	private callOff(id: number, ctx: PageContext) {
 		if (!this.calls.delete(id)) return
 		ctx.surface?.send("/surface/arp/call/off", id)
@@ -415,6 +430,7 @@ export class ReelSurfacePage implements Page {
 		const n = Math.round(Number(v))
 		if (path === `${LINE}/play`) this.playing = Number(v) !== 0
 		else if (path === `${LINE}/length`) { if (n >= 1 && n <= STEPS) this.length = n }
+		else if (path === ARP_ADDR) { if (Number.isFinite(n)) this.setArp(n !== 0, ctx) }
 		else if (path === AT_ADDR) this.callAt = Number.isFinite(n) ? n : -1
 		else if (path === `${LINE}/at`) { if (n >= 0 && n <= STEPS) this.setAt(n) }
 		else if (path === `${LINE}/mode`) { if (v === "one-slice" || v === "one-each") { this.mode = v; this.emitSettings(ctx) } }
@@ -465,6 +481,10 @@ export class ReelSurfacePage implements Page {
 			link.send("/surface/subscribe", "127.0.0.1", link.port, "values")
 			// Which call's step sounds, to light its pad (a pattern topic, only while ARP is lit).
 			if (this.arp) link.send("/surface/subscribe", "127.0.0.1", link.port, "/surface/arp/call/*")
+		}
+		if (nowMs - this.lastArpPollMs >= ARP_POLL_MS) {
+			this.lastArpPollMs = nowMs
+			link.send("/surface/get", ARP_ADDR)
 		}
 		if (nowMs - this.lastPollMs < POLL_MS) return
 		this.lastPollMs = nowMs
