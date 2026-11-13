@@ -41,6 +41,12 @@ export type World = {
 	presets: number[][]
 	presetNames: string[]
 	recommendedTuning: Tuning
+	/**
+	 * The tempo this world is meant at, in BPM of the performance beat. Optional: a world
+	 * without one keeps whatever tempo is in force. cells-surface applies it when the world
+	 * lands (Ian, 2026-11-13); cells-hot ignores it. No world carries one yet.
+	 */
+	recommendedBpm?: number
 	source: string
 	roles: string[]
 	/** Performer-facing summary; first sentence stands alone as a card blurb. */

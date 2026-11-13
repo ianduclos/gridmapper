@@ -67,10 +67,13 @@ the other pages. Cells joins a running transport on its next beat.
 
 - **CELLS (x1):** the main view above.
 - **RHYTHM (x2):** the top rows list the rhythm worlds, fifteen a row from x1.
-  Press one: the world changes on the next shared beat.
+  Press one: the world changes on the next shared beat, and arrives with its
+  own recommended tuning (and its own tempo, for a world that has one; none
+  does yet). You can change either afterwards.
 - **TUNING (x3):** the top two rows list the tunings: included ones on y0,
   the keyboard scales on y1.
-- **Recommended tuning (x6):** applies the world's own; lit when it is active.
+- **Recommended tuning (x6):** back to the world's own after you chose another;
+  lit when it is active.
 
 ## Evolve and locks (x4, x5 y6)
 

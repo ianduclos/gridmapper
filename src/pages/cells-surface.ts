@@ -927,10 +927,11 @@ export class CellsSurfacePage implements Page {
 		this.view(c)
 	}
 	private requestWorld(c: PageContext, id: string) {
-		if (id !== this.pendingWorldId)
-			this.pendingRecommendationWorldId = undefined
+		// Every world lands with its own recommended tuning (and tempo, where it has one), so
+		// the recommendation is always staged with it (Ian, 2026-11-13).
+		this.pendingRecommendationWorldId = id === this.rhythmWorld ? undefined : id
 		if (id === this.rhythmWorld) this.pendingWorldId = undefined
-		else if (!this.running) this.switchWorld(id)
+		else if (!this.running) this.switchWorld(id, c)
 		else {
 			this.pendingWorldId = id
 			// Choose the first global beat STRICTLY beyond the request's buffer.
@@ -949,14 +950,23 @@ export class CellsSurfacePage implements Page {
 		}
 		this.view(c)
 	}
-	private switchWorld(id: string) {
+	/**
+	 * A world lands: with its recommended tuning always, and its recommended tempo when it
+	 * has one. Both can be changed afterwards; they are where the world starts, not a lock.
+	 */
+	private switchWorld(id: string, c?: PageContext) {
 		this.rhythmWorld = id
 		this.selected = [...this.world.presets[0]]
 		this.pendingWorldId = undefined
 		this.evolvedRest.fill(false)
 		this.protectedUntilBeat.fill(0)
-		if (this.pendingRecommendationWorldId === id)
-			this.tuning = this.world.recommendedTuning
+		this.tuning = this.world.recommendedTuning
+		const bpm = this.world.recommendedBpm
+		if (bpm !== undefined && Number.isFinite(bpm)) {
+			this.pulseRate = bpmToPulseRate(Math.min(BPM_MAX, Math.max(BPM_MIN, bpm)))
+			if (this.running && c)
+				c.clockControl?.setRate(this.pulseRate * (c.clock.lanes[this.lane]?.div ?? 1))
+		}
 		this.pendingRecommendationWorldId = undefined
 		this.resetEvolution()
 	}
@@ -974,7 +984,7 @@ export class CellsSurfacePage implements Page {
 			deadlineMs + BUFFER_MS < now
 		)
 			return false
-		this.switchWorld(this.pendingWorldId)
+		this.switchWorld(this.pendingWorldId, c)
 		this.worldLandedAt = deadlineMs + BUFFER_MS
 		this.revisions = this.revisions.map((v) => v + 1)
 		this.flashes = this.flashes.map((a) =>

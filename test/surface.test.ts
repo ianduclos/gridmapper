@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { PAGE_MODULES, PAGE_TYPES, DEFAULT_PAGE } from "../src/pages/registry.js"
-import { CellsSurfacePage } from "../src/pages/cells-surface.js"
+import { CellsSurfacePage, pulseRateToBpm } from "../src/pages/cells-surface.js"
+import { worlds } from "../src/data/cells-hot-worlds.js"
 import { SetSurfacePage } from "../src/pages/set-surface.js"
 import { CellsHotPage } from "../src/pages/cells-hot.js"
 import { SetHotPage } from "../src/pages/set-hot.js"
@@ -63,6 +64,28 @@ const rig = (Cells: any, SetPage: any) => {
 	const damp = () => sent.filter((m) => m.path === "/grid/out/page/f/voice" && m.args[1] === "damp").map((m) => m.args)
 	return { cells, set, cc, sc, shared, damp, sent }
 }
+
+describe("cells-surface: a world lands with its own tuning and tempo", () => {
+	it("choosing a world takes its recommended tuning; a world with a recommended tempo takes that too, others keep the tempo", () => {
+		const r = rig(CellsSurfacePage, SetSurfacePage)
+		const state = () => r.cells.serialize() as any
+		r.cells.onOsc("/setting/tuning", ["tritave"], r.cc)
+		r.cells.onOsc("/setting/bpm", [100], r.cc)
+		r.cells.onOsc("/setting/rhythmWorld", ["kecak"], r.cc)
+		expect(state().rhythmWorld).toBe("kecak")
+		expect(state().tuning).toBe(worlds.kecak.recommendedTuning)
+		expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(100) // kecak has no tempo of its own yet
+		const kotekan = worlds.kotekan as any
+		kotekan.recommendedBpm = 72
+		try {
+			r.cells.onOsc("/setting/rhythmWorld", ["kotekan"], r.cc)
+			expect(state().tuning).toBe(worlds.kotekan.recommendedTuning)
+			expect(pulseRateToBpm(state().pulseRate)).toBeCloseTo(72)
+			r.cells.onOsc("/setting/tuning", ["tritave"], r.cc) // still free to change afterwards
+			expect(state().tuning).toBe("tritave")
+		} finally { delete kotekan.recommendedBpm }
+	})
+})
 
 describe("surface damp keys", () => {
 	it("cells-surface damps through set-surface via the surface keys", () => {
