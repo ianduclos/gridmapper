@@ -284,12 +284,13 @@ describe("iso-surface: the lane picker", () => {
 		notes.length = 0
 		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
 		const shift2 = (on: boolean) => key(0, 6, on ? 1 : 0) // the picker's key: the left column's x0 y6, held
-		const pick = (track: number) => { modifiers.shift2 = true; key(14, track, 1); key(14, track, 0); modifiers.shift2 = false }
+		const pick = (track: number) => { key(14, track, 1); key(14, track, 0) }
+		const add = (track: number) => { modifiers.shift2 = true; pick(track); modifiers.shift2 = false }
 		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 4 + l, 0)]) }
 		const top = () => { const f = page.render(ctx)!; return Array.from({ length: 12 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
 		const sets = () => out.filter((m) => m[0] !== "/surface/get")
-		return { page, key, shift2, pick, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
+		return { page, key, shift2, pick, add, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
 	it("with x0 y6 held, the top row shows the selected track's lanes on x4-x11 and toggles them in surface", () => {
@@ -329,7 +330,7 @@ describe("iso-surface: the lane picker", () => {
 
 	it("several selected tracks: medium where only some play a lane, and a press sets it for all of them", () => {
 		const r = mk()
-		r.pick(1) // shift 2 + track: tracks 1 and 2 selected
+		r.add(1) // shift 2 + track: tracks 1 and 2 selected
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "12")
 		r.say("/surface/route/keys2/lanes", "2")
