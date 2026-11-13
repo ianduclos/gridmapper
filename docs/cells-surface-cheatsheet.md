@@ -8,7 +8,9 @@ Last updated 2026-11-13.
 > `cells-surface.ts` changes this file in the same commit.
 
 The other pages reach this one with x0 y3, which pulses softly on them while cells
-is playing. On this page x0 y3 is DAMP instead, so the cells key is not shown here.
+is playing. On this page x0 y3 is DAMP, and it is lit bright like any page key
+to show you are on cells; it goes full while all six voices are damped and
+blinks in damp mode.
 
 ## The page (main view)
 

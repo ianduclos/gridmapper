@@ -17,7 +17,7 @@ import {
 } from "../core/types.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { bool, int, isRecord, num, records } from "../util/restoreGuards.js"
-import { SELECTOR_KEYS, drawSelector, selectorKey, shiftAt } from "../util/pageSelectorSurface.js"
+import { LVL_SELF, SELECTOR_KEYS, drawSelector, selectorKey, shiftAt } from "../util/pageSelectorSurface.js"
 import { CELLS_PLAYING_SURFACE, DAMP_FROM_CELLS_SURFACE, DAMP_STATE_SURFACE } from "../core/sharedStore.js"
 import { CycleLooper, MAX_LOOP_CYCLES, type LoopEvent } from "../util/cycleLooper.js"
 
@@ -780,13 +780,16 @@ export class CellsSurfacePage implements Page {
 							: LVL_REC_EMPTY
 		}
 		f[ledIndex(c.size, SHIFT_X, 7)] = c.modifiers.shift1 ? 15 : 1
+		// x0 y3 is the cells key on every other page, so here it is lit as "the page you are on"
+		// like the other page keys (Ian, 2026-11-13), and still acts as DAMP: full while all
+		// six are damped, blinking down from full in damp mode.
 		f[ledIndex(c.size, DAMP_X, DAMP_Y)] = this.dampMode
 			? now % (BLINK_MS * 4) < BLINK_MS * 2
-				? 12
-				: 6
+				? 15
+				: 5
 			: damped.length && damped.slice(0, VOICES).every(Boolean) // set-surface has more voices
 				? 15
-				: 3
+				: LVL_SELF
 		return f
 	}
 	serialize() {

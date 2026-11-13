@@ -451,6 +451,7 @@ src/
                          sends /surface/arp flipped and follows the app's value; neither page keeps a flag of its own.
                          CHEATSHEET: docs/play-surface-cheatsheet.md is Ian's player-facing sheet. Any change
                          to a key, gesture, light or default of this page updates it IN THE SAME COMMIT.
+                         The Twister overlay has its own sheet too: docs/twister-surface-cheatsheet.md.
                          EVERY SURFACE PAGE HAS ONE (Ian, 2026-11-11: "make sure all the surface cheat sheets
                          are complete"): docs/{iso,cells,play,home,reel}-surface-cheatsheet.md (home = the
                          set-surface page). The same rule holds for each: change the page, change its sheet,

@@ -76,7 +76,7 @@ export const SHIFT1_ROW = 7
 export const TWISTER_OVERLAY_PATH = "/twister/in/overlay"
 export const TWISTER_FOCUS_PATH = "/twister/in/focus/page"
 
-const LVL_SELF = 12
+export const LVL_SELF = 12
 const LVL_OTHER = 2
 // Cells playing: the key breathes between idle and a little above it, well under LVL_SELF.
 const LVL_CELLS_PLAYING = LVL_OTHER + 3

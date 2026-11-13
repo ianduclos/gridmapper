@@ -95,6 +95,18 @@ describe("cells-surface: a world lands with its own tuning and tempo", () => {
 	})
 })
 
+describe("cells-surface: its own key is lit as the page you are on", () => {
+	it("x0 y3 on cells is as bright as any page key on its own page, and full while all six are damped", () => {
+		const r = rig(CellsSurfacePage, SetSurfacePage)
+		const led = () => r.cells.render(r.cc)![ledIndex(SIZE, 0, 3)]
+		expect(led()).toBe(12)
+		r.cells.onKey({ x: 0, y: 3, s: 1 }, r.cc)
+		expect(led()).toBe(15)
+		r.cells.onKey({ x: 0, y: 3, s: 0 }, r.cc)
+		expect(led()).toBe(12)
+	})
+})
+
 describe("surface damp keys", () => {
 	it("cells-surface damps through set-surface via the surface keys", () => {
 		const r = rig(CellsSurfacePage, SetSurfacePage)
