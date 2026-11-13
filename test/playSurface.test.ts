@@ -731,6 +731,28 @@ describe("play-surface: OSC 4 and the link coming up", () => {
 	})
 })
 
+describe("play-surface: the arp's order (x14 y3-y6)", () => {
+	it("four keys set the app's order and are lit from it; ARP itself is untouched", () => {
+		const r = rig(); r.world(); r.sent()
+		expect([3, 4, 5, 6].map((y) => r.led(14, y))).toEqual([2, 2, 2, 2])
+		r.tapKey(14, 3); r.tapKey(14, 4); r.tapKey(14, 5); r.tapKey(14, 6)
+		expect(r.sent()).toEqual([["/surface/arp/order", "up"], ["/surface/arp/order", "down"], ["/surface/arp/order", "up-down"], ["/surface/arp/order", "urn"]])
+		expect([3, 4, 5, 6].map((y) => r.led(14, y))).toEqual([2, 2, 2, 10])
+		r.say("/surface/arp/order", "down") // chosen in the app
+		expect([3, 4, 5, 6].map((y) => r.led(14, y))).toEqual([2, 10, 2, 2])
+		r.say("/surface/arp/order", "random") // no key for it
+		expect([3, 4, 5, 6].map((y) => r.led(14, y))).toEqual([2, 2, 2, 2])
+		expect(r.led(14, 7)).toBe(5) // ARP off throughout
+		expect(r.led(14, 2)).toBe(0)
+	})
+
+	it("reads the order with the rest while focused", () => {
+		const r = rig()
+		vi.advanceTimersByTime(20)
+		expect(r.out).toContainEqual(["/surface/get", "/surface/arp/order"])
+	})
+})
+
 describe("play-surface: xen chords (x2 y1)", () => {
 	it("off, the key is dim and a press plays its note as before", () => {
 		const r = rig(); r.world(); r.sent()

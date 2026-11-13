@@ -13,10 +13,10 @@ x:  0     2     4 ........ 11   12    14   15
 y0  iso   KEYS  lane 1 ... 8    all        loop 1
 y1  PLAY  XEN                   all        loop 2
 y2  REEL  .                     all        loop 3
-y3  .     .                     all        loop 4
-y4  home  .                     all        PITCH
-y5  twist .                     all        STRIKE
-y6  sh 2  .                     all        SLEW
+y3  .     .                     all   up   loop 4
+y4  home  .                     all   down PITCH
+y5  twist .                     all   u-d  STRIKE
+y6  sh 2  .                     all   urn  SLEW
 y7  sh 1  PRE                   all   ARP  LATCH
 ```
 
@@ -35,6 +35,7 @@ y7  sh 1  PRE                   all   ARP  LATCH
 | x15 y4 | PITCH | Lit: a press sets the note. Unlit: it plays the lane's own note. |
 | x15 y5 | STRIKE | Lit: recalling a preset also strikes the lane. Starts lit. |
 | x15 y6 | SLEW | Tap: glide on or off. Hold: choose the time. |
+| x14 y3-y6 | arp order | Up, down, up-down, urn: the order the app's arp plays in (below). |
 | x14 y7 | ARP | Lit: held keys play in turn, timed by the app (below). |
 | x15 y7 | LATCH | Lit: notes stay after you let go. |
 
@@ -87,6 +88,10 @@ The page plays through the app's **OSC 4** source (ROUTE in the app).
   sound as plain notes.
 - **Loopers** still record the presses but play them back as plain notes, never
   arpeggiated.
+- **Order (x14 y3-y6, above ARP):** up, down, up-down, urn (random without
+  repeats). A press sets the app's ORDER, one setting for the whole app; the
+  key of the order in force is lit, whoever chose it. All four dim = the app is
+  on an order with no key here. They do not switch ARP on or off.
 - **Lights:** a held key is medium; the one whose step sounds now is the brightest.
 - The grid keeps no ARP of its own: on or off is whatever the app says.
 

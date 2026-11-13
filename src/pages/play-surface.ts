@@ -17,7 +17,7 @@
  *   y4  .    .  .    .                 all  .  .   PITCH
  *   y5  home .  .    .                 all  .  .   STRIKE
  *   y6  sh 2 .  .    .                 all  .  .   SLEW
- *   y7  sh 1 .  PRE  .                 all  .  ARP LATCH
+ *   y7  sh 1 .  PRE  .                 all  .  ARP LATCH        (x14 y3-y6: the arp's ORDER)
  *
  * KEYS    : a press plays that lane; the row is the pitch, lowest at the bottom, in the
  *           scale iso-surface is set to. The key held is the note held. A REEL lane in
@@ -230,6 +230,13 @@ const OSC4 = "/surface/osc/4"
 const OSC4_ON = "/surface/route/osc4/on"
 const OSC4_LANES = "/surface/route/osc4/lanes"
 const OSC4_BLINK_MS = 600
+/** The arp's ORDER, the app's one shared setting: four keys above ARP (x14 y3-y6), the same four
+ *  and the same order as iso's arp keys (Ian, 2026-11-13). Lit from the app's value. */
+const ORDER_ADDR = "/surface/arp/order"
+export const PLAY_ARP_ORDERS = ["up", "down", "up-down", "urn"] as const
+const ORDER_Y0 = 3
+const LVL_ORDER = 2
+const LVL_ORDER_ON = 10
 
 /** The dial families height can set with PITCH unlit: the slot table's first five, in order. */
 const Y_FAMILIES = ["tone", "time", "force", "move", "place"]
@@ -367,7 +374,7 @@ export class PlaySurfacePage implements Page {
 	}
 
 	private readAll(ctx: PageContext) {
-		for (const a of [...BASE_READS, ARP_ADDR, OSC4_ON, OSC4_LANES]) ctx.surface?.send("/surface/get", a)
+		for (const a of [...BASE_READS, ARP_ADDR, ORDER_ADDR, OSC4_ON, OSC4_LANES]) ctx.surface?.send("/surface/get", a)
 	}
 
 	/** Does a press on this lane (0-7) reach it? Unknown reads as yes. */
@@ -424,6 +431,15 @@ export class PlaySurfacePage implements Page {
 			return
 		}
 		if (ev.x === RIGHT_X) return this.rightKey(ev.y, down, ctx)
+		if (ev.x === ARP_X && ev.y >= ORDER_Y0 && ev.y < ORDER_Y0 + PLAY_ARP_ORDERS.length) {
+			if (down) {
+				const order = PLAY_ARP_ORDERS[ev.y - ORDER_Y0]
+				this.send(ctx, ORDER_ADDR, order)
+				this.mirror.set(ORDER_ADDR, order)
+				ctx.setDirty()
+			}
+			return
+		}
 		if (ev.x === ARP_X && ev.y === ARP_Y) {
 			if (down) {
 				// Flip the app's switch; taken at once here, and the app's own value has the last word.
@@ -1045,6 +1061,7 @@ export class PlaySurfacePage implements Page {
 		set(RIGHT_X, STRIKE_Y, this.settings.strike ? LVL_SW_ON : LVL_SW_OFF)
 		set(RIGHT_X, LATCH_Y, this.latch ? LVL_SW_ON : LVL_SW_OFF)
 		set(ARP_X, ARP_Y, this.arp ? LVL_SW_ON : LVL_SW_OFF)
+		PLAY_ARP_ORDERS.forEach((o, i) => set(ARP_X, ORDER_Y0 + i, this.mirror.str(ORDER_ADDR) === o ? LVL_ORDER_ON : LVL_ORDER))
 		set(RIGHT_X, SLEW_Y, this.slewHeld ? LVL_SW_HELD : Number(this.settings.slew) > 0 ? LVL_SW_ON : LVL_SW_OFF)
 
 		drawSelector(f, ctx)
@@ -1205,6 +1222,7 @@ export const keymap: KeySpec[] = [
 	{ x: RIGHT_X, y: PITCH_Y, name: "Pitch", help: "Lit: a KEYS press sets the note. Unlit: it holds the lane on its own note; the row does nothing unless the y setting names a dial.", lit: LVL_SW_ON },
 	{ x: RIGHT_X, y: STRIKE_Y, name: "Strike", help: "Lit: recalling a preset also strikes the lane.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: LATCH_Y, name: "Latch", help: "Lit: a played note stays held after you let go; press its cell again to end it. Unlighting ends them all.", lit: LVL_SW_OFF },
+	{ x: ARP_X, y: ORDER_Y0, h: PLAY_ARP_ORDERS.length, name: "Arp order: up · down · up-down · urn", short: "Order", help: "The order the app's arp plays held keys in: one setting for the whole app, lit from it. An order chosen in the app that has no key here leaves all four dim.", lit: [LVL_ORDER, LVL_ORDER, LVL_ORDER, LVL_ORDER] },
 	{ x: ARP_X, y: ARP_Y, name: "Arp", help: "Lit: held KEYS go to the app's arp (one chord across the lanes) and play in turn; the sounding one is brightest. Loops still play direct. Unlighting lets them go.", lit: LVL_SW_OFF },
 	{ x: RIGHT_X, y: SLEW_Y, name: "Slew", help: "Tap: glide on or off at the last time. Hold: the all column offers 0, 0.1, 0.25, 0.5, 1, 2, 4, 8 s (bottom to top). Recalls and the way home travel at that time.", lit: LVL_SW_OFF },
 ]

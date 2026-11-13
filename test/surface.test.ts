@@ -208,25 +208,28 @@ describe("iso-surface: notes played in surface light here", () => {
 		expect(lit).toBe(12)
 		expect(lit).toBeGreaterThan(idle)
 		expect(r.sent.filter((m) => m[0].endsWith("/note"))).toEqual([])
-		r.page.onOsc!("/remote", [7, 1, 1], r.ctx) // step 7 has twins: x8 y7 and x3 y6
+		r.page.onOsc!("/remote", [7, 1, 0], r.ctx) // step 7 has twins: x8 y7 and x3 y6
 		expect(r.led(8, 7)).toBe(12)
 		expect(r.led(3, 6)).toBe(12)
 		r.page.onOsc!("/remote", [2, 0, 0], r.ctx)
 		expect(r.led(3, 7)).toBe(idle)
 		expect(r.led(8, 7)).toBe(12)
+		r.page.onOsc!("/remote", [9, 1, 1], r.ctx) // another track's key: the dim plane (x10 y7)
+		expect(r.led(10, 7)).toBe(6)
 	})
 
 	it("is per track and step: one track's off leaves the other's on", () => {
 		const r = mk()
+		const idle = r.led(3, 7)
 		r.page.onOsc!("/remote", [2, 1, 0], r.ctx)
 		r.page.onOsc!("/remote", [2, 1, 3], r.ctx)
 		r.page.onOsc!("/remote", [2, 0, 0], r.ctx)
-		expect(r.led(3, 7)).toBe(12)
+		expect(r.led(3, 7)).toBe(6) // track 4's is still down, on the dim plane
 		r.page.onOsc!("/remote", [2, 0, 3], r.ctx)
-		expect(r.led(3, 7)).toBeLessThan(12)
+		expect(r.led(3, 7)).toBe(idle)
 		r.page.onOsc!("/remote", [2, 1, 9], r.ctx) // no such track
 		r.page.onOsc!("/remote", ["x", 1, 0], r.ctx)
-		expect(r.led(3, 7)).toBeLessThan(12)
+		expect(r.led(3, 7)).toBe(idle)
 	})
 
 	it("is display only: not in a saved chord, not held by sustain, not in a loop", () => {
@@ -289,7 +292,7 @@ describe("iso-surface: the lane picker", () => {
 		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 4 + l, 0)]) }
 		const top = () => { const f = page.render(ctx)!; return Array.from({ length: 12 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
-		const sets = () => out.filter((m) => m[0] !== "/surface/get")
+		const sets = () => out.filter((m) => /^\/surface\/route\//.test(m[0]))
 		return { page, key, shift2, pick, add, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
@@ -328,17 +331,15 @@ describe("iso-surface: the lane picker", () => {
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 
-	it("several selected tracks: medium where only some play a lane, and a press sets it for all of them", () => {
+	it("only the track in front: shift 2 + a track key no longer adds one, and the picker is that track's alone", () => {
 		const r = mk()
-		r.add(1) // shift 2 + track: tracks 1 and 2 selected
+		r.add(1) // shift 2 + track 2: it simply comes to the front
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "12")
 		r.say("/surface/route/keys2/lanes", "2")
-		expect(r.row()).toEqual([8, 13, 3, 3, 3, 3, 3, 3])
-		r.key(4, 0, 1); r.key(4, 0, 0) // lane 1: only track 1 has it, so track 2 gets it
+		expect(r.row()).toEqual([3, 13, 3, 3, 3, 3, 3, 3])
+		r.key(4, 0, 1); r.key(4, 0, 0)
 		expect(r.sets()).toEqual([["/surface/route/keys2/lanes", "12"]])
-		r.key(5, 0, 1); r.key(5, 0, 0) // lane 2: both have it, so both drop it
-		expect(r.sets().slice(1)).toEqual([["/surface/route/keys/lanes", "1"], ["/surface/route/keys2/lanes", "1"]])
 	})
 
 	it("a quick tap of x0 y6 is still the panel; with the panel open the picker has the top row", () => {
@@ -536,7 +537,9 @@ describe("surface pages: the link coming up reads the app again", () => {
 		const r = mk(() => new IsoSurfacePage(), 0)
 		r.out.length = 0
 		r.up()
-		expect(r.out).toEqual(["keys", "keys2", "keys3", "keys4"].map((k) => ["/surface/get", `/surface/route/${k}/lanes`]))
+		for (const k of ["keys", "keys2", "keys3", "keys4"]) expect(r.out).toContainEqual(["/surface/get", `/surface/route/${k}/lanes`])
+		for (const a of ["/surface/keys/3/arp", "/surface/keys/4/latch", "/surface/arp/order", "/surface/arp/rate", "/surface/arp/prob"])
+			expect(r.out).toContainEqual(["/surface/get", a])
 	})
 
 	it("home subscribes and reads the view at once, without waiting for its five seconds", () => {

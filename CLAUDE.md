@@ -377,6 +377,20 @@ src/
                          surface lanes 1-8, lit where that track plays; a press toggles one. Read and
                          written over ctx.surface at /surface/route/keys<n>/lanes (row 1 is `keys`, no
                          number), never stored here.
+                         FOUR TRACK LAYERS ON THE APP'S ARP (Ian, 2026-11-13; idk.surface
+                         docs/specs/2026-11-13-iso-track-layers-design.md). This page no longer behaves as
+                         iso-hot: ONE track is in FRONT (no multi-select, no loop routes) and everything acts on
+                         it; its notes are bright, other tracks' notes and all loop playback sit on a dim plane.
+                         It runs NO arpeggiator and NO sustain: plain presses go out and the app's per-key-track
+                         ARP and LATCH (/surface/keys/<1-4>/arp|latch over ctx.surface) do the rest; the arp keys
+                         set /surface/arp/order + the front track's ARP, the panel's SPEED and PROB are
+                         /surface/arp/rate and /prob (prob-mode wait), LATCH and the pedal are the front track's
+                         LATCH. All shown from the app's values (polled while focused, `values` topic). The app
+                         does not report what LATCH holds, so the page keeps a PICTURE of it for lights and chord
+                         saving. Octave and tint per track; transposer and strum global. A loop records each
+                         press with the front track (one number: recKey) and sends it back with a fourth note
+                         argument 1; an old routed loop is cleared on load. The lane picker is the front track's.
+                         PLAY has the arp's four ORDER keys at x14 y3-y6.
   pages/cells-surface.ts idk.surface fork of cells-hot — same behavior, own selector + shared-store keys
                          (DAMP_FROM_CELLS_SURFACE / DAMP_STATE_SURFACE); shares only read-only world data
   pages/set-surface.ts   idk.surface fork of set-hot — same behavior, own selector + shared-store keys;

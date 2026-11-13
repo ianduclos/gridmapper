@@ -56,7 +56,7 @@
  *           pulses its track's LED briefly, so you can see which instrument is being fed.
  *           Shifts and both sustains light while they are holding.
  * Settings: npo · vertical · root · scale · layout · orientation · lane · quant1-4 ·
- *           arp · arpRate · arpDiv. Live, two-way over OSC.
+ *           strum · tint. Live, two-way over OSC.
  * Rules   : keyboard = columns KEYS_X0..(keysW-1); the control columns only exist when
  *           there's a dead zone. Releases everything on blur so a page switch never
  *           strands a note in Max; SAVED CHORDS survive (stored content, not state).
@@ -66,91 +66,54 @@
  * `npo` does NOT change the step we emit; it sets the octave size for root highlighting
  * and is shared with Max (in: /grid/in/page/<slot>/setting/npo <n>; out: /settings).
  *
- * SUSTAIN is a two-input OR — the momentary pedal OR the latching toggle — so either alone
- * holds notes. The pedal is DEBOUNCED (leading-edge lockout, and a double tap must be at
- * least DOUBLE_TAP_MIN_MS apart): without that, one bouncy press reads as a deliberate
- * double tap, latches sustain on, and the button feels stuck. While it's on, a keyboard release parks the note in `sustained` instead of
- * sending a note-off; when sustain falls, every parked note is released. A DOUBLE-TAP on
- * the pedal latches it hands-free.
+ * FOUR TRACK LAYERS ON THE APP'S ARP (Ian, 2026-11-13; idk.surface
+ * docs/specs/2026-11-13-iso-track-layers-design.md). This replaces the page's own sustain,
+ * its own arpeggiator, multi-track selection and loop routes. Where a line above still
+ * speaks of those, this section is the truth.
  *
- * The pedal used to BE shift 2 and no longer is: it owns its state so shift 2 can be a real
- * modifier (it multi-selects tracks). The cost, deliberately accepted, is that
- * `/grid/in/shift 2` no longer sustains and there is no OSC route to sustain at all.
+ * TRACKS (column 14, rows 0-3) are LAYERS, one in FRONT at a time. Presses, chord presets,
+ * the panel's octave and tint, the ARP and LATCH keys and the lane picker act on the front
+ * track only. Its held and latched notes are bright; the other tracks' notes, and every
+ * loop's playback, stay visible on a DIM plane.
+ * Out: /grid/out/page/<slot>/tracks <json> — { selected: [front], front }.
  *
- * The two latches are not the same: the pedal's double-tap latch sustains and leaves the
- * chord presets PLAYABLE, while the toggle sustains and ARMS them for saving. That is the
- * whole reason there are two of them.
+ * ARP AND LATCH ARE THE APP'S, one pair per key track (/surface/keys/<1-4>/arp, /latch over
+ * ctx.surface; /surface/arp and /surface/arp/latch are track 1's older names). The page sends
+ * plain presses and releases; the app decides what sounds. The four arp keys (column 14,
+ * rows 4-7: up · down · up-down · urn) set the app's shared ORDER and switch the front
+ * track's ARP on; the lit one switches it off. The panel's SPEED column is the app's RATE
+ * (1/16 at the top to 1/1), its PROB column the app's PROB with PROB MODE set to WAIT.
+ * LATCH (column 15 row 4) is the front track's LATCH, and lit by that key it arms the chord
+ * presets for saving; the PEDAL (row 5) is a momentary LATCH (double-tap keeps it) that
+ * does not. All of it is shown from the app's values, never from a flag kept here.
+ * The app does not say what its LATCH holds, so the page keeps a PICTURE of it for the
+ * lights and for saving chords: a note let go while its track's LATCH is lit stays shown
+ * until that LATCH goes off.
+ *
+ * TRANSPOSER and STRUM are global; OCTAVE and TINT (on, mode, octave, triad) are per track.
  *
  * CHORDS (column 13, one slot per row) store PITCHES — a list of steps — so a later change
- * of root/scale/vertical/orientation doesn't move a saved chord. Armed (sustain toggle on),
- * a press saves whatever is ringing; pressing the SAME slot again while that same chord is
- * still ringing RELEASES it, which is the "right, next one" gesture that makes capturing a
- * run of chords one-handed. Saving silence clears the slot, and SHIFT + press clears it
- * outright. Not armed, a press PLAYS, momentarily: the chord sounds while the key is down
- * and keeps ringing if a sustain is active when you let go, which is what lets you latch
- * the pedal and stack chords up.
+ * of root/scale/vertical/orientation doesn't move a saved chord. They play on the front
+ * track and save what the front track is ringing; SHIFT 1 + press clears a slot.
  * Out: /grid/out/page/<slot>/chords <json> — a dense array, null = empty.
  *
  * LOOPERS (column 15, rows 0-3) are free-time pattern recorders — see util/patternRecorder.
  * One key cycles empty → recording → playing → stopped → playing, shift 1 + press clears,
- * and a take longer than a minute closes itself. Arming does NOT start the clock: the loop
- * begins at the FIRST NOTE, so there is no dead air from the time it took to reach the
- * keyboard. Stopping PAUSES — the playhead stays put and the next press resumes mid-phrase;
- * only a clear rewinds. Loop length is exactly what you played;
- * the per-track `quant1..4` settings can round that length onto a grid of `lane` clock
- * ticks, but never move the events inside. Out: /grid/out/page/<slot>/patterns <json>.
+ * and a take longer than a minute closes itself. The loop begins at the FIRST NOTE. A loop
+ * has NO ROUTES: each press is recorded with the track that was in front when it was played
+ * and replayed there, so one loop may span tracks. A loop's note goes out with a fourth
+ * argument 1 (/note <step> <1|0> <track> 1) so the app's LOOPS THROUGH ARP can tell it from
+ * a hand's. A loop an older file pinned to tracks is cleared on load, with a line in the log.
+ * Out: /grid/out/page/<slot>/patterns <json>.
  *
- * TRACKS (column 14, rows 0-3) are output destinations — one instrument each at the Max
- * end. The SELECTION is where live notes and unrouted loopers go, and what the arpeggiator
- * acts on: normally one track, never empty. A plain press selects just that one; SHIFT 2 +
- * press adds or drops one, so several instruments can be live together. SHIFT 1 + press
- * LATCHES a track for routing-edit: let go of shift and the LOOPER keys stop recording and
- * start meaning "does this looper feed this track" (bright = yes). Press the latched track
- * to leave, or another to move the edit. A looper routed nowhere follows the selection;
- * routing it anywhere pins it, and it may feed several tracks at once. SHIFT 1 + all four
- * tracks held together wipes every route, back to following.
- * Out: /grid/out/page/<slot>/tracks <json> — { selected, routes }.
+ * THE NOTE PIPELINE. A note is (TRACK, STEP), reconciled against what the app was last told:
  *
- * ARPEGGIATORS (column 14, rows 4-7: ascending · descending · palindrome · urn) turn the
- * held chord into one note at a time — see util/arpeggiator.ts. One at a time; pressing the
- * lit one turns it off; it never plays the same note twice in a row, so building a chord
- * finger by finger doesn't replay the note underneath.
+ *   keys + chords + T-voices ──> LIVE ──> [record tap] ──┐
+ *                                                        ├──> out ──> reconcile
+ *   looper playback (each press on its own track) ───────┘
  *
- * What it GATES is narrow, and deliberately so: only notes coming from your HANDS that
- * sustain is not already holding. A SUSTAINED note wins over the arp — the pad keeps
- * ringing and the arp ACCENTS within it (an off/on pair on the chosen note), which is why
- * switching the arp on or off over a held chord makes no sound at all. Looper playback is
- * never gated either, so a loop keeps the rhythm it recorded. And the pool spans every
- * track rather than the selected ones, so changing instrument mid-arpeggio doesn't empty
- * it and stop the arp dead. So a
- * looper routed elsewhere keeps its own rhythm while your hands get arpeggiated. The record
- * tap is upstream of it, so loopers still capture what you PLAYED. Timing is hybrid: the
- * `lane` clock (divided by `arpDiv`) while the transport runs, and a free `arpRate` in ms
- * while it is stopped — so it always makes a sound, at the cost of a tempo jump when you
- * start or stop the clock. The first note of a new chord fires immediately rather than
- * waiting out a step, or starting a chord would be silent for up to a whole arpRate.
- *
- * THE NOTE PIPELINE. A note is identified by (TRACK, STEP), not step alone, and reconciled
- * against what Max was last told — because five sources (fingers, held chords, the sustain
- * buffer and four loopers) can claim one note at once:
- *
- *   keys + chords ──> LIVE ──> [record tap] ──┐
- *                                             ├──> INTENT ──> [sustain] ──> [arp] ──> out
- *   looper playback ──────────────────────────┘
- *
- * Each step's track is stamped WHEN IT STARTS and held until it ends, so switching the
- * active track lands on the next note-on rather than re-attacking everything ringing.
- * Loopers tap LIVE, so a pattern holds what you PLAYED, not what the pedal did with it.
- * Sustain sits downstream of INTENT, which includes playback — so holding the pedal smears
- * a running loop into a pad exactly as it smears your hands. Three consequences worth
- * knowing:
- *   · pressing a note ALREADY SOUNDING ON THE ACTIVE TRACK (a loop, a chord, another
- *     finger) emits an explicit note-off then note-on, because a bare second note-on is
- *     undefined in MIDI. The same pitch on another track is a different instrument, and
- *     is left alone;
- *   · except when it is ringing purely because sustain parked it — then the press SUBTRACTS
- *     it, which is how you take a note out of a held chord;
- *   · a note stops only when the LAST source lets go, so two unison twins are one note.
+ * A note's track and offset are stamped WHEN IT STARTS. A note stops when the LAST source
+ * lets go; a source claiming a note that is already down sends an explicit off then on.
  *
  * Scales are a 12-EDO idea, so they apply only as a display/layout overlay:
  *   layout chromatic — the step field is untouched; the scale only changes brightness.
@@ -183,17 +146,16 @@ import {
 	type KeyEvent,
 	type LedFrame,
 	type GridSize,
+	float,
 	makeFrame,
 	ledIndex,
 } from "../core/types.js"
-import type { ClockState } from "../core/clock.js"
 import type { KeySpec, PageModule, SettingSpec } from "../core/pageModule.js"
 import { selectorKey, drawSelector, SELECTOR_KEYS } from "../util/pageSelectorSurface.js"
 import { clamp } from "../util/scale.js"
 import { SCALE_SURFACE, PEER_OSC } from "../core/sharedStore.js"
 import { PatternRecorder, MAX_RECORD_MS } from "../util/patternRecorder.js"
 import { isRecord, num, bool, intSet, records } from "../util/restoreGuards.js"
-import { Arpeggiator, ARP_MODES, ARP_BUTTONS, isArpMode, type ArpMode } from "../util/arpeggiator.js"
 import {
 	SCALE_NAMES,
 	DEFAULT_SCALE,
@@ -231,18 +193,22 @@ const LVL_TR_TOGGLE_SHOWN = 12
 const LVL_TR_TOGGLE_OFFSET = 6 // hidden, but a transposition is in force
 const LVL_TR_TOGGLE_IDLE = 2
 
-/** Control-lane ids for gestures the loopers record alongside notes. */
+/**
+ * Control-lane ids for gestures the loopers record alongside notes. The per-track ones are
+ * stored as `<id>/<track 0-3>`; a bare id (an older take) reads as track 0.
+ */
 const CTL_TRANSPOSE = "transpose"
-const CTL_ARP = "arp" // value = index into ARP_MODES (0 = off)
-const CTL_OCTAVE = "oct"
-const CTL_ARP_SPEED = "arpSpeed" // value = index into ARP_SPEEDS
+const CTL_ARP = "arp" // per track; value 0 = off, 1-4 = that ARP_ORDERS entry, on
+const CTL_OCTAVE = "oct" // per track
+const CTL_ARP_SPEED = "arpSpeed" // value = index into ARP_RATES
 const CTL_ARP_PROB = "arpProb" // value = panel row, 0 = 100%
 const CTL_STRUM = "strum"
-const CTL_TINT = "tint"
-const CTL_TINT_MODE = "tintMode" // value = index into TINT_MODES
-const CTL_TINT_OCTAVE = "tintOct"
+const CTL_TINT = "tint" // per track
+const CTL_TINT_MODE = "tintMode" // per track; value = index into TINT_MODES
+const CTL_TINT_OCTAVE = "tintOct" // per track
 /** Control-lane value bounds, for reading a take back from an untrusted file. */
 const CTL_BOUNDS: Record<string, [number, number]> = {
+	[CTL_ARP]: [0, 4],
 	[CTL_OCTAVE]: [-1, 2],
 	[CTL_ARP_SPEED]: [0, 6],
 	[CTL_ARP_PROB]: [0, 7],
@@ -250,6 +216,14 @@ const CTL_BOUNDS: Record<string, [number, number]> = {
 	[CTL_TINT]: [0, 1],
 	[CTL_TINT_MODE]: [0, 2],
 	[CTL_TINT_OCTAVE]: [-1, 1],
+}
+const PER_TRACK_CTL = new Set([CTL_ARP, CTL_OCTAVE, CTL_TINT, CTL_TINT_MODE, CTL_TINT_OCTAVE])
+const ctlId = (base: string, track: number) => `${base}/${track}`
+/** A recorded control id back into its base and track (0 when it carries none, or a bad one). */
+const parseCtl = (id: string): { base: string; track: number } => {
+	const [base, t] = id.split("/")
+	const track = Number(t)
+	return { base, track: Number.isInteger(track) && track >= 0 && track < 4 ? track : 0 }
 }
 
 /** Performance panel: col 0 row 3 shows it over keyboard cols 1-4. */
@@ -264,10 +238,27 @@ const OCTAVE_ROW_TOP = 4 // +2 at row 4 … −1 at row 7, in the strum column
 const TINT_OCT_ROW_TOP = 4 // tint octave +1 at row 4 … −1 at row 6, in the tint column
 const OCTAVE_MAX = 2
 const OCTAVE_MIN = -1
-/** Arp speed choices, top row first. ×N plays N steps per beat, ÷N one every N beats. */
-export const ARP_SPEEDS = ["x4", "x3", "x2", "x1", "/2", "/3", "/4"] as const
-const ARP_SPEED_FACTOR = [4, 3, 2, 1, 1 / 2, 1 / 3, 1 / 4]
-const ARP_SPEED_DEFAULT = 3
+/**
+ * THE APP'S ARP (Ian, 2026-11-13). The iso runs no arpeggiator and no sustain of its own: it
+ * sends plain presses, and idk.surface's ARP and LATCH, one pair per key track, do the rest.
+ * ORDER, RATE and PROB are the app's one shared set. Everything here is the app's value, read
+ * over ctx.surface and shown; a key press writes it.
+ */
+/** The four arp keys, top to bottom, as the app's ORDER. */
+export const ARP_ORDERS = ["up", "down", "up-down", "urn"] as const
+/** The panel's SPEED column, top (fastest) to bottom, as the app's RATE. */
+export const ARP_RATES = ["1/16", "1/16T", "1/8", "1/8T", "1/4", "1/2", "1/1"] as const
+const ARP_ADDR = (t: number) => `/surface/keys/${t + 1}/arp`
+const LATCH_ADDR = (t: number) => `/surface/keys/${t + 1}/latch`
+const ORDER_ADDR = "/surface/arp/order"
+const RATE_ADDR = "/surface/arp/rate"
+const PROB_ADDR = "/surface/arp/prob"
+const PROB_MODE_ADDR = "/surface/arp/prob-mode"
+const APP_POLL_MS = 2000
+const APP_SUBSCRIBE_MS = 3000
+/** After writing a value, what the app says of it is ignored this long: an answer to a read
+ *  sent just before the write would otherwise undo it for a moment (and drop a pedal's LATCH). */
+const WRITE_QUIET_MS = 400
 const PROB_ROWS = 8 // row r = (8 − r)/8
 export const TINT_MODES = ["above", "below", "alternate"] as const
 export type TintMode = (typeof TINT_MODES)[number]
@@ -281,7 +272,7 @@ const PERSIST_DEBOUNCE_MS = 400
 /** A peer that sent heartbeats and has been silent this long is gone. */
 const PEER_GONE_MS = 5000
 /** Settings that belong to the panel, and so are written through when changed over OSC. */
-const PANEL_SETTINGS = new Set(["arpSpeed", "arpProb", "strum", "strumMs", "strumDir", "tintMode", "tintOctave", "tintJitterMs"])
+const PANEL_SETTINGS = new Set(["strum", "strumMs", "strumDir", "tintMode", "tintOctave", "tintJitterMs"])
 const BASE_STEP = 0 // bottom-left cell = step 0
 
 // Four tiers that have to be told apart AT A GLANCE on a varibright grid, so they are
@@ -293,16 +284,11 @@ const LVL_ROOT = 8 // octave / scale root
 const LVL_UNISON = 12 // the note is SOUNDING — lit at every cell that plays it
 const LVL_HELD = 15 // this exact cell is under a finger
 
-// While the arp runs the WHOLE PALETTE steps down, to make headroom under the voiced
-// note. Pushing the highlight up doesn't work — 12 against 15 is invisible at the
-// compressed top of varibright, the same trap as unison-9 against root-8 was. So the
-// chord and the map get out of its way instead, and the dimmer map doubles as a
-// mode indicator that the arp is on.
-const LVL_NORMAL_DIM = 2
-const LVL_ROOT_DIM = 5
-const LVL_ARP_CHORD = 9 // a chord member the arp is not currently voicing
-const LVL_ARP_HELD = 12 // ... with a finger on it
-const LVL_ARP_VOICE = 15 // the note being voiced RIGHT NOW
+// THE DIM PLANE: notes of the tracks that are not in front, and every loop's playback, stay
+// visible under the front track's own. Just above the scale map, and lifted on a root cell so
+// it still reads there. (How dim is Ian's to judge on the grid.)
+const LVL_LAYER_DIM = 6
+const LVL_LAYER_DIM_ROOT = 10
 const LVL_SHIFT = 1 // control keys are faint markers
 const LVL_SHIFT_IDLE = 6 // ... except the two shifts, which stand apart from the column
 const LVL_TINT_LO = 4 // the dim half of a T-voice's shimmer
@@ -377,43 +363,39 @@ const rampLevel = (base: number, idx: number) => base + idx
 
 const LVL_TRACK_IDLE = 1 // + idx
 const LVL_ARP_IDLE = 1 // + idx
-const LVL_ARP_ON = 14
+const LVL_ARP_ON = 14 // the front track's ARP is on, in this order
+const LVL_ARP_ORDER = 7 // the app's order, while the front track's ARP is off
+const ARP_KEYS = ARP_ORDERS.length
 
 /** A note-on gives its track a brief brightness bump — a glance-level activity light. */
 const PULSE_MS = 90
 const PULSE_BUMP = 4
-const LVL_TRACK_ON = 11 // a selected track
-const LVL_TRACK_EDIT = 15 // bright half of the routing-edit blink
-const LVL_TRACK_EDIT_LO = 6
+const LVL_TRACK_ON = 11 // the track in front
 
 /**
  * Notes are identified by (track, step), so they pack into one number for cheap Set diffs.
- * Steps are bounded far below the stride: 12 columns + 7 rows of a 24-semitone `vertical`
- * tops out around 180.
+ * Steps are bounded far inside the stride: 12 columns + 7 rows of a 24-semitone `vertical`
+ * tops out around 180, and the bias leaves room below zero (a low key transposed down).
  */
 const NOTE_STRIDE = 4096
-const noteKey = (track: number, step: number) => track * NOTE_STRIDE + step
+const NOTE_BIAS = 1024
+const noteKey = (track: number, step: number) => track * NOTE_STRIDE + step + NOTE_BIAS
 const trackOf = (key: number) => Math.floor(key / NOTE_STRIDE)
-const stepOf = (key: number) => key % NOTE_STRIDE
+const stepOf = (key: number) => (key % NOTE_STRIDE) - NOTE_BIAS
+
+/**
+ * A LOOP stores each press as one number: the untransposed step plus the track that was in
+ * front when it was played. A take from before the tracks were layers has bare steps, which
+ * read as track 0.
+ */
+const REC_STRIDE = 100_000
+export const recKey = (track: number, raw: number) => track * REC_STRIDE + raw
+export const recTrack = (v: number) => clamp(Math.floor((v + REC_STRIDE / 2) / REC_STRIDE), 0, 3)
+export const recRaw = (v: number) => v - Math.floor((v + REC_STRIDE / 2) / REC_STRIDE) * REC_STRIDE
 
 /** Two chords are the same if they hold the same pitches. Both sides arrive sorted. */
 const sameChord = (a: readonly number[] | undefined, b: readonly number[]): boolean =>
 	!!a && a.length === b.length && a.every((v, i) => v === b[i])
-
-/**
- * Which tracks a looper plays into: the tracks it has been explicitly routed to, or — if it
- * has been routed nowhere — every currently SELECTED track. Routing a looper anywhere is
- * what stops it following the selection.
- */
-export function tracksForLooper(
-	looper: number,
-	routes: ReadonlyArray<ReadonlySet<number>>,
-	selected: ReadonlySet<number>,
-): number[] {
-	const pinned: number[] = []
-	routes.forEach((set, track) => { if (set.has(looper)) pinned.push(track) })
-	return pinned.length ? pinned : [...selected].sort((a, b) => a - b)
-}
 
 /**
  * Which way the step field runs. Two modes, not four rotations — the rest read backwards
@@ -436,11 +418,6 @@ const SPECS: SettingSpec[] = [
 	{ key: "layout", label: "layout", type: "enum", options: ["chromatic", "folded"], default: "chromatic" },
 	{ key: "orientation", label: "orientation", type: "enum", options: [...ORIENTATIONS], default: "standard" },
 	{ key: "lane", label: "clock lane (quantise)", type: "number", min: 0, max: 3, step: 1, default: 0 },
-	{ key: "arp", label: "arpeggiator", type: "enum", options: [...ARP_MODES], default: "off" },
-	{ key: "arpRate", label: "arp rate (ms, clock off)", type: "number", min: 20, max: 2000, step: 5, default: 125 },
-	{ key: "arpDiv", label: "arp divide (clock on)", type: "number", min: 1, max: 16, step: 1, default: 1 },
-	{ key: "arpSpeed", label: "arp speed", type: "enum", options: [...ARP_SPEEDS], default: "x1" },
-	{ key: "arpProb", label: "arp step probability", type: "number", min: 0.125, max: 1, step: 0.125, default: 1 },
 	{ key: "strum", label: "strum", type: "toggle", default: false },
 	{ key: "strumMs", label: "strum spacing (ms)", type: "number", min: 2, max: 200, step: 1, default: 25 },
 	{ key: "strumDir", label: "strum direction", type: "enum", options: ["up", "down"], default: "up" },
@@ -494,50 +471,49 @@ export class IsoSurfacePage implements Page {
 	// reconciled — a step goes on when the first source claims it and off when the last
 	// one lets go. That is what stops two unison twins from double-triggering Max, and
 	// what lets "turn that note off" mean the note rather than one cell.
-	// ledIndex of cells physically under a finger → the step it STARTED on, so moving the
-	// transposer never re-pitches a held note.
+	// ledIndex of cells physically under a finger → the packed (track, step) it STARTED as, so
+	// neither the transposer nor a change of front track ever moves a held note.
 	private held = new Map<number, number>()
-	private sustained = new Set<number>() // STEPS parked by whichever sustain is active
-	private presetHeld = new Map<number, number[]>() // preset slot → its steps, while held
-	// These four hold PACKED (track, step) keys — see noteKey().
-	private lastSounding = new Set<number>() // what Max currently believes is on
-	private lastIntent = new Set<number>() // pre-sustain, so we can spot what just let go
+	private presetHeld = new Map<number, number[]>() // preset slot → its packed keys, while held
+	// All of these hold PACKED (track, step) keys — see noteKey().
+	private lastSounding = new Set<number>() // what the app currently believes is down
 	private retrigger = new Set<number>() // notes to articulate again this commit
-	private lastLive = new Set<number>() // STEPS only (pre-track): the stream loopers tap
+	private lastLive = new Set<number>() // hands + chords + T-voices: the stream loopers tap
+	/** Notes last sent as a loop's (the note message's fourth argument), so their off says so too. */
+	private sentAsLoop = new Set<number>()
 
 	/**
-	 * Per source (index 0 = live, 1..4 = loopers), the tracks each sounding step was given
-	 * WHEN IT STARTED. Held rather than recomputed, so switching the active track lands on
-	 * the next note-on instead of re-attacking everything currently ringing.
+	 * THE FRONT TRACK. Each of the four tracks is a layer and one is in front: presses, chord
+	 * presets, the panel's octave and tint, the ARP and LATCH keys and the lane picker all act
+	 * on it and on nothing else. The other tracks' notes stay on the dim plane.
 	 */
-	private srcTracks: Array<Map<number, number[]>> = []
+	private front = 0
 
 	/**
-	 * Output tracks. The SELECTION is where live notes and unrouted loopers go, and what the
-	 * arpeggiator acts on — normally one track, several while you shift-2 them together, and
-	 * never empty. `routes[track]` holds the loopers pinned to it.
+	 * What the app says, per key track (index 0-3) and for its shared arp settings. `undefined`
+	 * = not heard yet. Written at once on a press of ours, so the light is ahead of the reply.
 	 */
-	private selected = new Set<number>([0])
-	private routes: Array<Set<number>> = Array.from({ length: TRACK_ROWS }, () => new Set<number>())
-	/** Latched routing-edit target, or null. Set by SHIFT + a track key. */
-	private editingTrack: number | null = null
-	/** Track keys physically down — only the all-four-at-once gesture needs this. */
-	private tracksDown = new Set<number>()
-
-	/** One arpeggiator, applied to the selected tracks. Off at boot. */
-	private arp = new Arpeggiator()
-	private arpPool: number[] = [] // distinct steps sounding on selected tracks, ascending
-	private arpNote: number | null = null // the step it is currently letting through
-	private arpAccMs = 0 // free-run accumulator, used only while the transport is stopped
+	private appArp: Array<boolean | undefined> = new Array(TRACK_ROWS).fill(undefined)
+	private appLatch: Array<boolean | undefined> = new Array(TRACK_ROWS).fill(undefined)
+	private appOrder: string | undefined
+	private appRate: string | undefined
+	private appProb: number | undefined
+	private appPolledAt = 0
+	/** Address → when this page last wrote it (see WRITE_QUIET_MS). */
+	private wroteAt = new Map<string, number>()
+	private appSubscribedAt = 0
 	/**
-	 * Display sets, as bare STEPS (not packed keys) and pooled across every track, because
-	 * a cell lights if ANY track is playing its note.
-	 *   litSteps    — the whole chord: held + sustained, BEFORE the arp thins it.
-	 *   voicedSteps — what is actually sounding right now, after the arp.
-	 * Keeping both is what lets a sustained chord stay visible while the arp walks it, so
-	 * you can still see what a chord preset would capture.
+	 * A PICTURE of what the app's LATCH holds, since the app does not report it: a note let go
+	 * while its track's LATCH was lit stays shown until that LATCH goes off. Hands' notes and
+	 * loops' notes apart, because a loop's stay on the dim plane. It is this page's guess at
+	 * the app's rule, used for the lights and for saving a chord, never for sound.
 	 */
-	private litSteps = new Set<number>()
+	private latchHand = new Set<number>()
+	private latchLoop = new Set<number>()
+	/** Tracks whose LATCH the PEDAL lit: that one does not arm the chord presets for saving. */
+	private pedalMade = new Set<number>()
+	/** The track the pedal is holding LATCH on right now, or null. */
+	private pedalTrack: number | null = null
 	/**
 	 * REMOTE notes: keys played in idk.surface itself (its computer keys), sent here only to
 	 * be LIT (/grid/in/page/<slot>/remote <step> <1|0> <track 0-3>). Keyed (track, step). They
@@ -568,10 +544,8 @@ export class IsoSurfacePage implements Page {
 	private lanesUsed = false
 	private pickerDown = new Set<number>()
 	private unsurface: (() => void) | null = null
-	private voicedSteps = new Set<number>()
 	/** When each track last received a note-on, for the activity pulse in render(). */
 	private trackPulseAt = new Array<number>(TRACK_ROWS).fill(0)
-	private inArpKick = false // guards the "first note of a new chord" re-entry below
 
 	/** Four free-time loopers. They keep running when the page loses focus. */
 	private recorders = Array.from({ length: RECORDER_ROWS }, () => new PatternRecorder())
@@ -590,14 +564,10 @@ export class IsoSurfacePage implements Page {
 	private transposerShown = false
 	private transposeChords = SPEC_BY_KEY.get("transposeChords")!.default as boolean
 	private transposeLoops = SPEC_BY_KEY.get("transposeLoops")!.default as boolean
-	/** Live sounding step → the transposition in force when it started (record tap). */
+	/** Live sounding key → the offset (transposer + its track's octave) in force when it started. */
 	private liveT = new Map<number, number>()
-	/** Per looper: recorded step → the step it went out as, stamped at note start. */
+	/** Per looper: recorded number → the packed key it went out as, stamped at note start. */
 	private loopShift: Array<Map<number, number>> = Array.from({ length: RECORDER_ROWS }, () => new Map())
-	/** The latching half of sustain — OR'd with the momentary pedal. */
-	private sustainToggle = false
-	/** The momentary half. Its own state now, not shift 2. */
-	private sustainPedal = false
 	/** Timestamp of the last ACCEPTED pedal edge — the leading-edge lockout. */
 	private lastPedalEdgeAt = 0
 
@@ -609,32 +579,27 @@ export class IsoSurfacePage implements Page {
 	private layout = SPEC_BY_KEY.get("layout")!.default as "chromatic" | "folded"
 	private orientation = SPEC_BY_KEY.get("orientation")!.default as Orientation
 	private lane = SPEC_BY_KEY.get("lane")!.default as number
-	private arpRate = SPEC_BY_KEY.get("arpRate")!.default as number
-	private arpDiv = SPEC_BY_KEY.get("arpDiv")!.default as number
 	/** Per-recorder loop quantum, in lane ticks. 0 = off (the default). */
 	private quant = new Array<number>(RECORDER_ROWS).fill(0)
 
 	// Performance panel (col 0 row 6). All of it persists to the active preset.
 	private panelShown = false
-	private octave = 0
-	private arpSpeed = ARP_SPEED_DEFAULT
-	private arpProb = SPEC_BY_KEY.get("arpProb")!.default as number
-	/** ×N sub-beat steps waiting to fire inside the current clock tick. */
-	private subSteps: ReturnType<typeof setTimeout>[] = []
+	/** Octave and tint are PER TRACK (index 0-3); the panel shows and sets the front track's. */
+	private octave = new Array<number>(TRACK_ROWS).fill(0)
 	private strum = SPEC_BY_KEY.get("strum")!.default as boolean
 	private strumMs = SPEC_BY_KEY.get("strumMs")!.default as number
 	private strumDir = SPEC_BY_KEY.get("strumDir")!.default as "up" | "down"
 	/** Strummed note-ons not sent yet: packed key → its timer. Max hasn't heard of them. */
 	private pendingOn = new Map<number, ReturnType<typeof setTimeout>>()
-	private tintOn = false
-	private tintMode: TintMode = SPEC_BY_KEY.get("tintMode")!.default as TintMode
-	private tintOctave = SPEC_BY_KEY.get("tintOctave")!.default as number
+	private tintOn = new Array<boolean>(TRACK_ROWS).fill(false)
+	private tintMode = new Array<TintMode>(TRACK_ROWS).fill(SPEC_BY_KEY.get("tintMode")!.default as TintMode)
+	private tintOctave = new Array<number>(TRACK_ROWS).fill(SPEC_BY_KEY.get("tintOctave")!.default as number)
 	private tintJitterMs = SPEC_BY_KEY.get("tintJitterMs")!.default as number
-	/** The T-triad, as pitch classes (step mod npo). Persisted. */
-	private tintPcs = new Set<number>()
-	/** Live M-step → the T-step it was given when it started, so a held note's T-voice never flips. */
+	/** Each track's T-triad, as pitch classes (step mod npo). Persisted. */
+	private tintPcs: Array<Set<number>> = Array.from({ length: TRACK_ROWS }, () => new Set<number>())
+	/** Live M-key → the T-key it was given when it started (same track), so a held note's T-voice never flips. */
 	private tintOf = new Map<number, number>()
-	private tintAltBelow = false // alternate mode: the next new note goes below
+	private tintAltBelow = new Array<boolean>(TRACK_ROWS).fill(false) // alternate mode: the next new note goes below
 	private tintKeyDown = false // the tint key is held: keyboard presses edit the triad
 	private persistTimer: ReturnType<typeof setTimeout> | null = null
 	private tintEdited = false // ... and did, so its release doesn't also toggle tint
@@ -642,7 +607,7 @@ export class IsoSurfacePage implements Page {
 	/** Injectable so probability tests are deterministic. Returns [0, 1). */
 	constructor(private rng: () => number = Math.random) {}
 
-	// Sustain latch: two quick taps on the shift-2 key hold it down until the next tap.
+	// The pedal's latch: two quick taps hold it down until the next tap.
 	private lastSustainTapAt = 0
 	private sustainLatched = false
 
@@ -651,6 +616,8 @@ export class IsoSurfacePage implements Page {
 		this.size = ctx.size
 		this.keysW = Math.min(KEYS_W, this.size.width)
 		this.releaseLive(ctx)
+		this.latchHand.clear()
+		this.latchLoop.clear()
 		for (const r of this.recorders) r.clear()
 		this.syncTimer()
 		// A ping means surface has just (re)connected: whatever it had lit before is void.
@@ -665,22 +632,115 @@ export class IsoSurfacePage implements Page {
 			}) ?? null
 		this.unsurface?.()
 		this.unsurface =
-			ctx.surface?.on((path, args) => {
-				// The app is (back) there: read every track's lanes again, so the picker is true when it opens.
-				if (path === SURFACE_LINK_UP) {
-					for (const a of LANES_ADDRS) ctx.surface?.send("/surface/get", a)
-					return
-				}
-				const t = LANES_ADDRS.indexOf(path)
-				if (t < 0 || typeof args[0] !== "string" && typeof args[0] !== "number") return
-				this.trackLanes[t] = cleanLanes(String(args[0]))
-				ctx.setDirty()
-			}) ?? null
+			ctx.surface?.on((path, args) => this.hear(path, args, ctx)) ?? null
+		this.readApp(ctx)
 		this.announce(ctx)
 	}
 
 	onFocus(ctx: PageContext) {
+		this.appPolledAt = this.appSubscribedAt = 0 // ask the app at once
 		this.announce(ctx)
+	}
+
+	/** What idk.surface says: the KEYS rows' lanes, each key track's ARP and LATCH, the shared arp settings. */
+	private hear(path: string, args: any[], ctx: PageContext) {
+		if (path === SURFACE_LINK_UP) {
+			// The app is (back) there, holding nothing of ours: the latch picture is void, and
+			// everything shown from the app is read again.
+			this.latchHand.clear()
+			this.latchLoop.clear()
+			for (const a of LANES_ADDRS) ctx.surface?.send("/surface/get", a)
+			this.readApp(ctx)
+			this.appSubscribedAt = 0
+			ctx.setDirty()
+			return
+		}
+		const v = args[0]
+		// Track 1's ARP and LATCH also come under their older names.
+		const addr = path === "/surface/arp" ? ARP_ADDR(0) : path === "/surface/arp/latch" ? LATCH_ADDR(0) : path
+		if (Date.now() - (this.wroteAt.get(addr) ?? 0) < WRITE_QUIET_MS) return
+		const lanes = LANES_ADDRS.indexOf(path)
+		if (lanes >= 0) {
+			if (typeof v !== "string" && typeof v !== "number") return
+			this.trackLanes[lanes] = cleanLanes(String(v))
+		} else if (path === ORDER_ADDR) { if (typeof v === "string") this.appOrder = v }
+		else if (path === RATE_ADDR) { if (typeof v === "string") this.appRate = v }
+		else if (path === PROB_ADDR) { if (Number.isFinite(Number(v))) this.appProb = Number(v) }
+		else {
+			const m = /^\/surface\/keys\/([1-4])\/(arp|latch)$/.exec(addr)
+			if (!m || !Number.isFinite(Number(v))) return
+			const t = Number(m[1]) - 1
+			const on = Number(v) !== 0
+			if (m[2] === "arp") this.appArp[t] = on
+			else this.heardLatch(t, on)
+		}
+		ctx.setDirty()
+	}
+
+	/** Ask the app for everything this page shows of it. */
+	private readApp(ctx: PageContext) {
+		const link = ctx.surface
+		if (!link) return
+		this.appPolledAt = Date.now()
+		for (let t = 0; t < TRACK_ROWS; t++) {
+			link.send("/surface/get", ARP_ADDR(t))
+			link.send("/surface/get", LATCH_ADDR(t))
+		}
+		for (const a of [ORDER_ADDR, RATE_ADDR, PROB_ADDR]) link.send("/surface/get", a)
+	}
+
+	/** While the page is in front (render runs): keep the app's values coming. */
+	private pollApp(ctx: PageContext, nowMs: number) {
+		const link = ctx.surface
+		if (!link) return
+		if (nowMs - this.appSubscribedAt >= APP_SUBSCRIBE_MS) {
+			this.appSubscribedAt = nowMs
+			link.send("/surface/subscribe", "127.0.0.1", link.port, "values")
+		}
+		if (nowMs - this.appPolledAt >= APP_POLL_MS) this.readApp(ctx)
+	}
+
+	/** A track's LATCH as the app has it now. Off lets go of everything it held, there and in our picture. */
+	private heardLatch(t: number, on: boolean) {
+		this.appLatch[t] = on
+		if (on) return
+		this.pedalMade.delete(t)
+		if (this.pedalTrack === t) {
+			this.pedalTrack = null
+			this.sustainLatched = false
+		}
+		for (const set of [this.latchHand, this.latchLoop]) for (const key of set) if (trackOf(key) === t) set.delete(key)
+	}
+
+	/** Write one of the app's values, and stop listening to it for a moment (WRITE_QUIET_MS). */
+	private write(ctx: PageContext, addr: string, v: number | string | ReturnType<typeof float>) {
+		this.wroteAt.set(addr, Date.now())
+		ctx.surface?.send(addr, v)
+	}
+
+	/** Switch a track's LATCH in the app. */
+	private setLatch(t: number, on: boolean, ctx: PageContext) {
+		this.write(ctx, LATCH_ADDR(t), on ? 1 : 0)
+		this.heardLatch(t, on)
+		ctx.setDirty()
+	}
+
+	/**
+	 * A track's ARP in the app: `mode` 0 is off, 1-4 switches it on in that ARP_ORDERS entry
+	 * (the order is the app's one shared setting, so it moves for every track). PROB MODE is
+	 * set to WAIT with it: a missed step waits for the due note, as the iso's own arp did.
+	 */
+	private setArp(t: number, mode: number, ctx: PageContext, byHand: boolean) {
+		const m = clamp(Math.round(mode), 0, ARP_KEYS)
+		if (byHand) this.recordGesture(ctlId(CTL_ARP, t), m)
+		if (m > 0) {
+			this.appOrder = ARP_ORDERS[m - 1]
+			this.write(ctx, ORDER_ADDR, this.appOrder)
+			ctx.surface?.send(PROB_MODE_ADDR, "wait")
+		}
+		this.appArp[t] = m > 0
+		this.write(ctx, ARP_ADDR(t), m > 0 ? 1 : 0)
+		ctx.setDirty()
 	}
 
 	onBlur(ctx: PageContext) {
@@ -774,7 +834,7 @@ export class IsoSurfacePage implements Page {
 		this.pickerDown.add(i) // the whole top row is the picker's while it is open: no note, no panel key
 		this.lanesUsed = true
 		if (ev.x < PICKER_X0 || ev.x >= PICKER_X0 + PICKER_LANES) return true
-		const heard = [...this.selected].filter((t) => this.trackLanes[t] !== undefined)
+		const heard = [this.front].filter((t) => this.trackLanes[t] !== undefined)
 		if (heard.length === 0) return true // not heard yet: never guess what a toggle means
 		const digit = String(ev.x - PICKER_X0 + 1)
 		const drop = heard.every((t) => this.trackLanes[t]!.includes(digit))
@@ -793,12 +853,12 @@ export class IsoSurfacePage implements Page {
 	private askLanes(ctx: PageContext, nowMs: number) {
 		if (nowMs - this.lanesAskedAt < PICKER_ASK_MS) return
 		this.lanesAskedAt = nowMs
-		for (const t of this.selected) ctx.surface?.send("/surface/get", LANES_ADDRS[t])
+		ctx.surface?.send("/surface/get", LANES_ADDRS[this.front])
 	}
 
-	/** Transposer plus octave: the offset a note takes when it starts. */
-	private offset(): number {
-		return this.transpose + this.octave * this.npo
+	/** Transposer (global) plus the track's octave: the offset a note takes when it starts. */
+	private offset(track = this.front): number {
+		return this.transpose + this.octave[track] * this.npo
 	}
 
 	/** Pitch class of a step in the current octave size. */
@@ -821,7 +881,7 @@ export class IsoSurfacePage implements Page {
 				this.tintEdited = false
 			} else if (this.tintKeyDown) {
 				this.tintKeyDown = false
-				if (!this.tintEdited) this.setTint(!this.tintOn, ctx, true)
+				if (!this.tintEdited) this.setTint(!this.tintOn[this.front], ctx, true)
 			}
 			ctx.setDirty()
 			return
@@ -833,7 +893,7 @@ export class IsoSurfacePage implements Page {
 			this.setTintOctave(1 - (y - TINT_OCT_ROW_TOP), ctx, true)
 		} else if (x === PANEL_STRUM_COL && y >= OCTAVE_ROW_TOP && y < OCTAVE_ROW_TOP + 4) {
 			this.setOctave(OCTAVE_MAX - (y - OCTAVE_ROW_TOP), ctx, true)
-		} else if (x === PANEL_SPEED_COL && y < ARP_SPEEDS.length) {
+		} else if (x === PANEL_SPEED_COL && y < ARP_RATES.length) {
 			this.setArpSpeed(y, ctx, true)
 		} else if (x === PANEL_PROB_COL && y < PROB_ROWS) {
 			this.setArpProbRow(y, ctx, true)
@@ -849,36 +909,33 @@ export class IsoSurfacePage implements Page {
 		this.syncTimer()
 	}
 
-	private setOctave(o: number, ctx: PageContext, byHand: boolean) {
+	private setOctave(o: number, ctx: PageContext, byHand: boolean, track = this.front) {
 		const next = clamp(Math.round(o), OCTAVE_MIN, OCTAVE_MAX)
-		if (byHand) this.recordGesture(CTL_OCTAVE, next)
-		if (next === this.octave) return
-		this.octave = next
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/octave`, this.octave)
+		if (byHand) this.recordGesture(ctlId(CTL_OCTAVE, track), next)
+		if (next === this.octave[track]) return
+		this.octave[track] = next
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/octave`, next, track)
 		ctx.setDirty()
 		this.schedulePersist(ctx)
 	}
 
+	/** The app's RATE, by the panel's row (0 = fastest). */
 	private setArpSpeed(idx: number, ctx: PageContext, byHand: boolean) {
-		const next = clamp(Math.round(idx), 0, ARP_SPEEDS.length - 1)
+		const next = clamp(Math.round(idx), 0, ARP_RATES.length - 1)
 		if (byHand) this.recordGesture(CTL_ARP_SPEED, next)
-		if (next === this.arpSpeed) return
-		this.arpSpeed = next
-		this.clearSubSteps()
-		this.emitSettings(ctx)
+		this.appRate = ARP_RATES[next]
+		this.write(ctx, RATE_ADDR, this.appRate)
 		ctx.setDirty()
-		this.schedulePersist(ctx)
 	}
 
+	/** The app's PROB, by the panel's row (0 = 100 %), with PROB MODE on WAIT. */
 	private setArpProbRow(row: number, ctx: PageContext, byHand: boolean) {
 		const r = clamp(Math.round(row), 0, PROB_ROWS - 1)
 		if (byHand) this.recordGesture(CTL_ARP_PROB, r)
-		const next = (PROB_ROWS - r) / PROB_ROWS
-		if (next === this.arpProb) return
-		this.arpProb = next
-		this.emitSettings(ctx)
+		this.appProb = (PROB_ROWS - r) / PROB_ROWS
+		this.write(ctx, PROB_ADDR, float(this.appProb))
+		ctx.surface?.send(PROB_MODE_ADDR, "wait")
 		ctx.setDirty()
-		this.schedulePersist(ctx)
 	}
 
 	private setStrum(on: boolean, ctx: PageContext, byHand: boolean) {
@@ -890,30 +947,30 @@ export class IsoSurfacePage implements Page {
 		this.schedulePersist(ctx)
 	}
 
-	private setTint(on: boolean, ctx: PageContext, byHand: boolean) {
-		if (byHand) this.recordGesture(CTL_TINT, on ? 1 : 0)
-		if (on === this.tintOn) return
-		this.tintOn = on
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tint`, on ? 1 : 0)
+	private setTint(on: boolean, ctx: PageContext, byHand: boolean, track = this.front) {
+		if (byHand) this.recordGesture(ctlId(CTL_TINT, track), on ? 1 : 0)
+		if (on === this.tintOn[track]) return
+		this.tintOn[track] = on
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tint`, on ? 1 : 0, track)
 		this.commit(ctx) // T-voices appear or go now, under the held notes
 		this.schedulePersist(ctx)
 	}
 
-	private setTintMode(idx: number, ctx: PageContext, byHand: boolean) {
+	private setTintMode(idx: number, ctx: PageContext, byHand: boolean, track = this.front) {
 		const next = TINT_MODES[clamp(Math.round(idx), 0, TINT_MODES.length - 1)]
-		if (byHand) this.recordGesture(CTL_TINT_MODE, TINT_MODES.indexOf(next))
-		if (next === this.tintMode) return
-		this.tintMode = next
+		if (byHand) this.recordGesture(ctlId(CTL_TINT_MODE, track), TINT_MODES.indexOf(next))
+		if (next === this.tintMode[track]) return
+		this.tintMode[track] = next
 		this.emitSettings(ctx)
 		ctx.setDirty() // sounding T-voices keep theirs; the next note takes the new mode
 		this.schedulePersist(ctx)
 	}
 
-	private setTintOctave(o: number, ctx: PageContext, byHand: boolean) {
+	private setTintOctave(o: number, ctx: PageContext, byHand: boolean, track = this.front) {
 		const next = clamp(Math.round(o), -1, 1)
-		if (byHand) this.recordGesture(CTL_TINT_OCTAVE, next)
-		if (next === this.tintOctave) return
-		this.tintOctave = next
+		if (byHand) this.recordGesture(ctlId(CTL_TINT_OCTAVE, track), next)
+		if (next === this.tintOctave[track]) return
+		this.tintOctave[track] = next
 		this.emitSettings(ctx)
 		ctx.setDirty() // like the mode: sounding T-voices keep theirs
 		this.schedulePersist(ctx)
@@ -933,68 +990,57 @@ export class IsoSurfacePage implements Page {
 
 	private panelState() {
 		return {
-			octave: this.octave,
-			tintOn: this.tintOn,
-			arpSpeed: ARP_SPEEDS[this.arpSpeed],
-			arpProb: this.arpProb,
+			octaves: [...this.octave],
+			tintOns: [...this.tintOn],
+			tintModes: [...this.tintMode],
+			tintOctaves: [...this.tintOctave],
 			strum: this.strum,
 			strumMs: this.strumMs,
 			strumDir: this.strumDir,
-			tintMode: this.tintMode,
-			tintOctave: this.tintOctave,
 			tintJitterMs: this.tintJitterMs,
 		}
 	}
 
 	private toggleTintPc(step: number, ctx: PageContext) {
 		const pc = this.pc(step)
-		if (!this.tintPcs.delete(pc)) this.tintPcs.add(pc)
+		const set = this.tintPcs[this.front]
+		if (!set.delete(pc)) set.add(pc)
 		this.tintEdited = true
 		this.tintChanged(ctx)
 	}
 
-	/** The triad changed: persist it and let sounding notes keep their T-voice. */
+	/** A triad changed: persist it and let sounding notes keep their T-voice. */
 	private tintChanged(ctx: PageContext) {
 		ctx.persist(this.tintState())
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tintset`, JSON.stringify(this.tintState().tintPcs))
+		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/tintset`, JSON.stringify(this.tintState().tintPcsByTrack))
 		this.commit(ctx)
 	}
 
 	private tintState() {
-		return { tintPcs: [...this.tintPcs].sort((a, b) => a - b) }
+		return { tintPcsByTrack: this.tintPcs.map((set) => [...set].sort((a, b) => a - b)) }
 	}
 
 	/**
-	 * The T-voice for an M-step: the nearest step strictly above (or below) whose pitch class
-	 * is in the triad. Null when the triad is empty.
+	 * The T-voice for an M-step on a track: the nearest step strictly above (or below) whose
+	 * pitch class is in that track's triad. Null when the triad is empty.
 	 */
-	private tintStep(m: number): number | null {
-		if (!this.tintPcs.size) return null
-		const below =
-			this.tintMode === "below" || (this.tintMode === "alternate" && this.tintAltBelow)
-		if (this.tintMode === "alternate") this.tintAltBelow = !this.tintAltBelow
+	private tintStep(track: number, m: number): number | null {
+		const pcs = this.tintPcs[track]
+		if (!pcs.size) return null
+		const mode = this.tintMode[track]
+		const below = mode === "below" || (mode === "alternate" && this.tintAltBelow[track])
+		if (mode === "alternate") this.tintAltBelow[track] = !this.tintAltBelow[track]
 		const dir = below ? -1 : 1
 		for (let d = 1; d <= this.npo; d++) {
 			const s = m + dir * d
-			if (this.tintPcs.has(this.pc(s))) return s + this.tintOctave * this.npo
+			if (pcs.has(this.pc(s))) return s + this.tintOctave[track] * this.npo
 		}
 		return null
 	}
 
-	/** Cancel ×N sub-beat steps still waiting inside a tick. */
-	private clearSubSteps() {
-		for (const t of this.subSteps) clearTimeout(t)
-		this.subSteps = []
-	}
-
+	/** The panel's own values for the front track, at rest. The arp's are the app's and not counted. */
 	private isPanelDefault(): boolean {
-		return (
-			this.octave === 0 &&
-			this.arpSpeed === ARP_SPEED_DEFAULT &&
-			this.arpProb === 1 &&
-			!this.strum &&
-			!this.tintOn
-		)
+		return this.octave[this.front] === 0 && !this.strum && !this.tintOn[this.front]
 	}
 
 	private renderPanel(f: LedFrame) {
@@ -1002,82 +1048,70 @@ export class IsoSurfacePage implements Page {
 		for (let x = PANEL_X0; x < PANEL_X0 + PANEL_W; x++) for (let y = 0; y < this.size.height; y++) set(x, y, 0)
 		const pick = (cur: boolean, home: boolean) =>
 			cur ? LVL_PANEL_CURRENT : home ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER
-		set(PANEL_TINT_COL, 0, this.tintKeyDown || this.tintOn ? LVL_PANEL_CURRENT : this.tintPcs.size ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER)
-		TINT_MODES.forEach((m, i) => set(PANEL_TINT_COL, 1 + i, m === this.tintMode ? 11 : rampLevel(LVL_PANEL_OTHER, i)))
+		const t = this.front
+		set(PANEL_TINT_COL, 0, this.tintKeyDown || this.tintOn[t] ? LVL_PANEL_CURRENT : this.tintPcs[t].size ? LVL_PANEL_DEFAULT : LVL_PANEL_OTHER)
+		TINT_MODES.forEach((m, i) => set(PANEL_TINT_COL, 1 + i, m === this.tintMode[t] ? 11 : rampLevel(LVL_PANEL_OTHER, i)))
 		for (let r = 0; r < 3; r++) {
 			const o = 1 - r
-			set(PANEL_TINT_COL, TINT_OCT_ROW_TOP + r, pick(o === this.tintOctave, o === 0))
+			set(PANEL_TINT_COL, TINT_OCT_ROW_TOP + r, pick(o === this.tintOctave[t], o === 0))
 		}
 		for (let r = 0; r < 4; r++) {
 			const o = OCTAVE_MAX - r
-			set(PANEL_STRUM_COL, OCTAVE_ROW_TOP + r, pick(o === this.octave, o === 0))
+			set(PANEL_STRUM_COL, OCTAVE_ROW_TOP + r, pick(o === this.octave[t], o === 0))
 		}
-		for (let r = 0; r < ARP_SPEEDS.length; r++) set(PANEL_SPEED_COL, r, pick(r === this.arpSpeed, r === ARP_SPEED_DEFAULT))
-		const probRow = Math.round(PROB_ROWS - this.arpProb * PROB_ROWS)
+		// SPEED and PROB are the app's: nothing is marked until it has said what they are.
+		const rate = (ARP_RATES as readonly string[]).indexOf(this.appRate ?? "")
+		for (let r = 0; r < ARP_RATES.length; r++) set(PANEL_SPEED_COL, r, pick(r === rate, false))
+		const probRow = this.appProb === undefined ? -1 : clamp(Math.round(PROB_ROWS - this.appProb * PROB_ROWS), 0, PROB_ROWS - 1)
 		for (let r = 0; r < PROB_ROWS; r++) set(PANEL_PROB_COL, r, pick(r === probRow, r === 0))
 		set(PANEL_STRUM_COL, 0, this.strum ? LVL_PANEL_CURRENT : LVL_PANEL_OTHER)
 	}
 
 	/**
-	 * A keyboard press. Normally it just claims the cell — but while ANY sustain is on,
-	 * pressing a note that is already ringing turns it OFF instead, which is how you
-	 * subtract a note from a sustained chord. That kills the note wherever it is sounding
-	 * (twins included), not just the cell you hit. A note some other finger is physically
-	 * holding is left alone — you stop that by releasing it, same as always.
+	 * A keyboard press: a plain press on the FRONT track, stamped with it and with the offset
+	 * in force, so nothing held moves later. A note already down there (a loop, a chord, a
+	 * twin cell) is articulated again with an explicit off and on. What ARP and LATCH make of
+	 * the press is the app's business.
 	 */
 	private pressKey(i: number, ctx: PageContext) {
-		// A press only concerns the SELECTED tracks — the same note ringing on an unselected
-		// one belongs to another instrument and is none of this gesture's business. The rule
-		// is applied per selected track, which collapses to the old behaviour when one is
-		// selected: subtract it if sustain is merely holding it, else articulate over it.
-		const step = this.stepOfIndex(i) + this.offset()
-		let subtractedEverywhere = true
-		for (const track of this.selected) {
-			const key = noteKey(track, step)
-			// Test the sustain buffer directly rather than the output: with the arp on, a
-			// parked note is only in the output when it happens to be the one being voiced,
-			// so going by the output would break "press it to take it out of the chord"
-			// for every note except that one.
-			const parkedOnly = this.sustained.has(key) && !this.lastIntent.has(key)
-			if (this.sustainOn(ctx) && parkedOnly) {
-				this.sustained.delete(key)
-				continue
-			}
-			subtractedEverywhere = false
-			if (this.lastSounding.has(key)) this.retrigger.add(key)
-		}
-		if (!subtractedEverywhere) this.held.set(i, step)
+		const key = noteKey(this.front, this.stepOfIndex(i) + this.offset())
+		if (this.lastSounding.has(key)) this.retrigger.add(key)
+		this.held.set(i, key)
 		this.commit(ctx)
 	}
 
 	private releaseKey(i: number, ctx: PageContext) {
 		this.held.delete(i)
-		this.commit(ctx) // the sustain stage parks it if a sustain is on
-	}
-
-	/**
-	 * The sustain TOGGLE. Latching, and OR'd with the momentary pedal, so either one alone
-	 * sustains. It doubles as the SAVE arm for the chord presets: while it's on, a preset
-	 * key stores the ringing chord instead of playing one. That's the difference between it
-	 * and the pedal's double-tap latch, which sustains but leaves the presets playable.
-	 */
-	private toggleKey(ev: KeyEvent, ctx: PageContext) {
-		if (!ev.s) return // latching: act on press, ignore release
-		this.sustainToggle = !this.sustainToggle
 		this.commit(ctx)
 	}
 
 	/**
-	 * A chord preset key. Armed (toggle on) it SAVES whatever is ringing — saving silence
-	 * clears the slot. Otherwise it PLAYS, momentarily: the chord sounds while the key is
-	 * down and, if a sustain is active when you let go, keeps ringing. That's what makes
-	 * "double-tap the pedal, then stab presets" stack chords up.
+	 * The LATCH key: the front track's LATCH in the app, lit from the app. Lit this way it
+	 * also ARMS the chord presets for saving; the pedal's LATCH does not.
+	 */
+	private toggleKey(ev: KeyEvent, ctx: PageContext) {
+		if (!ev.s) return // latching: act on press, ignore release
+		const t = this.front
+		const on = this.appLatch[t] !== true
+		this.setLatch(t, on, ctx)
+		this.pedalMade.delete(t)
+	}
+
+	/** Is a chord preset press a SAVE? The front track's LATCH is lit, and not by the pedal. */
+	private saveArmed(): boolean {
+		return this.appLatch[this.front] === true && !this.pedalMade.has(this.front)
+	}
+
+	/**
+	 * A chord preset key. Armed (see saveArmed) it SAVES what the front track is ringing;
+	 * saving silence clears the slot. Otherwise it PLAYS on the front track, momentarily: the
+	 * chord is down while the key is, and the app's LATCH keeps it if that is lit.
 	 */
 	private presetKey(slot: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) {
 			if (!this.presetHeld.has(slot)) return
 			this.presetHeld.delete(slot)
-			this.commit(ctx) // the sustain stage parks the chord if a sustain is on
+			this.commit(ctx)
 			return
 		}
 		if (ctx.modifiers.shift1) {
@@ -1087,14 +1121,13 @@ export class IsoSurfacePage implements Page {
 			this.chordsChanged(ctx)
 			return
 		}
-		if (this.sustainToggle) {
+		if (this.saveArmed()) {
 			const chord = this.soundingChord()
 			// Pressing the slot you JUST saved to, with that chord still ringing, releases
-			// it — the "right, next one" gesture. Saving is idempotent, so comparing the
-			// chord beats remembering which slot was last written.
+			// it — the "right, next one" gesture: LATCH off and on again lets the app go of it.
 			if (chord.length && sameChord(this.chords.get(slot), chord)) {
-				this.sustained.clear()
-				this.commit(ctx)
+				this.setLatch(this.front, false, ctx)
+				this.setLatch(this.front, true, ctx)
 				return
 			}
 			if (chord.length) {
@@ -1110,7 +1143,9 @@ export class IsoSurfacePage implements Page {
 		const chord = this.chords.get(slot)
 		if (!chord) return
 		const off = this.transposeChords ? this.offset() - (this.chordT.get(slot) ?? 0) : 0
-		this.presetHeld.set(slot, chord.map((step) => step + off))
+		const keys = chord.map((step) => noteKey(this.front, step + off))
+		for (const key of keys) if (this.lastSounding.has(key)) this.retrigger.add(key)
+		this.presetHeld.set(slot, keys)
 		this.commit(ctx)
 	}
 
@@ -1122,15 +1157,6 @@ export class IsoSurfacePage implements Page {
 	 */
 	private recorderKey(idx: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) return // the whole machine acts on press
-		// While a track is latched for routing, these keys mean "does this looper feed it"
-		// and nothing else — no recording, no clearing.
-		if (this.editingTrack !== null) {
-			const set = this.routes[this.editingTrack]
-			if (!set.delete(idx)) set.add(idx)
-			this.emitTracks(ctx)
-			this.commit(ctx)
-			return
-		}
 		const r = this.recorders[idx]
 		if (ctx.modifiers.shift1) r.clear()
 		else r.press(Date.now(), this.quantumMs(idx))
@@ -1139,136 +1165,23 @@ export class IsoSurfacePage implements Page {
 		this.syncTimer()
 	}
 
-	/**
-	 * A TRACK key — an output, i.e. an instrument at the Max end.
-	 *
-	 * Plain press selects it. SHIFT latches it for routing-edit (let go of shift; the looper
-	 * keys take over until you press a track again). SHIFT with all four held at once wipes
-	 * every route, which is the way back to "everything follows the active track".
-	 */
+	/** A TRACK key brings that track's layer to the front. Nothing sounding moves. */
 	private trackKey(idx: number, ev: KeyEvent, ctx: PageContext) {
-		if (!ev.s) {
-			this.tracksDown.delete(idx)
-			return
-		}
-		this.tracksDown.add(idx)
-
-		if (ctx.modifiers.shift1) {
-			if (this.tracksDown.size >= TRACK_ROWS) {
-				for (const set of this.routes) set.clear()
-				this.editingTrack = null
-			} else {
-				this.editingTrack = this.editingTrack === idx ? null : idx
-			}
-			this.emitTracks(ctx)
-			this.commit(ctx)
-			return
-		}
-		if (this.editingTrack !== null) {
-			// Same track closes the edit; a different one moves it. You leave edit mode
-			// before you can change the selection — one mode at a time.
-			this.editingTrack = this.editingTrack === idx ? null : idx
-			this.emitTracks(ctx)
-			return
-		}
-		if (ctx.modifiers.shift2) {
-			// Multi-select: add or drop this track. Something must always be selected, so a
-			// toggle that would empty the set is simply ignored.
-			if (this.selected.has(idx)) {
-				if (this.selected.size === 1) return
-				this.selected.delete(idx)
-			} else this.selected.add(idx)
-			this.lanesAskedAt = 0 // an open picker reads the new selection's lanes at once
-		} else {
-			if (this.selected.size === 1 && this.selected.has(idx)) return
-			this.selected = new Set([idx])
-		}
+		if (!ev.s || idx === this.front) return
+		this.front = idx
+		this.lanesAskedAt = 0 // an open picker reads the new track's lanes at once
+		this.tintKeyDown = false
 		this.emitTracks(ctx)
-		this.commit(ctx) // sounding notes keep their old track; the next note-on moves
+		this.emitSettings(ctx) // tint mode and octave are the front track's
+		ctx.setDirty()
 	}
 
-	/** An ARP key: pick that mode, or turn the arp off by pressing the mode already lit. */
+	/** An ARP key: the front track's ARP on in that order, or off by pressing the one that is lit. */
 	private arpKey(idx: number, ev: KeyEvent, ctx: PageContext) {
 		if (!ev.s) return
-		this.arp.toggle(ARP_BUTTONS[idx])
-		// Armed loopers take the RESULTING mode (off included), not the button, so replay is
-		// idempotent however many loops carry arp moves.
-		const nowMs = Date.now()
-		for (const r of this.recorders) r.recordControl(CTL_ARP, ARP_MODES.indexOf(this.arp.mode as ArpMode), nowMs)
-		this.arpChanged(ctx)
-	}
-
-	/** A loop replayed an arp move. Not recorded: loopers never tap each other. */
-	private replayArp(value: number, ctx: PageContext) {
-		const mode = ARP_MODES[value]
-		if (!mode || mode === this.arp.mode) return
-		this.arp.set(mode)
-		this.arpChanged(ctx)
-	}
-
-	private arpChanged(ctx: PageContext) {
-		this.arpNote = null
-		this.arpAccMs = 0
-		this.clearSubSteps()
-		this.commit(ctx) // recompute the pool before taking the first step
-		if (this.arp.isOn) this.arpStep(ctx, true)
-		this.emitSettings(ctx) // the button and the setting are the same control
-		this.syncTimer()
-	}
-
-	/**
-	 * One arpeggiator step. Moves the cursor over the pool built by the last commit; when
-	 * the same note comes round twice in a row (a one-note "chord", or urn drawing a repeat
-	 * across bags) it needs an explicit re-articulation, which the retrigger set provides.
-	 */
-	private arpStep(ctx: PageContext, sure = false) {
-		if (!this.arp.isOn) return
-		// A missed beat is a REST that doesn't advance: the note let through last keeps its
-		// gate and the one that was due plays on the next beat. The first note of a chord
-		// (`sure`) is never skipped, or starting a chord could be silent.
-		if (!sure && this.arpProb < 1 && this.arpNote !== null && this.rng() >= this.arpProb) return
-		const next = this.arp.next(this.arpPool)
-		// Anything already ringing at that pitch has to be ARTICULATED again, wherever it is
-		// sounding: under sustain the note never stopped, so without this the arp would be
-		// silent over a pad. Also covers a one-note pool repeating itself.
-		if (next !== null) {
-			for (const key of this.lastSounding) if (stepOf(key) === next) this.retrigger.add(key)
-		}
-		this.arpNote = next
-		this.commit(ctx)
-	}
-
-	/** Musical time when the transport is running — the arp follows the same lane setting. */
-	onTick(tick: number, lane: number, ctx: PageContext) {
-		if (!this.arp.isOn || lane !== this.lane) return
-		this.clearSubSteps() // a late sub-step must never land after the next beat
-		const factor = ARP_SPEED_FACTOR[this.arpSpeed]
-		// ÷N stretches the divider; ×N fires once on the beat and N−1 times inside it.
-		const div = factor < 1 ? this.arpDiv * Math.round(1 / factor) : this.arpDiv
-		if (div > 1 && tick % div !== 0) return
-		this.arpStep(ctx)
-		if (factor > 1) {
-			const beatMs = this.laneTickMs() * this.arpDiv
-			if (!beatMs) return
-			for (let k = 1; k < factor; k++) {
-				this.subSteps.push(setTimeout(() => this.arpStep(ctx), (beatMs * k) / factor))
-			}
-		}
-	}
-
-	/** One tick of the followed lane, in ms (0 if the clock has no rate). */
-	private laneTickMs(): number {
-		const clock = this.ctx?.clock
-		if (!clock?.rate) return 0
-		const lane = clock.lanes?.[this.lane]
-		return (1000 * (lane?.div || 1)) / clock.rate
-	}
-
-	/** Transport start/stop flips the arp between clock and free-run; reset the phase. */
-	onClock(_state: Readonly<ClockState>, _ctx: PageContext) {
-		this.arpAccMs = 0
-		this.clearSubSteps()
-		this.syncTimer()
+		const t = this.front
+		const lit = this.appArp[t] === true && this.appOrder === ARP_ORDERS[idx]
+		this.setArp(t, lit ? 0 : idx + 1, ctx, true)
 	}
 
 	// Settings in from Max / the web panel. Accepts, in order of preference:
@@ -1289,8 +1202,8 @@ export class IsoSurfacePage implements Page {
 		const npo = this.npo
 		if (!this.applySetting(key, raw)) return
 		// Pitch classes mean something else in another octave size.
-		if (this.npo !== npo && this.tintPcs.size) {
-			this.tintPcs.clear()
+		if (this.npo !== npo && this.tintPcs.some((set) => set.size)) {
+			for (const set of this.tintPcs) set.clear()
 			this.tintChanged(ctx)
 		}
 		if (PANEL_SETTINGS.has(key)) this.schedulePersist(ctx)
@@ -1300,7 +1213,7 @@ export class IsoSurfacePage implements Page {
 	/** A note played in surface, to light here. Display only: see `remote`. */
 	private remoteNote(args: any[], ctx: PageContext) {
 		const step = Number(args[0]), track = Number(args[2] ?? 0)
-		if (!Number.isInteger(step) || step < 0 || step >= NOTE_STRIDE) return
+		if (!Number.isInteger(step) || step < -NOTE_BIAS || step >= NOTE_STRIDE - NOTE_BIAS) return
 		if (!Number.isInteger(track) || track < 0 || track >= TRACK_ROWS) return
 		if (Number(args[1])) this.remote.add(noteKey(track, step))
 		else this.remote.delete(noteKey(track, step))
@@ -1308,97 +1221,88 @@ export class IsoSurfacePage implements Page {
 	}
 
 	render(ctx: PageContext): LedFrame {
-		// Sustain can also fall because an OSC shift dropped, which never reaches onKey.
 		this.commit(ctx)
+		this.pollApp(ctx, Date.now())
 		// A peer that sends heartbeats and then stops has gone: its lights go with it.
 		if (this.peerBeatAt && Date.now() - this.peerBeatAt > PEER_GONE_MS) {
 			this.peerBeatAt = 0
 			this.remote.clear()
 		}
-		const remoteSteps = new Set<number>()
-		for (const key of this.remote) remoteSteps.add(stepOf(key))
+		// TWO PLANES. Bright: what the hands hold on the FRONT track, what its LATCH keeps of
+		// them, and the keys played in the app on that track. Dim: every other track's notes,
+		// and every loop's playback, the front track's included. A note is lit at EVERY cell
+		// that plays it, placed by the front track's offset (the map under your fingers).
+		const front = this.front
+		const bright = new Set<number>()
+		const dim = new Set<number>()
+		const place = (key: number, hand: boolean) => (hand && trackOf(key) === front ? bright : dim).add(stepOf(key))
+		for (const key of this.lastSounding) place(key, this.lastLive.has(key))
+		for (const key of this.latchHand) place(key, true)
+		for (const key of this.latchLoop) place(key, false)
+		for (const key of this.remote) place(key, true)
 
-		// A note is lit at EVERY cell that plays it — on an isomorphic layout that shows the
-		// shape you're playing. Three tiers: the chord you are holding or sustaining, the
-		// cells under a finger, and — while the arp runs — the note it is voicing right now
-		// on top. The chord staying visible under the arp is what lets you see what a chord
-		// preset would capture while it plays.
-		const arpOn = this.arp.isOn
 		const f = makeFrame(this.size)
 		// T-voices shimmer so they read apart from the notes you played. A T-voice that is
 		// also one of your own notes is just a note.
 		const tSteps = new Set<number>()
-		for (const t of this.tintOf.values()) if (!this.tintOf.has(t)) tSteps.add(t)
+		for (const t of this.tintOf.values()) if (!this.tintOf.has(t) && trackOf(t) === front) tSteps.add(stepOf(t))
 		const shimmerLo = Date.now() % (BLINK_MS * 2) >= BLINK_MS
+		const editPcs = this.tintPcs[front]
 		for (let y = 0; y < this.size.height; y++) {
 			for (let x = KEYS_X0; x < this.keysW; x++) {
 				const i = ledIndex(this.size, x, y)
 				const step = this.step(x, y)
-				let lvl = this.baseLevel(step, arpOn)
-				// The scale map stays under your fingers; what's SOUNDING is shown at the cells
-				// that would play it now, i.e. at the current transposition.
+				let lvl = this.baseLevel(step)
 				const sounding = step + this.offset()
-				if (this.litSteps.has(sounding) || remoteSteps.has(sounding)) lvl = arpOn ? LVL_ARP_CHORD : LVL_UNISON
-				if (shimmerLo && tSteps.has(sounding) && this.litSteps.has(sounding)) lvl = LVL_TINT_LO
-				if (this.held.has(i)) lvl = arpOn ? LVL_ARP_HELD : LVL_HELD
-				if (arpOn && this.voicedSteps.has(sounding)) lvl = LVL_ARP_VOICE
-				if (this.tintKeyDown && this.panelShown && this.tintPcs.has(this.pc(sounding))) lvl = LVL_TINT_EDIT
+				if (dim.has(sounding)) lvl = lvl >= LVL_ROOT ? LVL_LAYER_DIM_ROOT : LVL_LAYER_DIM
+				if (bright.has(sounding)) lvl = LVL_UNISON
+				if (shimmerLo && tSteps.has(sounding) && bright.has(sounding)) lvl = LVL_TINT_LO
+				if (this.held.has(i)) lvl = LVL_HELD
+				if (this.tintKeyDown && this.panelShown && editPcs.has(this.pc(sounding))) lvl = LVL_TINT_EDIT
 				f[i] = lvl
 			}
 		}
 		// Control keys down the right edge. Shifts are faint markers that light while held;
-		// both halves of sustain light while they are holding notes.
+		// LATCH shows the app's LATCH for the front track, the pedal that it is holding one.
 		if (this.hasControls()) {
 			const cx = this.size.width - 1
 			const mark = (row: number, on: boolean) => {
 				f[ledIndex(this.size, cx, row)] = on ? LVL_HELD : LVL_SHIFT
 			}
-			// Shifts idle brighter than the rest of the sidebar's dim keys, so they are
-			// findable by eye; the sustains keep the faint marker.
 			f[ledIndex(this.size, cx, SHIFT1_ROW)] = ctx.modifiers.shift1 ? LVL_HELD : LVL_SHIFT_IDLE
 			f[ledIndex(this.size, cx, SHIFT2_ROW)] = ctx.modifiers.shift2 ? LVL_HELD : LVL_SHIFT_IDLE
-			mark(SUSTAIN_PEDAL_ROW, this.sustainPedal)
-			mark(SUSTAIN_TOGGLE_ROW, this.sustainToggle)
+			mark(SUSTAIN_PEDAL_ROW, this.pedalTrack !== null)
+			mark(SUSTAIN_TOGGLE_ROW, this.appLatch[front] === true)
 		}
 		const blinkOn = Date.now() % (BLINK_MS * 2) < BLINK_MS
-		// Loopers: blink while armed, full while looping, mid when stopped with content —
-		// unless a track is latched, when the whole column switches to showing ITS routing.
+		// Loopers: blink while armed, full while looping, mid when stopped with content.
 		if (this.hasRecorders()) {
 			const rx = this.size.width - 1
-			const editing = this.editingTrack
 			for (let idx = 0; idx < RECORDER_ROWS; idx++) {
-				let lvl: number
-				if (editing !== null) {
-					lvl = this.routes[editing].has(idx) ? LVL_HELD : LVL_NORMAL
-				} else {
-					const st = this.recorders[idx].state
-					lvl =
-						st === "recording" ? (blinkOn ? LVL_REC_ARMED : LVL_REC_EMPTY)
-						: st === "playing" ? LVL_HELD
-						: st === "stopped" ? LVL_REC_STOPPED
-						: LVL_REC_EMPTY
-				}
-				f[ledIndex(this.size, rx, idx)] = lvl
+				const st = this.recorders[idx].state
+				f[ledIndex(this.size, rx, idx)] =
+					st === "recording" ? (blinkOn ? LVL_REC_ARMED : LVL_REC_EMPTY)
+					: st === "playing" ? LVL_HELD
+					: st === "stopped" ? LVL_REC_STOPPED
+					: LVL_REC_EMPTY
 			}
 		}
-		// Tracks: the active one stands out, and the one being routed blinks.
+		// Tracks: the one in front stands out.
 		if (this.hasTracks()) {
 			const tx = this.size.width - TRACK_COL_FROM_RIGHT
 			const now = Date.now()
 			for (let idx = 0; idx < TRACK_ROWS; idx++) {
-				let lvl =
-					this.editingTrack === idx ? (blinkOn ? LVL_TRACK_EDIT : LVL_TRACK_EDIT_LO)
-					: this.selected.has(idx) ? LVL_TRACK_ON
-					: rampLevel(LVL_TRACK_IDLE, idx)
+				let lvl = idx === front ? LVL_TRACK_ON : rampLevel(LVL_TRACK_IDLE, idx)
 				// Activity pulse: a brief lift on every note-on, so you can see which
-				// instrument a loop or an arp is actually feeding.
+				// instrument a loop is feeding.
 				if (now - this.trackPulseAt[idx] < PULSE_MS) lvl = Math.min(15, lvl + PULSE_BUMP)
 				f[ledIndex(this.size, tx, idx)] = lvl
 			}
-			// Arpeggiators sit under the tracks: only the running mode is lit.
-			for (let idx = 0; idx < ARP_BUTTONS.length; idx++) {
+			// The arp keys under the tracks: the app's order, bright while the front track's ARP is on.
+			for (let idx = 0; idx < ARP_KEYS; idx++) {
 				f[ledIndex(this.size, tx, ARP_ROW_START + idx)] =
-					this.arp.mode === ARP_BUTTONS[idx] ? LVL_ARP_ON : rampLevel(LVL_ARP_IDLE, idx)
+					this.appOrder !== ARP_ORDERS[idx] ? rampLevel(LVL_ARP_IDLE, idx)
+					: this.appArp[front] === true ? LVL_ARP_ON : LVL_ARP_ORDER
 			}
 		}
 		// Chord presets: dim when empty, brighter when loaded, brightest while playing,
@@ -1407,7 +1311,7 @@ export class IsoSurfacePage implements Page {
 			const cx = this.size.width - CHORD_COL_FROM_RIGHT
 			for (let slot = 0; slot < this.size.height; slot++) {
 				const full = this.chords.has(slot)
-				let lvl = this.sustainToggle
+				let lvl = this.saveArmed()
 					? full ? LVL_PRESET_FULL_ARMED : LVL_PRESET_EMPTY_ARMED
 					: full ? LVL_PRESET_FULL : LVL_PRESET_EMPTY
 				if (this.presetHeld.has(slot)) lvl = LVL_HELD
@@ -1428,7 +1332,7 @@ export class IsoSurfacePage implements Page {
 		if (this.lanesHeld) {
 			this.askLanes(ctx, Date.now())
 			for (let x = KEYS_X0; x < this.keysW; x++) f[ledIndex(this.size, x, 0)] = 0
-			const heard = [...this.selected].map((t) => this.trackLanes[t]).filter((l): l is string => l !== undefined)
+			const heard = [this.front].map((t) => this.trackLanes[t]).filter((l): l is string => l !== undefined)
 			for (let l = 0; l < PICKER_LANES; l++) {
 				const n = heard.filter((lanes) => lanes.includes(String(l + 1))).length
 				f[ledIndex(this.size, PICKER_X0 + l, 0)] =
@@ -1447,16 +1351,15 @@ export class IsoSurfacePage implements Page {
 	}
 
 	serialize() {
-		// Saved chords are stored content, so they belong in a preset capture; the sustain
-		// state and anything currently sounding deliberately do not.
+		// Saved chords are stored content, so they belong in a preset capture; anything
+		// currently sounding, and everything that is the app's (ARP, LATCH), do not.
 		return {
 			...this.settings(),
 			...this.chordState(),
 			patterns: this.recorders.map((r) => r.snapshot()),
 			...this.trackState(),
 			...this.tintState(),
-			octave: this.octave,
-			tintOn: this.tintOn,
+			...this.panelState(),
 		}
 	}
 
@@ -1471,6 +1374,11 @@ export class IsoSurfacePage implements Page {
 	 */
 	restore(config: unknown, ctx: PageContext) {
 		if (!isRecord(config)) return
+
+		// The track in front, first: the tint settings below are read as that track's. An older
+		// file has a selection instead, and its first track comes to the front.
+		if (config.front !== undefined) this.front = Math.round(num(config.front, 0, 0, TRACK_ROWS - 1))
+		else if (config.selected !== undefined) this.front = Math.min(...intSet(config.selected, 0, TRACK_ROWS - 1, [0]))
 
 		// Settings go back through applySetting, so a preset gets exactly the same clamping
 		// and the same refusal of an unknown scale/layout/mode that a live OSC write does.
@@ -1515,16 +1423,12 @@ export class IsoSurfacePage implements Page {
 								const v = clamp(Math.round(value), TRANSPOSE_MIN, TRANSPOSE_MAX)
 								return { atMs, step: 0, on: false, ctl: { id: CTL_TRANSPOSE, value: v } }
 							}
-							if (ctl.id === CTL_ARP) {
-								const v = clamp(Math.round(value), 0, ARP_MODES.length - 1)
-								return { atMs, step: 0, on: false, ctl: { id: CTL_ARP, value: v } }
-							}
-							const bounds = typeof ctl.id === "string" ? CTL_BOUNDS[ctl.id] : undefined
-							if (bounds) {
-								const v = clamp(Math.round(value), bounds[0], bounds[1])
-								return { atMs, step: 0, on: false, ctl: { id: ctl.id as string, value: v } }
-							}
-							return undefined
+							if (typeof ctl.id !== "string") return undefined
+							const { base, track } = parseCtl(ctl.id)
+							const bounds = CTL_BOUNDS[base]
+							if (!bounds) return undefined
+							const v = clamp(Math.round(value), bounds[0], bounds[1])
+							return { atMs, step: 0, on: false, ctl: { id: PER_TRACK_CTL.has(base) ? ctlId(base, track) : base, value: v } }
 						}
 						if (typeof e.on !== "boolean" && typeof e.on !== "number") return undefined
 						const step = Number(e.step)
@@ -1539,28 +1443,34 @@ export class IsoSurfacePage implements Page {
 			}
 		}
 
-		// Track selection must never be empty — that would leave live notes with nowhere to
-		// go — so a file that says otherwise falls back to track 0.
-		if (config.selected !== undefined) {
-			this.selected = intSet(config.selected, 0, TRACK_ROWS - 1, [0])
-		}
-		// routes[track] = the loopers pinned to it; both axes are 0..3.
-		if (config.routes !== undefined) {
-			const raw = Array.isArray(config.routes) ? config.routes : []
-			this.routes = Array.from({ length: TRACK_ROWS }, (_, t) =>
-				intSet(raw[t], 0, RECORDER_ROWS - 1)
-			)
+		// LOOPS HAVE NO ROUTES any more (Ian, 2026-11-13): a loop plays each press on the track
+		// that was in front when it was played. A loop an older file pinned to tracks cannot be
+		// replayed as it was, so it is cleared, and the log says so.
+		if (Array.isArray(config.routes)) {
+			const pinned = new Set<number>()
+			for (const set of config.routes) for (const i of intSet(set, 0, RECORDER_ROWS - 1)) pinned.add(i)
+			for (const i of pinned) {
+				if (!this.recorders[i].hasContent) continue
+				this.recorders[i].clear()
+				console.log(`[iso-surface] loop ${i + 1} was recorded with track routes, which are gone: cleared`)
+			}
 		}
 
-		// The T-triad, as pitch classes of the (already restored) octave size.
-		if (config.tintPcs !== undefined) {
-			this.tintPcs = intSet(config.tintPcs, 0, this.npo - 1)
+		// Per-track panel values. An older file has one of each: every track takes it.
+		const perTrack = <T>(list: unknown, old: T, read: (v: unknown, fallback: T) => T): T[] =>
+			Array.from({ length: TRACK_ROWS }, (_, t) => (Array.isArray(list) ? read(list[t], old) : old))
+		this.octave = perTrack(config.octaves, Math.round(num(config.octave, 0, OCTAVE_MIN, OCTAVE_MAX)), (v, d) => Math.round(num(v, d, OCTAVE_MIN, OCTAVE_MAX)))
+		this.tintOn = perTrack(config.tintOns, bool(config.tintOn, false), (v, d) => bool(v, d))
+		this.tintMode = perTrack(config.tintModes, this.tintMode[this.front], (v, d) => ((TINT_MODES as readonly string[]).includes(v as string) ? (v as TintMode) : d))
+		this.tintOctave = perTrack(config.tintOctaves, this.tintOctave[this.front], (v, d) => Math.round(num(v, d, -1, 1)))
+		// The T-triads, as pitch classes of the (already restored) octave size.
+		if (Array.isArray(config.tintPcsByTrack)) {
+			this.tintPcs = Array.from({ length: TRACK_ROWS }, (_, t) => intSet((config.tintPcsByTrack as unknown[])[t], 0, this.npo - 1))
+		} else if (config.tintPcs !== undefined) {
+			this.tintPcs = Array.from({ length: TRACK_ROWS }, () => intSet(config.tintPcs, 0, this.npo - 1))
 		}
-		// Panel values that aren't page settings: the octave and whether tint is on.
-		this.octave = Math.round(num(config.octave, 0, OCTAVE_MIN, OCTAVE_MAX))
-		this.tintOn = bool(config.tintOn, false)
 
-		this.syncTimer() // a restored arp mode may need the free-running timer
+		this.syncTimer()
 		this.announce(ctx) // init() announced the defaults; they are stale now
 	}
 
@@ -1574,7 +1484,6 @@ export class IsoSurfacePage implements Page {
 		this.releaseLive(ctx)
 		for (const r of this.recorders) r.clear()
 		this.commit(ctx)
-		this.clearSubSteps()
 		this.clearPending()
 		if (this.persistTimer) clearTimeout(this.persistTimer) // the slot is going; so is its state
 		this.persistTimer = null
@@ -1583,39 +1492,44 @@ export class IsoSurfacePage implements Page {
 	}
 
 	/**
-	 * The sustain pedal key. A single press is momentary as always; two presses inside
-	 * DOUBLE_TAP_MS latch it on so you can let go, and the next press releases. The
-	 * ShiftInput debounce is a 10 ms lockout — nowhere near a human double tap, so it
-	 * never eats one.
+	 * The PEDAL: a momentary LATCH for the front track. Down lights that track's LATCH in the
+	 * app, up puts it out (and the app lets go). Two presses inside DOUBLE_TAP_MS keep it lit
+	 * until the next press. It does nothing on a track whose LATCH is lit already by the LATCH
+	 * key or in the app, and a LATCH it lit does not arm the chord presets for saving.
 	 */
 	private sustainKey(ev: KeyEvent, ctx: PageContext) {
 		// Leading-edge lockout: the first edge acts instantly, then ANY edge is swallowed
 		// briefly. Chatter is ALTERNATING, so a same-state filter would not catch it — see
 		// core/shiftInput.ts, which learned this the hard way.
-		const t = Date.now()
-		if (t - this.lastPedalEdgeAt < PEDAL_LOCKOUT_MS) return
-		this.lastPedalEdgeAt = t
+		const now = Date.now()
+		if (now - this.lastPedalEdgeAt < PEDAL_LOCKOUT_MS) return
+		this.lastPedalEdgeAt = now
 
 		if (!ev.s) {
-			if (!this.sustainLatched) this.sustainPedal = false // plain momentary release
-			this.commit(ctx)
+			if (this.sustainLatched || this.pedalTrack === null) return
+			const t = this.pedalTrack
+			this.pedalTrack = null
+			this.setLatch(t, false, ctx)
 			return
 		}
-		const now = Date.now()
 		if (this.sustainLatched) {
 			this.sustainLatched = false
 			this.lastSustainTapAt = 0
-			this.sustainPedal = false
-			this.commit(ctx)
+			const t = this.pedalTrack
+			this.pedalTrack = null
+			if (t !== null) this.setLatch(t, false, ctx)
 			return
 		}
+		const t = this.front
+		if (this.appLatch[t] === true && !this.pedalMade.has(t)) return // lit by the LATCH key: not the pedal's
 		// A deliberate double tap latches; anything faster than a human could manage is
 		// bounce and only re-arms the window.
 		const gap = now - this.lastSustainTapAt
 		if (gap >= DOUBLE_TAP_MIN_MS && gap < DOUBLE_TAP_MS) this.sustainLatched = true
 		this.lastSustainTapAt = now
-		this.sustainPedal = true
-		this.commit(ctx)
+		this.setLatch(t, true, ctx)
+		this.pedalMade.add(t)
+		this.pedalTrack = t
 	}
 
 	/**
@@ -1633,9 +1547,9 @@ export class IsoSurfacePage implements Page {
 	 * Display level for a cell's step, before chord/finger/arp override it. `dim` steps the
 	 * scale map down so an arpeggiated note has somewhere to stand out from.
 	 */
-	private baseLevel(step: number, dim = false): number {
-		const root = dim ? LVL_ROOT_DIM : LVL_ROOT
-		const normal = dim ? LVL_NORMAL_DIM : LVL_NORMAL
+	private baseLevel(step: number): number {
+		const root = LVL_ROOT
+		const normal = LVL_NORMAL
 		// A scale is a 12-EDO idea. Under `chromatic` we keep the original npo-based
 		// octave marking, so microtonal layouts (npo up to 48) still read correctly.
 		if (this.scale === "chromatic") return isRootStep(step, this.npo) ? root : normal
@@ -1648,127 +1562,52 @@ export class IsoSurfacePage implements Page {
 	}
 
 	/**
-	 * Sustain is a two-input OR: the latching toggle, or the momentary pedal. The pedal used
-	 * to BE shift 2; it now has its own state so shift 2 can be a modifier (it selects
-	 * multiple tracks). One consequence: `/grid/in/shift 2` no longer sustains.
-	 */
-	private sustainOn(_ctx: PageContext): boolean {
-		return this.sustainToggle || this.sustainPedal
-	}
-
-	/**
-	 * The note pipeline, in stages:
+	 * THE NOTE PIPELINE. A note is a packed (track, step), reconciled against what the app was
+	 * last told, because hands, chord presets, T-voices and four loops can claim one at once:
 	 *
-	 *   keys + presets ──> LIVE ──> [record tap] ──┐
-	 *                                              ├──> INTENT ──> [sustain] ──> reconcile
-	 *   recorder playback ─────────────────────────┘
+	 *   keys + chords + T-voices ──> LIVE ──> [record tap] ──┐
+	 *                                                        ├──> out ──> reconcile
+	 *   loop playback (each press on its own track) ─────────┘
 	 *
-	 * Two things fall out of that shape. Recorders tap LIVE, so a pattern captures what you
-	 * PLAYED rather than what the pedal did with it — sustain is genuinely independent of
-	 * recording. And sustain sits downstream of INTENT, which includes recorder playback, so
-	 * holding the pedal smears a running loop into a pad exactly like it smears your hands.
+	 * There is no sustain stage and no arp stage here: a release is sent as a release, and
+	 * the app's LATCH and ARP for that key track decide what is heard. A note stops when the
+	 * LAST source lets go; a source claiming a note that is already down articulates it again.
 	 */
 	private commit(ctx: PageContext) {
 		const nowMs = Date.now()
 
-		// 1. LIVE — what your hands and the chord presets are asking for, as plain steps.
+		// 1. LIVE: what the hands and the chord presets hold, each on the track it began on.
 		const live = new Set<number>()
-		for (const step of this.held.values()) live.add(step)
-		for (const steps of this.presetHeld.values()) for (const step of steps) live.add(step)
-		// Tintinnabuli: each live M-note gains its T-voice, fixed when the M-note starts.
-		for (const m of this.tintOf.keys()) if (!live.has(m) || !this.tintOn) this.tintOf.delete(m)
-		if (this.tintOn && this.tintPcs.size) {
-			for (const m of [...live].sort((a, b) => a - b)) {
-				let t = this.tintOf.get(m)
-				if (t === undefined) {
-					const s = this.tintStep(m)
-					if (s === null) continue
-					t = s
-					this.tintOf.set(m, t)
-				}
-				live.add(t)
+		for (const key of this.held.values()) live.add(key)
+		for (const keys of this.presetHeld.values()) for (const key of keys) live.add(key)
+		// Tintinnabuli, per track: each live M-note gains its T-voice, fixed when the M-note starts.
+		for (const m of this.tintOf.keys()) if (!live.has(m) || !this.tintOn[trackOf(m)]) this.tintOf.delete(m)
+		for (const m of [...live].sort((a, b) => a - b)) {
+			const track = trackOf(m)
+			if (!this.tintOn[track] || !this.tintPcs[track].size) continue
+			let t = this.tintOf.get(m)
+			if (t === undefined) {
+				const s = this.tintStep(track, stepOf(m))
+				if (s === null) continue
+				t = noteKey(track, s)
+				this.tintOf.set(m, t)
 			}
+			live.add(t)
 		}
 
-		// 2. RECORD TAP — the transitions of that stream, before sustain or tracks touch it.
+		// 2. RECORD TAP: the transitions of that stream, with the track of each press.
 		this.tapRecorders(live, nowMs)
 
-		// 3. INTENT — live plus loop playback, each step stamped with the track(s) it began
-		//    on. Loopers never tap each other, so a loop can't record itself into a pile.
-		const sources = [live, ...this.recorders.map((r, i) => this.loopOut(i, r.sounding))]
-		const intent = new Set<number>()
-		const liveKeys = new Set<number>() // intent from your HANDS — the only thing the arp gates
-		for (let s = 0; s < sources.length; s++) {
-			const steps = sources[s]
-			const started = (this.srcTracks[s] ??= new Map())
-			for (const step of started.keys()) if (!steps.has(step)) started.delete(step)
-			for (const step of steps) {
-				let tracks = started.get(step)
-				if (!tracks) {
-					tracks = s === 0 ? [...this.selected] : tracksForLooper(s - 1, this.routes, this.selected)
-					started.set(step, tracks)
-					// A source newly claiming a note that is ALREADY sounding has to
-					// RE-ARTICULATE it. Without this, sustain turns a loop into a drone: the
-					// pedal swallows the note-off, so when the loop comes round again the note
-					// is still in lastSounding, the diff sees no change, and nothing fires.
-					// Same reasoning as pressing a ringing key — a bare repeat is inaudible.
-					for (const track of tracks) {
-						const key = noteKey(track, step)
-						if (this.lastSounding.has(key)) this.retrigger.add(key)
-					}
-				}
-				for (const track of tracks) {
-					intent.add(noteKey(track, step))
-					if (s === 0) liveKeys.add(noteKey(track, step))
-				}
-			}
-		}
+		// 3. Loop playback joins. Loopers never tap each other, so a loop can't record itself.
+		const out = new Set(live)
+		this.recorders.forEach((r, i) => {
+			for (const key of this.loopOut(i, r.sounding)) out.add(key)
+		})
 
-		// 4. SUSTAIN — park anything that just LEFT the intent, track and all. One rule
-		//    covering fingers, chords and loops instead of each source sustaining itself.
-		if (this.sustainOn(ctx)) {
-			for (const key of this.lastIntent) if (!intent.has(key)) this.sustained.add(key)
-		} else this.sustained.clear()
-		this.lastIntent = intent
-
-		// 5. ARP — on the SELECTED tracks only, let through the one note the arpeggiator is
-		//    currently pointing at. Everything on an unselected track passes by untouched,
-		//    so a routed looper keeps its own rhythm while your hands get arpeggiated.
-		let out = new Set(intent)
-		for (const key of this.sustained) out.add(key)
-		// Snapshot the chord for the display BEFORE the arp thins it to one note.
-		this.litSteps = new Set([...out].map(stepOf))
-		if (this.arp.isOn) {
-			// The pool is the chord you are playing or holding, on WHATEVER track those notes
-			// live — selection deliberately does not scope it, so switching instruments
-			// mid-arpeggio doesn't empty the pool and stop the arp dead.
-			const pool = new Set<number>()
-			for (const key of out) if (liveKeys.has(key) || this.sustained.has(key)) pool.add(stepOf(key))
-			this.arpPool = [...pool].sort((a, b) => a - b)
-
-			// Only LIVE, un-sustained notes are gated down to one at a time. A sustained note
-			// is the pedal's tail and wins over the arp, so the pad keeps ringing and the arp
-			// ACCENTS within it (see arpStep) — which is why switching the arp on or off is
-			// audibly seamless. Looper playback is never gated either: a loop keeps the
-			// rhythm it recorded.
-			const chosen = this.arpNote
-			const kept = new Set<number>()
-			for (const key of out) {
-				const gated = liveKeys.has(key) && !this.sustained.has(key)
-				if (!gated || stepOf(key) === chosen) kept.add(key)
-			}
-			out = kept
-			this.voicedSteps = this.arpNote === null ? new Set() : new Set([this.arpNote])
-		} else {
-			this.arpPool = []
-			this.voicedSteps = new Set([...out].map(stepOf))
-		}
-
-		// 6. RECONCILE against what Max was last told.
-		// A retrigger articulates a note that is staying on, so it needs an explicit off/on
-		// pair — a bare second note-on is undefined in MIDI.
-		// A strummed note still waiting to start is in lastSounding already; Max hasn't heard
-		// of it, so leaving cancels it silently and a retrigger has nothing to articulate.
+		// 4. RECONCILE against what the app was last told. A retrigger articulates a note that
+		// is staying down, so it needs an explicit off/on pair. A strummed note still waiting
+		// to start is in lastSounding already; the app hasn't heard of it, so leaving cancels
+		// it silently and a retrigger has nothing to articulate.
 		for (const key of this.retrigger) {
 			if (this.lastSounding.has(key) && out.has(key) && !this.pendingOn.has(key)) {
 				this.note(ctx, key, false)
@@ -1787,19 +1626,6 @@ export class IsoSurfacePage implements Page {
 		}
 		this.startNotes(ctx, starting)
 		this.lastSounding = out
-
-		// Starting a chord must not be silent while the arp waits for its next step — up to
-		// a whole arpRate of dead air, which reads as a broken keyboard. So the first note
-		// of a new pool fires immediately. arpStep() re-enters commit(), hence the guard.
-		if (!this.inArpKick && this.arp.isOn && this.arpNote === null && this.arpPool.length) {
-			this.inArpKick = true
-			try {
-				this.arpAccMs = 0
-				this.arpStep(ctx, true)
-			} finally {
-				this.inArpKick = false
-			}
-		}
 	}
 
 	/**
@@ -1809,8 +1635,8 @@ export class IsoSurfacePage implements Page {
 	 */
 	private startNotes(ctx: PageContext, keys: number[]) {
 		// T-voices (that aren't also a played note) are humanized: 0..tintJitterMs late.
-		const tSteps = new Set<number>()
-		if (this.tintJitterMs > 0) for (const t of this.tintOf.values()) if (!this.tintOf.has(t)) tSteps.add(t)
+		const tKeys = new Set<number>()
+		if (this.tintJitterMs > 0) for (const t of this.tintOf.values()) if (!this.tintOf.has(t)) tKeys.add(t)
 		const strum = this.strum && keys.length > 1
 		if (strum) {
 			const sign = this.strumDir === "down" ? -1 : 1
@@ -1819,7 +1645,7 @@ export class IsoSurfacePage implements Page {
 		keys.forEach((key, n) => {
 			const late =
 				(strum ? n * this.strumMs : 0) +
-				(tSteps.has(stepOf(key)) ? Math.round(this.rng() * this.tintJitterMs) : 0)
+				(tKeys.has(key) ? Math.round(this.rng() * this.tintJitterMs) : 0)
 			if (late <= 0) return this.note(ctx, key, true)
 			this.pendingOn.set(key, setTimeout(() => {
 				if (!this.pendingOn.delete(key)) return
@@ -1835,39 +1661,39 @@ export class IsoSurfacePage implements Page {
 	}
 
 	/**
-	 * The pitches in the current CHORD — held plus sustained, pooled across tracks. This is
-	 * what a chord preset saves, and it is deliberately the PRE-arp set: with the arp on,
-	 * the actual output is one note at a time, so saving from that would capture a single
-	 * pitch instead of the chord you can see lit on the grid.
+	 * The pitches the FRONT track is ringing: what is down on it now, and what this page
+	 * believes its LATCH keeps. This is what a chord preset saves.
 	 */
 	private soundingChord(): number[] {
-		return [...this.litSteps].sort((a, b) => a - b)
+		const steps = new Set<number>()
+		for (const set of [this.lastSounding, this.latchHand, this.latchLoop])
+			for (const key of set) if (trackOf(key) === this.front) steps.add(stepOf(key))
+		return [...steps].sort((a, b) => a - b)
 	}
 
-	/** Feed the live stream's transitions to every armed recorder. */
+	/** Feed the live stream's transitions to every armed recorder, each press with its track. */
 	private tapRecorders(live: Set<number>, nowMs: number) {
-		// Loops store UNtransposed steps (sounding minus the transposition it started at);
-		// the transposer is recorded alongside as a gesture and re-applied on playback.
-		const raw = (step: number) => step - (this.liveT.get(step) ?? this.offset())
+		// Loops store UNtransposed steps (sounding minus the offset it started at); the
+		// transposer is recorded alongside as a gesture and re-applied on playback.
+		const rec = (key: number) => recKey(trackOf(key), stepOf(key) - (this.liveT.get(key) ?? this.offset(trackOf(key))))
 		const recording = this.recorders.some((r) => r.state === "recording")
-		for (const step of this.lastLive) {
-			if (live.has(step)) continue
-			if (recording) this.recordAll(raw(step), false, nowMs)
-			this.liveT.delete(step)
+		for (const key of this.lastLive) {
+			if (live.has(key)) continue
+			if (recording) this.recordAll(rec(key), false, nowMs)
+			this.liveT.delete(key)
 		}
 		if (recording) {
 			for (const key of this.retrigger) {
-				const step = stepOf(key)
-				if (live.has(step) && this.lastLive.has(step)) {
-					this.recordAll(raw(step), false, nowMs)
-					this.recordAll(raw(step), true, nowMs)
+				if (live.has(key) && this.lastLive.has(key)) {
+					this.recordAll(rec(key), false, nowMs)
+					this.recordAll(rec(key), true, nowMs)
 				}
 			}
 		}
-		for (const step of live) {
-			if (this.lastLive.has(step)) continue
-			this.liveT.set(step, this.offset())
-			if (recording) this.recordAll(raw(step), true, nowMs)
+		for (const key of live) {
+			if (this.lastLive.has(key)) continue
+			this.liveT.set(key, this.offset(trackOf(key)))
+			if (recording) this.recordAll(rec(key), true, nowMs)
 		}
 		this.lastLive = live
 	}
@@ -1877,14 +1703,21 @@ export class IsoSurfacePage implements Page {
 	}
 
 	/**
-	 * A looper's sounding steps as they go OUT: its untransposed steps plus the current
-	 * transposition, stamped per note at its start so a ringing note is never re-pitched.
+	 * A looper's sounding presses as they go OUT: each on the track it was played on, its
+	 * untransposed step plus the offset now in force, stamped per note at its start so a
+	 * ringing note is never re-pitched. A press newly claiming a note that is already down
+	 * articulates it again, or a loop over a held key would be a drone.
 	 */
 	private loopOut(i: number, raw: ReadonlySet<number>): Set<number> {
 		const map = this.loopShift[i]
-		for (const step of map.keys()) if (!raw.has(step)) map.delete(step)
-		const off = this.transposeLoops ? this.offset() : 0
-		for (const step of raw) if (!map.has(step)) map.set(step, step + off)
+		for (const v of map.keys()) if (!raw.has(v)) map.delete(v)
+		for (const v of raw) {
+			if (map.has(v)) continue
+			const track = recTrack(v)
+			const key = noteKey(track, recRaw(v) + (this.transposeLoops ? this.offset(track) : 0))
+			map.set(v, key)
+			if (this.lastSounding.has(key)) this.retrigger.add(key)
+		}
 		return new Set(map.values())
 	}
 
@@ -1921,20 +1754,29 @@ export class IsoSurfacePage implements Page {
 		}
 	}
 
+	/**
+	 * One press or release to the app: /note <step> <1|0> <track>, with a fourth argument 1
+	 * when it is a LOOP's (no hand or chord holds the note), so the app's LOOPS THROUGH ARP
+	 * can tell them apart. A hand's message is unchanged. A release while its track's LATCH is
+	 * lit is remembered in the latch picture (see latchHand).
+	 */
 	private note(ctx: PageContext, key: number, on: boolean) {
 		const track = trackOf(key)
 		if (on && track < this.trackPulseAt.length) this.trackPulseAt[track] = Date.now()
-		ctx.osc.send(`/grid/out/page/${ctx.slotLabel}/note`, stepOf(key), on ? 1 : 0, track)
+		const loop = on ? !this.lastLive.has(key) : this.sentAsLoop.has(key)
+		if (on && loop) this.sentAsLoop.add(key)
+		else this.sentAsLoop.delete(key)
+		if (!on && this.appLatch[track] === true) (loop ? this.latchLoop : this.latchHand).add(key)
+		const addr = `/grid/out/page/${ctx.slotLabel}/note`
+		if (loop) ctx.osc.send(addr, stepOf(key), on ? 1 : 0, track, 1)
+		else ctx.osc.send(addr, stepOf(key), on ? 1 : 0, track)
 	}
 
-	/** Drop everything the hands own. Recorders are deliberately untouched. */
+	/** Drop everything the hands own. Recorders, and the app's LATCH, are deliberately untouched. */
 	private releaseLive(ctx: PageContext) {
 		this.held.clear()
-		this.sustained.clear()
 		this.presetHeld.clear()
 		this.retrigger.clear()
-		this.sustainToggle = false
-		this.sustainPedal = false
 		this.commit(ctx)
 	}
 
@@ -1946,9 +1788,7 @@ export class IsoSurfacePage implements Page {
 	// has to keep playing when you switch slots, the same guarantee onTick sequencers get.
 
 	private syncTimer() {
-		// The interval also has to run for a free-running arp, not just for loopers.
-		const needed =
-			this.recorders.some((r) => r.isRunning) || (this.arp.isOn && !this.ctx?.clock.running)
+		const needed = this.recorders.some((r) => r.isRunning)
 		if (needed && !this.timer) {
 			this.lastTickMs = Date.now()
 			this.timer = setInterval(() => this.onTimer(), TIMER_MS)
@@ -1966,26 +1806,19 @@ export class IsoSurfacePage implements Page {
 		this.lastTickMs = nowMs
 		for (let i = 0; i < this.recorders.length; i++) {
 			this.recorders[i].advance(nowMs, dt, this.quantumMs(i))
-			// A replayed transposer move lands BEFORE commit, so notes starting in the same
-			// window already take it. Latest recorder wins.
+			// A replayed move lands BEFORE commit, so notes starting in the same window
+			// already take it. Latest recorder wins. Per-track moves go to their own track.
 			for (const [id, value] of this.recorders[i].takeControls()) {
-				if (id === CTL_TRANSPOSE) this.setTranspose(value, ctx, false)
-				else if (id === CTL_ARP) this.replayArp(value, ctx)
-				else if (id === CTL_OCTAVE) this.setOctave(value, ctx, false)
-				else if (id === CTL_ARP_SPEED) this.setArpSpeed(value, ctx, false)
-				else if (id === CTL_ARP_PROB) this.setArpProbRow(value, ctx, false)
-				else if (id === CTL_STRUM) this.setStrum(value > 0, ctx, false)
-				else if (id === CTL_TINT) this.setTint(value > 0, ctx, false)
-				else if (id === CTL_TINT_MODE) this.setTintMode(value, ctx, false)
-				else if (id === CTL_TINT_OCTAVE) this.setTintOctave(value, ctx, false)
-			}
-		}
-		// Free-run the arp only while the transport is stopped; otherwise onTick owns it.
-		if (this.arp.isOn && !ctx.clock.running) {
-			this.arpAccMs += dt
-			if (this.arpAccMs >= this.arpRate / ARP_SPEED_FACTOR[this.arpSpeed]) {
-				this.arpAccMs = 0
-				this.arpStep(ctx)
+				const { base, track } = parseCtl(id)
+				if (base === CTL_TRANSPOSE) this.setTranspose(value, ctx, false)
+				else if (base === CTL_ARP) this.setArp(track, value, ctx, false)
+				else if (base === CTL_OCTAVE) this.setOctave(value, ctx, false, track)
+				else if (base === CTL_ARP_SPEED) this.setArpSpeed(value, ctx, false)
+				else if (base === CTL_ARP_PROB) this.setArpProbRow(value, ctx, false)
+				else if (base === CTL_STRUM) this.setStrum(value > 0, ctx, false)
+				else if (base === CTL_TINT) this.setTint(value > 0, ctx, false, track)
+				else if (base === CTL_TINT_MODE) this.setTintMode(value, ctx, false, track)
+				else if (base === CTL_TINT_OCTAVE) this.setTintOctave(value, ctx, false, track)
 			}
 		}
 		this.commit(ctx)
@@ -2041,7 +1874,7 @@ export class IsoSurfacePage implements Page {
 	private hasTracks(): boolean {
 		return (
 			this.size.width - TRACK_COL_FROM_RIGHT >= this.keysW &&
-			this.size.height >= ARP_ROW_START + ARP_BUTTONS.length
+			this.size.height >= ARP_ROW_START + ARP_KEYS
 		)
 	}
 	private trackIndexAt(x: number, y: number): number | null {
@@ -2052,7 +1885,7 @@ export class IsoSurfacePage implements Page {
 	private arpIndexAt(x: number, y: number): number | null {
 		if (!this.hasTracks() || x !== this.size.width - TRACK_COL_FROM_RIGHT) return null
 		const row = y - ARP_ROW_START
-		return row >= 0 && row < ARP_BUTTONS.length && y < this.size.height ? row : null
+		return row >= 0 && row < ARP_KEYS && y < this.size.height ? row : null
 	}
 
 	/** Chords as a dense array (null = empty slot) — the shape Max and the web UI get. */
@@ -2061,7 +1894,8 @@ export class IsoSurfacePage implements Page {
 	}
 
 	private trackState() {
-		return { selected: [...this.selected].sort((a, b) => a - b), routes: this.routes.map((set) => [...set].sort((a, b) => a - b)) }
+		// `selected` is what idk.surface reads (the lit KEYS row); it is always the one track in front.
+		return { selected: [this.front], front: this.front }
 	}
 
 	private emitTracks(ctx: PageContext) {
@@ -2101,23 +1935,9 @@ export class IsoSurfacePage implements Page {
 			this.quant[idx] = raw2 === "off" ? 0 : Number(raw2)
 			return true
 		}
-		if (key === "arp") {
-			if (!isArpMode(raw)) return false
-			this.arp.set(raw)
-			this.arpNote = null
-			this.syncTimer()
-			return true
-		}
 		if (key === "orientation") {
 			if (!isOrientation(raw)) return false
 			this.orientation = raw
-			return true
-		}
-		if (key === "arpSpeed") {
-			const idx = (ARP_SPEEDS as readonly string[]).indexOf(String(raw))
-			if (idx < 0) return false
-			this.arpSpeed = idx
-			this.clearSubSteps()
 			return true
 		}
 		if (key === "strumDir") {
@@ -2127,14 +1947,7 @@ export class IsoSurfacePage implements Page {
 		}
 		if (key === "tintMode") {
 			if (!(TINT_MODES as readonly string[]).includes(raw as string)) return false
-			this.tintMode = raw as TintMode
-			return true
-		}
-		if (key === "arpProb") {
-			const value = Number(raw)
-			if (!Number.isFinite(value)) return false
-			// Snapped to eighths, the resolution of the panel column.
-			this.arpProb = clamp(Math.round(value * PROB_ROWS), 1, PROB_ROWS) / PROB_ROWS
+			this.tintMode[this.front] = raw as TintMode
 			return true
 		}
 		if (spec.type === "toggle") {
@@ -2151,10 +1964,8 @@ export class IsoSurfacePage implements Page {
 		else if (key === "vertical") this.vertical = v
 		else if (key === "root") this.root = v
 		else if (key === "lane") this.lane = v
-		else if (key === "arpRate") this.arpRate = v
-		else if (key === "arpDiv") this.arpDiv = v
 		else if (key === "strumMs") this.strumMs = v
-		else if (key === "tintOctave") this.tintOctave = v
+		else if (key === "tintOctave") this.tintOctave[this.front] = v
 		else if (key === "tintJitterMs") this.tintJitterMs = v
 		return true
 	}
@@ -2177,16 +1988,11 @@ export class IsoSurfacePage implements Page {
 			layout: this.layout,
 			orientation: this.orientation,
 			lane: this.lane,
-			arp: this.arp.mode as ArpMode,
-			arpRate: this.arpRate,
-			arpDiv: this.arpDiv,
-			arpSpeed: ARP_SPEEDS[this.arpSpeed],
-			arpProb: this.arpProb,
 			strum: this.strum,
 			strumMs: this.strumMs,
 			strumDir: this.strumDir,
-			tintMode: this.tintMode,
-			tintOctave: this.tintOctave,
+			tintMode: this.tintMode[this.front],
+			tintOctave: this.tintOctave[this.front],
 			tintJitterMs: this.tintJitterMs,
 			transposeChords: this.transposeChords,
 			transposeLoops: this.transposeLoops,
@@ -2217,27 +2023,27 @@ const pick = (n: number, cur: number, home: number) =>
 /** The web cheat-sheet. Views are what cols 1-12 are showing: plain, transposer, or panel. */
 export const keymap: KeySpec[] = [
 	...SELECTOR_KEYS.filter((k) => k.y !== PANEL_TOGGLE_ROW && k.y !== TRANSPOSE_TOGGLE_ROW), // no left shifts on iso
-	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Performance panel", short: "Panel", help: "Hold: the top row x4-x11 is lanes 1-8 for the selected tracks. Tap: show the octave / arp speed / probability / strum / tint panel on cols 1-4. Dim-bright when a non-default value is in force while hidden. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
+	{ x: 0, y: PANEL_TOGGLE_ROW, name: "Performance panel", short: "Panel", help: "Hold: the top row x4-x11 is lanes 1-8 for the track in front. Tap: show the panel on cols 1-4 (the front track's tint and octave, the app's arp SPEED and PROB, strum). Dim-bright when the front track's octave, tint or strum is not at rest. Hides the transposer.", lit: { panel: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: 0, y: TRANSPOSE_TOGGLE_ROW, name: "Transposer", short: "Transp.", help: "Show the transposer on the bottom row. Dim-bright when a transposition is in force while hidden. Hides the panel.", lit: { transposer: LVL_TR_TOGGLE_SHOWN, "*": LVL_TR_TOGGLE_IDLE } },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 8, view: "keyboard", name: "Keyboard", help: "Isomorphic: right = +1 step, up = +vertical (5). Home (step 0) is bottom-left.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 8) },
 	{ x: KEYS_X0, y: 0, w: KEYS_W - KEYS_X0, h: 7, view: "transposer", name: "Keyboard", help: "Plays as usual above the transposer row.", lit: keyboardLit(KEYS_X0, KEYS_W - KEYS_X0, 7) },
 	{ x: KEYS_X0, y: 7, w: KEYS_W - KEYS_X0, view: "transposer", name: "Transpose −7…+4", short: "Transpose", help: "Col 8 = no transpose. A note keeps the transposition it started with. Loops record moves as gestures.", lit: Array.from({ length: KEYS_W - KEYS_X0 }, (_, i) => (i + KEYS_X0 === TRANSPOSE_ZERO_COL ? LVL_TR_CURRENT : LVL_TR_OTHER)) },
-	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "Tap: T-voice on/off (T-voices shimmer on the keyboard, and start up to tintJitterMs late). Hold + press keys: add/remove the triad's pitch classes (lit while held). Survives temperament changes; clears when npo changes.", lit: LVL_PANEL_OTHER },
-	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "Where each note's T-voice goes: nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
-	{ x: PANEL_TINT_COL, y: TINT_OCT_ROW_TOP, h: 3, view: "panel", name: "Tint octave +1 · 0 · −1", short: "T oct", help: "Moves only the T-voice by an octave, so it can sit away from the melody.", lit: pick(3, 1, 1) },
-	{ x: PANEL_STRUM_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "Shifts everything you play by octaves (npo steps). A ringing note keeps its octave.", lit: pick(4, 2, 2) },
-	{ x: PANEL_SPEED_COL, y: 0, h: ARP_SPEEDS.length, view: "panel", name: "Arp speed ×4 ×3 ×2 ×1 ÷2 ÷3 ÷4", short: "Arp speed", help: "Steps per beat (clock on) or per arp rate (clock off).", lit: pick(ARP_SPEEDS.length, ARP_SPEED_DEFAULT, ARP_SPEED_DEFAULT) },
-	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "A missed beat rests without advancing; the due note plays on the next beat.", lit: pick(PROB_ROWS, 0, 0) },
-	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_TINT_COL, y: 0, view: "panel", name: "Tintinnabuli", short: "Tint", help: "The front track's. Tap: T-voice on/off (T-voices shimmer on the keyboard, and start up to tintJitterMs late). Hold + press keys: add/remove the triad's pitch classes (lit while held). Each track has its own triad; all clear when npo changes.", lit: LVL_PANEL_OTHER },
+	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "The front track's: where each note's T-voice goes, nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
+	{ x: PANEL_TINT_COL, y: TINT_OCT_ROW_TOP, h: 3, view: "panel", name: "Tint octave +1 · 0 · −1", short: "T oct", help: "The front track's: moves only the T-voice by an octave, so it can sit away from the melody.", lit: pick(3, 1, 1) },
+	{ x: PANEL_STRUM_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "The front track's octave (each track keeps its own). A ringing note keeps the octave it began in.", lit: pick(4, 2, 2) },
+	{ x: PANEL_SPEED_COL, y: 0, h: ARP_RATES.length, view: "panel", name: "Arp speed 1/16 · 1/16T · 1/8 · 1/8T · 1/4 · 1/2 · 1/1", short: "Arp speed", help: "The app's arp RATE, fastest at the top. One setting for all tracks; lit from the app.", lit: pick(ARP_RATES.length, 2, -1) },
+	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "The app's arp PROB, one setting for all tracks; lit from the app. A missed step waits: the due note plays on the next step.", lit: pick(PROB_ROWS, 0, 0) },
+	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "All tracks. Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
 	{ x: PANEL_X0 + PANEL_W, y: 0, w: KEYS_W - PANEL_X0 - PANEL_W, h: 8, view: "panel", name: "Keyboard", help: "Still playable beside the panel. While Tint is held, presses edit the triad instead.", lit: keyboardLit(PANEL_X0 + PANEL_W, KEYS_W - PANEL_X0 - PANEL_W, 8) },
-	{ x: KEYS_W, y: 0, h: 8, name: "Chord presets", short: "Chords", help: "Press: play the saved chord. With the sustain toggle on: save what's ringing (same slot again releases). Shift 1 + press clears.", lit: [LVL_PRESET_FULL, LVL_PRESET_FULL, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY] },
-	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Where live notes go. Shift 2 + press multi-selects; Shift 1 + press edits which loopers feed it and, on the bottom row x1-x8, which idk.surface lanes it plays.", lit: [LVL_TRACK_ON, 2, 3, 4] },
-	{ x: KEYS_W + 1, y: ARP_ROW_START, h: ARP_BUTTONS.length, name: "Arp: up · down · palindrome · urn", short: "Arp", help: "Arpeggiate the held chord; press the lit one to stop.", lit: [1, 2, 3, 4] },
-	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
-	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Sustain toggle", short: "Sus. tog", help: "Latching sustain; also arms the chord presets for saving.", lit: LVL_SHIFT },
-	{ x: KEYS_W + 2, y: SUSTAIN_PEDAL_ROW, name: "Sustain pedal", short: "Pedal", help: "Momentary sustain; double-tap to latch.", lit: LVL_SHIFT },
-	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Hold + track: multi-select tracks.", lit: LVL_SHIFT_IDLE },
-	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear. Hold + track: routing edit.", lit: LVL_SHIFT_IDLE },
+	{ x: KEYS_W, y: 0, h: 8, name: "Chord presets", short: "Chords", help: "Press: play the saved chord on the track in front. With that track's LATCH lit by the LATCH key: save what it is ringing (same slot again lets it go). Shift 1 + press clears.", lit: [LVL_PRESET_FULL, LVL_PRESET_FULL, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY, LVL_PRESET_EMPTY] },
+	{ x: KEYS_W + 1, y: 0, h: TRACK_ROWS, name: "Tracks 1–4", short: "Tracks", help: "Brings that track's layer to the front: presses, chords, ARP, LATCH, octave, tint and the lane picker act on it alone. The other tracks' notes, and loops, stay visible very dim.", lit: [LVL_TRACK_ON, 2, 3, 4] },
+	{ x: KEYS_W + 1, y: ARP_ROW_START, h: ARP_KEYS, name: "Arp: up · down · up-down · urn", short: "Arp", help: "The app's ARP for the track in front, in that order; press the lit one to stop. The order is shared by all tracks. Medium = the app's order while this track's ARP is off.", lit: [1, 2, 3, 4] },
+	{ x: KEYS_W + 2, y: 0, h: RECORDER_ROWS, name: "Loopers 1–4", help: "Arm, record from the first note, play, pause. Shift 1 + press clears. Each press is recorded with the track in front and played back there; one loop may span tracks. Records transposer, arp and panel moves too.", lit: [LVL_HELD, LVL_REC_STOPPED, LVL_REC_EMPTY, LVL_REC_EMPTY] },
+	{ x: KEYS_W + 2, y: SUSTAIN_TOGGLE_ROW, name: "Latch", short: "Latch", help: "The app's LATCH for the track in front, lit from the app. Also arms the chord presets for saving. Off lets go of what it held.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SUSTAIN_PEDAL_ROW, name: "Latch pedal", short: "Pedal", help: "LATCH on the track in front while held; double-tap to keep it. Does not arm chord saving.", lit: LVL_SHIFT },
+	{ x: KEYS_W + 2, y: SHIFT2_ROW, name: "Shift 2", help: "Not used on this page.", lit: LVL_SHIFT_IDLE },
+	{ x: KEYS_W + 2, y: SHIFT1_ROW, name: "Shift 1", help: "Hold + looper / chord: clear.", lit: LVL_SHIFT_IDLE },
 ]
 
 export const page: PageModule = {
