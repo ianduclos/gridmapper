@@ -283,41 +283,44 @@ describe("iso-surface: the lane picker", () => {
 		page.init(ctx)
 		notes.length = 0
 		const key = (x: number, y: number, s: 0 | 1) => page.onKey({ x, y, s }, ctx)
-		const shift2 = (on: boolean) => { modifiers.shift2 = on; key(15, 6, on ? 1 : 0) }
-		const pick = (track: number) => { key(14, track, 1); key(14, track, 0) }
-		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
+		const shift2 = (on: boolean) => key(0, 6, on ? 1 : 0) // the picker's key: the left column's x0 y6, held
+		const pick = (track: number) => { modifiers.shift2 = true; key(14, track, 1); key(14, track, 0); modifiers.shift2 = false }
+		const row = () => { const f = page.render(ctx)!; return Array.from({ length: 8 }, (_, l) => f[ledIndex(SIZE, 4 + l, 0)]) }
+		const top = () => { const f = page.render(ctx)!; return Array.from({ length: 12 }, (_, l) => f[ledIndex(SIZE, 1 + l, 0)]) }
 		const noteMsgs = () => notes.filter((m) => m[0].endsWith("/note"))
 		const sets = () => out.filter((m) => m[0] !== "/surface/get")
-		return { page, key, shift2, pick, row, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
+		return { page, key, shift2, pick, row, top, out, sets, noteMsgs, say: (p: string, v: any) => hear(p, [v]) }
 	}
 
-	it("with shift 2 held, the top row shows the selected track's lanes and toggles them in surface", () => {
+	it("with x0 y6 held, the top row shows the selected track's lanes on x4-x11 and toggles them in surface", () => {
 		const r = mk()
 		r.pick(1)
 		r.shift2(true)
 		expect(r.row()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]) // not heard yet
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys2/lanes"])
-		r.key(1, 0, 1); r.key(1, 0, 0) // unknown: no guess, no note
+		r.key(4, 0, 1); r.key(4, 0, 0) // unknown: no guess, no note
 		expect(r.sets()).toEqual([])
 		r.say("/surface/route/keys2/lanes", "31")
 		expect(r.row()).toEqual([13, 3, 13, 3, 3, 3, 3, 3])
-		r.key(2, 0, 1); r.key(2, 0, 0) // add lane 2
-		r.key(1, 0, 1); r.key(1, 0, 0) // drop lane 1
+		expect(r.top()).toEqual([0, 0, 0, 13, 3, 13, 3, 3, 3, 3, 3, 0]) // the rest of the row is cleared
+		r.key(5, 0, 1); r.key(5, 0, 0) // add lane 2
+		r.key(4, 0, 1); r.key(4, 0, 0) // drop lane 1
 		expect(r.sets()).toEqual([
 			["/surface/route/keys2/lanes", "123"],
 			["/surface/route/keys2/lanes", "23"],
 		])
+		r.key(1, 0, 1); r.key(1, 0, 0); r.key(12, 0, 1); r.key(12, 0, 0) // the cleared keys play nothing
 		expect(r.noteMsgs()).toEqual([])
-		r.key(9, 0, 1) // the rest of the row still plays
+		r.key(9, 7, 1) // the rows below still play
 		expect(r.noteMsgs()).toHaveLength(1)
 	})
 
-	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once shift 2 is let go", () => {
+	it("track 1 is surface's unnumbered KEYS row, and the row is a keyboard again once the key is let go", () => {
 		const r = mk()
 		r.shift2(true)
 		expect(r.out).toContainEqual(["/surface/get", "/surface/route/keys/lanes"])
 		r.say("/surface/route/keys/lanes", "12345678")
-		r.key(8, 0, 1); r.key(8, 0, 0)
+		r.key(11, 0, 1); r.key(11, 0, 0)
 		expect(r.out).toContainEqual(["/surface/route/keys/lanes", "1234567"])
 		r.shift2(false)
 		r.key(1, 0, 1)
@@ -326,24 +329,27 @@ describe("iso-surface: the lane picker", () => {
 
 	it("several selected tracks: medium where only some play a lane, and a press sets it for all of them", () => {
 		const r = mk()
-		r.shift2(true)
 		r.pick(1) // shift 2 + track: tracks 1 and 2 selected
+		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "12")
 		r.say("/surface/route/keys2/lanes", "2")
 		expect(r.row()).toEqual([8, 13, 3, 3, 3, 3, 3, 3])
-		r.key(1, 0, 1); r.key(1, 0, 0) // lane 1: only track 1 has it, so track 2 gets it
+		r.key(4, 0, 1); r.key(4, 0, 0) // lane 1: only track 1 has it, so track 2 gets it
 		expect(r.sets()).toEqual([["/surface/route/keys2/lanes", "12"]])
-		r.key(2, 0, 1); r.key(2, 0, 0) // lane 2: both have it, so both drop it
+		r.key(5, 0, 1); r.key(5, 0, 0) // lane 2: both have it, so both drop it
 		expect(r.sets().slice(1)).toEqual([["/surface/route/keys/lanes", "1"], ["/surface/route/keys2/lanes", "1"]])
 	})
 
-	it("works with the panel open: the panel's top keys give way while shift 2 is held", () => {
+	it("a quick tap of x0 y6 is still the panel; with the panel open the picker has the top row", () => {
 		const r = mk()
-		r.key(0, 6, 1); r.key(0, 6, 0) // PANEL
+		r.key(0, 6, 1); r.key(0, 6, 0) // a tap: PANEL
+		expect((r.page as any).panelShown).toBe(true)
 		r.shift2(true)
 		r.say("/surface/route/keys/lanes", "")
-		r.key(1, 0, 1); r.key(1, 0, 0)
+		r.key(4, 0, 1); r.key(4, 0, 0) // x4 is the panel's STRUM when the picker is shut
 		expect(r.sets()).toEqual([["/surface/route/keys/lanes", "1"]])
+		r.shift2(false) // a lane was picked: letting go does not flip the panel
+		expect((r.page as any).panelShown).toBe(true)
 	})
 })
 

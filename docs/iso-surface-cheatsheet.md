@@ -24,7 +24,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 |---|---|---|
 | x0 y0 / y1 / y2 / y4 | iso / PLAY / REEL pads / home | Go to that page. |
 | x0 y5 | Twister | Hold: the Twister shows its page chooser. |
-| x0 y6 | PANEL | Show or hide the performance panel on x1-x4. |
+| x0 y6 | PANEL / lanes | Tap: show or hide the performance panel on x1-x4. Hold: the lanes of the selected tracks on the top row. |
 | x0 y7 | TRANSPOSER | Show or hide the transposer on the bottom row. |
 | x1-x12 | keyboard | Right = one step up, up a row = a fourth up (5 steps). Home is bottom left. |
 | x13 y0-y7 | chords 1-8 | Play, save or clear a chord. |
@@ -33,7 +33,7 @@ y7  TRANSP                     chord 8 arp urn  shift 1
 | x15 y0-y3 | loopers 1-4 | Record and loop what you play. |
 | x15 y4 | SUSTAIN | Latching sustain; also arms the chords for saving. |
 | x15 y5 | PEDAL | Sustain while held; double-tap to latch. |
-| x15 y6 | shift 2 | Hold: the top row x1-x8 is the lanes of the selected tracks. Hold + track: add or drop a track. |
+| x15 y6 | shift 2 | Hold + track: add or drop a track. |
 | x15 y7 | shift 1 | Hold + looper or chord: clear. Hold + track: edit which loopers feed it. |
 
 On this page the shifts are on the right (x15). The left x0 y6 and y7 are the
@@ -55,11 +55,14 @@ panel and the transposer; x0 y3 is dark.
 
 - **Press:** your notes go to that track alone.
 - **Shift 2 + press:** add or drop a track; one always stays.
-- **Shift 2 held, top row x1-x8:** surface's lanes 1-8 for the selected tracks.
+- **x0 y6 held (the left shift 2 key), top row:** the playing area's top row
+  goes dark and x4-x11 show surface's lanes 1-8 for the selected tracks.
   Bright = every selected track plays that lane, medium = only some do, dim =
   none. A press switches the lane on for all of them, or off when all already
-  play it. Let shift 2 go and the row is the keyboard again. It works with the
-  panel open. A dark row means surface has not answered (is the app open?).
+  play it. Let go and the row is the keyboard again. It works with the panel
+  open. All eight dark means surface has not answered (is the app open?).
+  A quick tap of x0 y6 (under a third of a second, no lane pressed) is still
+  the panel.
 - **Shift 1 + press:** latch that track for editing (let shift go). Then the
   **looper keys** mean "this looper feeds this track" (bright = yes) and do not
   record. Press the latched track to leave, or another track to edit that one.
