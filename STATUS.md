@@ -1,11 +1,12 @@
 ---
 project: gridmapper
 state: active
-updated: 2026-11-12
+updated: 2026-11-13
 machine: mac
-summary: Branch feat/play-surface holds the idk.surface work (PLAY page, the new home page switched on, iso lane picker, a REEL pads page switched on 2026-11-11, a cheat sheet per surface page, ARP keys on PLAY and REEL pads, a XEN CHORDS toggle on PLAY added 2026-11-12); none of it has been played by Ian yet and the grid was off USB at session end.
+summary: Branch feat/play-surface holds the idk.surface work (PLAY, home, iso lane picker, REEL pads, a cheat sheet per page); on 2026-11-13 the ARP keys became the app's one ARP switch and PLAY moved to the app's OSC 4 source with a link that releases held notes and re-reads on reconnect, both committed but not in the running agent; none of it has been played by Ian.
 next:
-  - Plug the grid in and let Ian play PLAY (incl. the XEN CHORDS toggle at x2 y1, with xen-harmony running), home, iso and REEL pads against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
+  - Restart the agent only after the idk.surface session says its app has /surface/osc/4/release and the prefixed own notes (1e5dacd and b1ffeb1 wait for that), then check both against the live app
+  - Plug the grid in and let Ian play PLAY, home, iso and REEL pads against idk.surface (cheat sheets in docs/*-surface-cheatsheet.md), then fix what he finds
   - Merge feat/play-surface to main once Ian has played it
   - Tune PLAY's shift 2 latch time (latchMs) with Ian
 handoff_for: claude-gridmapper

@@ -128,6 +128,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 
 ## Session log
 
+### 2026-11-13 — Claude — ARP is the app's one switch; PLAY through OSC 4; the link watches the app
+- `1e5dacd`: the ARP keys (PLAY x14 y7, REEL pads x14 y4) send `/surface/arp` flipped and follow the app's value; no local flag.
+- `b1ffeb1`: PLAY's notes, own notes and strikes go to `/surface/osc/4/lane/<n>/...`. `createSurfaceLink` asks `/surface/arp` every second; on the first answer and after 3 s of silence it sends `/surface/osc/4/release` + `/surface/arp/call/clear` once and tells every surface page `/link/up`, which empties what it holds and re-reads. On KEYS a lane OSC 4 does not play is dark; OSC 4 off, the KEYS key blinks.
+- 726 tests pass. NOT in the running agent (restart owed, see the open entry), nothing tried against the live app. An app restart quicker than 3 s is not noticed.
+
 ### 2026-11-13 — Claude (from the idk.surface session, at Ian's ask) — left column order; iso's lane picker on shift 2
 - **What:** util/pageSelectorSurface.ts: the shared column is now y0 iso, y1 PLAY, y2 REEL pads, y3 the page's own, y4 home, y5 Twister (Ian: "pads mode below play mode and send the twister to the bottom and home right on top of that"). Cells' DAMP moved from x0 y4 to x0 y3 (y4 is home), and cells now shows the REEL key. pages/iso-surface.ts: the lane picker left the shift 1 latch and the bottom row; while x0 y6 is held (Ian: "lshift 2 aka 0 6"; a tap under 300 ms is still PANEL), the playing area's top row goes dark and x4-x11 show lanes 1-8 for every selected track (bright all, medium some, dim none) and a press sets the lane for all of them, or drops it when all have it. It is handled before the panel, which used to swallow x1-x4. Shift 1 + track still latches a track for the looper routing.
 - **Verified:** tsc clean, 710 tests; agent restarted (`kickstart -k`) at 00:31. **Not** on hardware. Ian had said the old picker "is not working for some reason": the app answered `/surface/get` for the four KEYS rows correctly (tracks 2-4 hold no lanes: `''`), so the likely causes were the panel swallowing the keys, or tracks 2-4 simply playing nothing.
