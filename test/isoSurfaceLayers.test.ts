@@ -272,10 +272,10 @@ describe("iso-surface layers: ARP and LATCH are the app's", () => {
 		const r = rig()
 		r.tap(0, 6) // the panel
 		r.tap(2, 0); r.tap(2, 1); r.tap(2, 6)
-		expect(r.sent()).toEqual([["/surface/arp/rate", "1/16"], ["/surface/arp/rate", "1/16T"], ["/surface/arp/rate", "1/1"]])
+		expect(r.sent()).toEqual([["/surface/arp/rate", "1/16T"], ["/surface/arp/rate", "1/16"], ["/surface/arp/rate", "1/1"]])
 		vi.advanceTimersByTime(500)
 		r.say("/surface/arp/rate", "1/8T")
-		expect([0, 1, 2, 3, 4, 5, 6].map((y) => r.led(2, y))).toEqual([4, 4, 4, 15, 4, 4, 4])
+		expect([0, 1, 2, 3, 4, 5, 6].map((y) => r.led(2, y))).toEqual([4, 4, 15, 4, 4, 4, 4]) // 1/8T is the third from the top
 		r.tap(3, 4)
 		expect(r.sent()).toEqual([["/surface/arp/prob", 0.5], ["/surface/arp/prob-mode", "wait"]])
 		vi.advanceTimersByTime(500)

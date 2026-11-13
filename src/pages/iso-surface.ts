@@ -82,7 +82,7 @@
  * plain presses and releases; the app decides what sounds. The four arp keys (column 14,
  * rows 4-7: up · down · up-down · urn) set the app's shared ORDER and switch the front
  * track's ARP on; the lit one switches it off. The panel's SPEED column is the app's RATE
- * (1/16 at the top to 1/1), its PROB column the app's PROB with PROB MODE set to WAIT.
+ * (1/16T at the top to 1/1), its PROB column the app's PROB with PROB MODE set to WAIT.
  * LATCH (column 15 row 4) is the front track's LATCH, and lit by that key it arms the chord
  * presets for saving; the PEDAL (row 5) is a momentary LATCH (double-tap keeps it) that
  * does not. All of it is shown from the app's values, never from a flag kept here.
@@ -246,7 +246,8 @@ const OCTAVE_MIN = -1
 /** The four arp keys, top to bottom, as the app's ORDER. */
 export const ARP_ORDERS = ["up", "down", "up-down", "urn"] as const
 /** The panel's SPEED column, top (fastest) to bottom, as the app's RATE. */
-export const ARP_RATES = ["1/16", "1/16T", "1/8", "1/8T", "1/4", "1/2", "1/1"] as const
+// In order of SPEED: a triplet is faster than its straight value (Ian, on the grid, 2026-11-13).
+export const ARP_RATES = ["1/16T", "1/16", "1/8T", "1/8", "1/4", "1/2", "1/1"] as const
 const ARP_ADDR = (t: number) => `/surface/keys/${t + 1}/arp`
 const LATCH_ADDR = (t: number) => `/surface/keys/${t + 1}/latch`
 const RELEASE_ADDR = (t: number) => `/surface/keys/${t + 1}/release` // lets go of what LATCH holds; LATCH stays
@@ -2036,7 +2037,7 @@ export const keymap: KeySpec[] = [
 	{ x: PANEL_TINT_COL, y: 1, h: 3, view: "panel", name: "Tint mode: above · below · alternate", short: "T mode", help: "The front track's: where each note's T-voice goes, nearest triad note above, below, or alternating.", lit: [11, 5, 6] },
 	{ x: PANEL_TINT_COL, y: TINT_OCT_ROW_TOP, h: 3, view: "panel", name: "Tint octave +1 · 0 · −1", short: "T oct", help: "The front track's: moves only the T-voice by an octave, so it can sit away from the melody.", lit: pick(3, 1, 1) },
 	{ x: PANEL_STRUM_COL, y: OCTAVE_ROW_TOP, h: 4, view: "panel", name: "Octave +2 · +1 · 0 · −1", short: "Octave", help: "The front track's octave (each track keeps its own). A ringing note keeps the octave it began in.", lit: pick(4, 2, 2) },
-	{ x: PANEL_SPEED_COL, y: 0, h: ARP_RATES.length, view: "panel", name: "Arp speed 1/16 · 1/16T · 1/8 · 1/8T · 1/4 · 1/2 · 1/1", short: "Arp speed", help: "The app's arp RATE, fastest at the top. One setting for all tracks; lit from the app.", lit: pick(ARP_RATES.length, 2, -1) },
+	{ x: PANEL_SPEED_COL, y: 0, h: ARP_RATES.length, view: "panel", name: "Arp speed 1/16T · 1/16 · 1/8T · 1/8 · 1/4 · 1/2 · 1/1", short: "Arp speed", help: "The app's arp RATE, fastest at the top. One setting for all tracks; lit from the app.", lit: pick(ARP_RATES.length, 2, -1) },
 	{ x: PANEL_PROB_COL, y: 0, h: PROB_ROWS, view: "panel", name: "Arp probability 100% … 12.5%", short: "Arp prob", help: "The app's arp PROB, one setting for all tracks; lit from the app. A missed step waits: the due note plays on the next step.", lit: pick(PROB_ROWS, 0, 0) },
 	{ x: PANEL_STRUM_COL, y: 0, view: "panel", name: "Strum", help: "All tracks. Spreads notes that start together (chord presets, loop chords, T-voices) strumMs apart. Spacing and direction in page settings.", lit: LVL_PANEL_OTHER },
 	{ x: PICKER_X0, y: 0, w: PICKER_LANES, view: "panel", name: "Lanes 1–8", short: "Lanes", help: "Part of the menu: which idk.surface lanes the track in front plays. Bright = plays it, dim = does not. A press switches it. All dark = the app has not answered.", lit: Array.from({ length: PICKER_LANES }, () => LVL_PICK_OFF) },

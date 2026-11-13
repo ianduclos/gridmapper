@@ -145,7 +145,7 @@ levels as the transposer key below it.
 | x1 y0 | TINT | The front track's. Tap: the second voice on or off. Hold + press keys: choose its three notes. |
 | x1 y1-y3 | tint mode | The front track's: the second voice goes above, below, or alternates. |
 | x1 y4-y6 | tint octave | The front track's: +1, 0, -1, moves only the second voice. |
-| x2 y0-y6 | arp speed | The app's RATE, fastest at the top: 1/16, 1/16T, 1/8, 1/8T, 1/4, 1/2, 1/1. |
+| x2 y0-y6 | arp speed | The app's RATE, fastest at the top: 1/16T, 1/16, 1/8T, 1/8, 1/4, 1/2, 1/1 (a triplet is faster than its straight value). |
 | x3 y0-y7 | arp chance | The app's PROB: 100 % at the top down to 12.5 %. A missed step waits; its note plays on the next. |
 | x4 y0 | STRUM | All tracks: notes that start together are spread a little apart. |
 | x4 y4-y7 | octave | The front track's: +2, +1, 0, -1. |
