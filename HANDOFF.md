@@ -6,7 +6,7 @@ entries: 2
 
 ### idk.surface pages (iso layers, PLAY, home, REEL pads, cells key, Twister overlay) — opened 2026-11-11, owner: claude-gridmapper
 - done: branch `feat/play-surface`, pushed, NOT merged to main, and what the agent has run since 2026-11-13 (restarts only at Ian's word). iso is four track layers on the app's per-track ARP and LATCH (no arpeggiator or sustain of its own, no loop routes); PLAY plays through the app's OSC 4 and has the arp's order keys (x14 y3-y6); the surface link probes the app, releases what the grid held and has every page re-read on reconnect; iso's x0 y6 is one menu (panel + lanes on x5-x12, tap toggles, hold is temporary, time alone decides); x0 y5 opens the Twister overlay (pages, scenes to A and B, store, fader); x0 y3 is the cells key, pulsing while cells plays. 772 tests pass.
-- next: Ian's playing check, then merge to main. Any agent restart: only at Ian's word. First thing to confirm on iso: LATCH lit, press and release a key, it stays lit (the app's /remote echo).
+- next: NOT YET IN THE RUNNING AGENT OR PUSHED (needs Ian's word): 2f11f1b (a cells world lands with its recommended tuning and tempo), 96e7658 (the idk.surface preset is saved when the app goes away), and the thirteen suggested tempos. Then: Ian's playing check, then merge to main. Any agent restart: only at Ian's word. First thing to confirm on iso: LATCH lit, press and release a key, it stays lit (the app's /remote echo).
 - blockers: none. Parked by Ian (2026-11-13): cells following the app's TEMPO, and the app's temperaments as cells tuning options. Asked of the idk.surface session, not built: cells notes let go on a restart, a tuned note in the cells packet, a reported beat; for the Twister overlay, which scenes are stored and the Twister's page in front. Ian's to judge on the grid: the dim plane (6, 10 on a root), the cells pulse (2 to 5, 1 s each), the 300 ms tap window, the arp order keys' spot on PLAY, LATCH still arming chord saving.
 - context: CLAUDE.md (entries for iso-surface, play-surface, pageSelectorSurface, liveLink); docs/{iso,cells,play,home,reel}-surface-cheatsheet.md; idk.surface docs/specs/2026-11-13-iso-track-layers-design.md; idk.surface docs/osc/reference.txt (never guess an address). To read what the running grid shows without touching it: the LED frame on the agent's web socket, ws://localhost:57191, path /grid/out/leds (args: w, h, then 128 levels).
 
@@ -127,6 +127,11 @@ entry — date · agent · what changed (+ files) · verified? · next · any ne
 ---
 
 ## Session log
+
+### 2026-11-13 (last) — Claude — cells worlds bring their tuning and tempo; preset saved on the app's exit
+- cells-surface: choosing a world takes its recommended tuning and its `recommendedBpm` when it lands (2f11f1b). Thirteen tempos entered as SUGGESTIONS for Ian to correct by ear; only manjanin, sikuri and tshikona rest on a source (a Sonnet helper proposed them, unchecked by me). cells-hot shares the data and ignores the tempo.
+- `core/surfaceAutosave.ts` (96e7658): when the surface link stops hearing the app, the live machine is written into the idk.surface preset, only while it is the active preset, once per absence. The one exception to "a preset is saved from the web panel only".
+- 778 tests pass. Not restarted, not pushed.
 
 ### 2026-11-13 (later) — Claude — iso track layers, one menu, Twister overlay, cells key
 - iso-surface rebuilt as four track layers on the app's ARP and LATCH (cc7d86e, 67e68e2): front track, dim plane, per-track octave and tint, loops record the front track and mark their notes; what LATCH holds comes from the app's /remote echo, the sounding step from /surface/keys/<t>/arp/at. Switched on with the app's half at 06:23 at Ian's word.

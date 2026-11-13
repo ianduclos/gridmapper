@@ -3,12 +3,13 @@ project: gridmapper
 state: active
 updated: 2026-11-13
 machine: mac
-summary: Branch feat/play-surface is what the agent runs since 2026-11-13 - iso as four track layers on the app's own ARP and LATCH, PLAY through the app's OSC 4 with arp order keys, one menu on iso's x0 y6, a Twister overlay on x0 y5, and cells as the fourth page on x0 y3; Ian is playing it but has not given it a full check, and it is not merged to main.
+summary: Branch feat/play-surface holds the idk.surface work - iso as four track layers on the app's ARP and LATCH, PLAY through OSC 4, iso's one menu, the Twister overlay, cells as the fourth page; the agent runs it up to 77e1d00, and three later commits (cells worlds landing with their recommended tuning and tempo, the preset saved when the app exits) wait for a restart and a push; none of it has had Ian's full playing check and it is not on main.
 next:
-  - Fix what Ian finds while playing (concert 2026-11-14); first thing to confirm on iso is that a key kept by LATCH stays lit, which needs the app's /remote echo
+  - At Ian's word, restart the agent (and push) so 2f11f1b, 96e7658 and the cells tempos reach the grid; then he corrects the thirteen suggested tempos by ear (src/data/cells-hot-worlds.ts, recommendedBpm)
+  - Fix what Ian finds while playing (concert 2026-11-14); on iso, first confirm that a key kept by LATCH stays lit (the app's /remote echo)
   - Merge feat/play-surface to main once Ian has played it
-  - Cells, parked by Ian 2026-11-13 - follow the app's TEMPO, and the app's temperaments as tuning options; app-side asks sent (release on restart, a tuned note in the packet, a reported beat)
-  - Tune by hand with Ian - the dim plane's level (6, 10 on a root), the cells key's pulse (2 to 5), the 300 ms tap window, PLAY's shift 2 latch time
+  - Parked by Ian - cells following the app's TEMPO, and the app's temperaments as cells tuning options
+  - Tune by hand with Ian - the dim plane (6, 10 on a root), the cells key's pulse (2 to 5), the 300 ms tap window
 handoff_for: claude-gridmapper
 ---
 
